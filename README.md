@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# tellmewhy
 
-## Getting Started
+A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. Therapist review is planned for phase 2.
 
-First, run the development server:
+## Local Setup
+
+**1. Start the database**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --detach
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Postgres 17 runs on `localhost:5432`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**2. Copy and configure environment variables**
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+```
 
-## Learn More
+Then open `.env.local` and fill in the secrets (use `openssl rand -base64 32` for both `BETTER_AUTH_SECRET` and `MASTER_KEK`):
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+openssl rand -base64 32  # Run this twice, once for each secret
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Set `OPENROUTER_API_KEY` to your OpenRouter key. Leave `AI_MOCK=0` for real inference, or set `AI_MOCK=1` for offline deterministic mocking.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**3. Install dependencies and migrate**
 
-## Deploy on Vercel
+```bash
+bun install
+bun run db:migrate
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**4. Start the dev server**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+bun run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) on a mobile viewport (iPhone 14 or similar) to see the app.
+
+## Testing
+
+**Run all tests (Vitest):**
+
+```bash
+bun run test
+```
+
+Integration tests that require the database will connect via `DATABASE_URL` from `.env.local`.
+
+**Run end-to-end tests (Playwright):**
+
+```bash
+bun run test:e2e
+```
+
+Playwright boots its own dev server with test-only environment baked into `playwright.config.ts`.
+
+**Offline AI for testing:**
+
+Set `AI_MOCK=1` to use deterministic mock replies and trigger the mock crisis classifier without calling OpenRouter:
+
+```bash
+AI_MOCK=1 bun run dev
+```
+
+## Privacy Model
+
+**Per-user envelope encryption at rest:**
+Every message body and conversation title is encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access.
+
+**Crypto-shredding on deletion:**
+When a user account is deleted, the master key row is destroyed. This immediately and permanently renders all of that user's data unreadable, including in backups.
+
+**Plaintext exists only in memory:**
+Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored.
+
+**OpenRouter data policies:**
+All LLM calls route through OpenRouter with strict per-request `data_collection: "deny"` headers. The OpenRouter account's global data policy must be configured to exclude logging and training providers before production use.
+
+**This is not end-to-end encryption:**
+We do not claim end-to-end encryption. The AI must read message bodies to reply, so plaintext exists on our servers during inference. The encryption protects against database breaches and backup leaks, not against server-side processing.
+
+**Passwords:**
+User passwords are hashed with Argon2id using hardened parameters (`m=65536, t=3, p=1`).
+
+## Operational Requirements
+
+**Master key (`MASTER_KEK`) is critical:**
+Loss of the master key means all user data is permanently unrecoverable. Back up `MASTER_KEK` in a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) and keep it separate from your database backups.
+
+**Verify OpenRouter before production:**
+Before going live, confirm that the OpenRouter account's data policy excludes logging and training providers. This policy is displayed on the OpenRouter dashboard under Account → Privacy Settings.
+
+**Crisis resources:**
+The app detects crisis signals and displays hotline resources (988 for the US, findahelpline.com for international). This is an automated signal detection system and not a substitute for professional mental health care.
