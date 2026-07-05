@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Encryption:** all message bodies and conversation titles encrypted AES-256-GCM with per-user DEK before Postgres. Ciphertext format: `v1.<iv b64>.<tag b64>.<data b64>`. DEKs wrapped by KEK from `MASTER_KEK` env (base64, 32 bytes) behind the `KeyProvider` interface.
-- **Crypto-shredding:** deleting a user's key row makes their data permanently unreadable — this is the deletion mechanism.
+- **Crypto-shredding:** deleting a user's key row makes their data permanently unreadable going forward — this is the deletion mechanism. (Backups taken before shredding still contain the wrapped DEK and remain decryptable with the master key until it rotates or key rows are excluded from backup retention — never claim backup coverage without one of those.)
 - **Passwords:** Argon2id ONLY, explicit params: `memoryCost: 65536` (64 MiB), `timeCost: 3`, `parallelism: 1`. Never library defaults.
 - **AI output:** always rendered through a markdown component (`streamdown`), never as a plain string.
 - **OpenRouter:** every request sends `provider: { data_collection: "deny" }` (no-logging providers only). Never claim "end-to-end encrypted" in any copy — the honest claim is "encrypted at rest; plaintext only in memory during inference".
