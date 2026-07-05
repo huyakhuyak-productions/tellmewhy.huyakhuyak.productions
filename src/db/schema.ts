@@ -29,3 +29,5 @@ export const messages = pgTable("messages", {
   flaggedAt: timestamp("flagged_at"), // "flag for my therapist" — used from phase 2
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export * from "./auth-schema";
