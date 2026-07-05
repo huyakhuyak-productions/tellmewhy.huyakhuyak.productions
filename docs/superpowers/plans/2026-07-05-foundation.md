@@ -606,11 +606,11 @@ Run: `bun run test src/lib/password.test.ts` — expected: FAIL (module not foun
 `src/lib/password.ts`:
 
 ```typescript
-import { hash, verify, Algorithm } from "@node-rs/argon2";
+import { hash, verify } from "@node-rs/argon2";
 
 // OWASP-recommended Argon2id, explicit params — never library defaults.
 const ARGON2_OPTIONS = {
-  algorithm: Algorithm.Argon2id,
+  algorithm: 2, // Argon2id — numeric literal because @node-rs/argon2 exports Algorithm as an ambient const enum, unusable under isolatedModules (TS2748)
   memoryCost: 65536, // 64 MiB
   timeCost: 3,
   parallelism: 1,
