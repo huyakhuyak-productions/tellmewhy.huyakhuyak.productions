@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { createConversation, loadMessages } from "@/lib/conversations";
+import { createConversation, loadMessages, saveMessage } from "@/lib/conversations";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -10,8 +10,15 @@ vi.mock("@/lib/auth", () => ({
 }));
 // next/headers needs Next.js request scope — stub it for direct route invocation.
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// Spy-mode keeps the real implementation by default, so the happy-path tests
+// below are unaffected — only the failure test overrides a single call.
+vi.mock("@/lib/conversations", { spy: true });
 
 import { POST } from "./route";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function chatRequest(body: unknown) {
   return new Request("http://localhost/api/chat", {
@@ -47,5 +54,33 @@ describe("POST /api/chat", () => {
     const foreign = await createConversation("someone-else", "Not yours");
     const res = await POST(chatRequest({ conversationId: foreign.id, text: "hi" }));
     expect(res.status).toBe(404);
+  });
+
+  it("logs and does not crash when persisting the AI reply fails", async () => {
+    const { id } = await createConversation(userId, "Persistence hiccup");
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const mockedSaveMessage = vi.mocked(saveMessage);
+    const realSaveMessage = mockedSaveMessage.getMockImplementation()!;
+    // First call (the client message) goes through to the real implementation;
+    // the second call (the AI reply, made from onFinish) rejects.
+    mockedSaveMessage.mockImplementationOnce(realSaveMessage);
+    mockedSaveMessage.mockImplementationOnce(async () => {
+      throw new Error("simulated persistence failure");
+    });
+
+    const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+    expect(res.status).toBe(200);
+    await res.text(); // drain the stream so onFinish (and its failed save) runs
+
+    await vi.waitFor(() => {
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+    const [logMessage, loggedError] = consoleErrorSpy.mock.calls[0]!;
+    expect(logMessage).toContain(id);
+    expect(loggedError).toBeInstanceOf(Error);
+
+    const msgs = await loadMessages(id, userId);
+    expect(msgs.map((m) => m.sender)).toEqual(["client"]);
   });
 });

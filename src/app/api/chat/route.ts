@@ -45,7 +45,13 @@ export async function POST(req: Request): Promise<Response> {
       // `Promise<ModelMessage[]>` instead of a synchronous array) — await it.
       messages: await convertToModelMessages(uiMessages),
       onFinish: async ({ text: replyText }) => {
-        await saveMessage({ conversationId, userId, sender: "ai", text: replyText });
+        try {
+          await saveMessage({ conversationId, userId, sender: "ai", text: replyText });
+        } catch (error) {
+          // The stream already reached the client; without this log the reply
+          // would vanish silently (ai v6 swallows onFinish rejections).
+          console.error(`Failed to persist AI reply for conversation ${conversationId}`, error);
+        }
       },
     });
 
