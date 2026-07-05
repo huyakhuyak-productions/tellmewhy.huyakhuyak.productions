@@ -278,7 +278,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 `src/lib/crypto/key-provider.test.ts`:
 
 ```typescript
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EnvKeyProvider } from "./key-provider";
 import { generateDek } from "./envelope";
 
@@ -300,7 +300,14 @@ describe("EnvKeyProvider", () => {
   });
 
   it("rejects a missing or malformed KEK", () => {
-    expect(() => new EnvKeyProvider(undefined)).toThrow(/MASTER_KEK/);
+    // Passing undefined explicitly would trigger the JS default parameter
+    // (which reads the test env's MASTER_KEK) — stub the env instead.
+    vi.stubEnv("MASTER_KEK", "");
+    try {
+      expect(() => new EnvKeyProvider()).toThrow(/MASTER_KEK/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(() => new EnvKeyProvider("dG9vLXNob3J0")).toThrow(/32 bytes/);
   });
 });
