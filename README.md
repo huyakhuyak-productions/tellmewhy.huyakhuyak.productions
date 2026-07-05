@@ -70,10 +70,10 @@ AI_MOCK=1 bun run dev
 ## Privacy Model
 
 **Per-user envelope encryption at rest:**
-Every message body and conversation title is encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access.
+Every message body and conversation title is encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access. The wrapping goes through a swappable `KeyProvider` interface, so a KMS/Vault-backed provider can replace the env-based master key in production without re-encrypting any data.
 
 **Crypto-shredding on deletion:**
-When a user account is deleted, the master key row is destroyed. This immediately and permanently renders all of that user's data unreadable, including in backups.
+When a user account is deleted, that user's wrapped-key row is destroyed. This immediately and permanently renders all of their data unreadable, including in backups.
 
 **Plaintext exists only in memory:**
 Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored.
