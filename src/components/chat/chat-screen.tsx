@@ -46,6 +46,8 @@ export function ChatScreen({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isFirstRender = useRef(true);
 
+  const isBusy = status === "submitted" || status === "streaming";
+
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({
@@ -62,7 +64,7 @@ export function ChatScreen({
   }
 
   function submit() {
-    if (!draft.trim() || status === "streaming") return;
+    if (!draft.trim() || isBusy) return;
     sendMessage({ text: draft });
     setDraft("");
     if (textareaRef.current) {
@@ -148,7 +150,7 @@ export function ChatScreen({
           type="submit"
           aria-label="Send"
           className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-sm outline-none transition-[transform,background-color,opacity] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.94] disabled:pointer-events-none disabled:opacity-40"
-          disabled={status === "streaming"}
+          disabled={isBusy}
         >
           <svg viewBox="0 0 20 20" fill="none" className="size-[1.15rem]" aria-hidden>
             <path
