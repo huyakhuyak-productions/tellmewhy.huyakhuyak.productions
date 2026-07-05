@@ -1,26 +1,154 @@
 @import "tailwindcss";
+@import "streamdown/styles.css";
+
+/* Streamdown renders markdown with Tailwind utility classes; Tailwind v4
+   ignores node_modules by default, so register its dist as a scan source. */
+@source "../../node_modules/streamdown/dist";
+
+/*
+  tellmewhy — "twilight journal"
+  A private place to talk late at night. Dark mode is the hero: a deep
+  plum-ink surface that's easy on the eyes at 2am. Light mode is warm,
+  lilac-tinted paper. Periwinkle-indigo is the single accent, used with
+  restraint. The crisis frame-break breaks the calm into warmth, not alarm.
+*/
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f5fa;
+  --foreground: #201e29;
+  --muted: #eceaf3;
+  --muted-foreground: #6c6579;
+  --card: #ffffff;
+  --border: #e4e0ec;
+  --accent: #5457c4;
+  --accent-hover: #4b4eb4;
+  --accent-foreground: #ffffff;
+  --ring: #5457c4;
+
+  /* Crisis: warm, grounding — never a red alarm. */
+  --crisis: #fbefd9;
+  --crisis-foreground: #5f4514;
+  --crisis-muted: #8a6a2c;
+  --crisis-border: #ecd3a0;
+  --crisis-glow: rgba(226, 178, 92, 0.35);
+
+  /* Ambient nightlight glow behind the "room" screens. */
+  --glow: rgba(126, 122, 224, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #131218;
+    --foreground: #e6e2ec;
+    --muted: #201e29;
+    --muted-foreground: #9a93a6;
+    --card: #1a1922;
+    --border: #2b2836;
+    --accent: #9294ef;
+    --accent-hover: #a3a5f3;
+    --accent-foreground: #14131a;
+    --ring: #9294ef;
+
+    --crisis: #262017;
+    --crisis-foreground: #f2dcac;
+    --crisis-muted: #c9ac74;
+    --crisis-border: #4a3d22;
+    --crisis-glow: rgba(226, 178, 92, 0.18);
+
+    --glow: rgba(146, 148, 239, 0.16);
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-crisis: var(--crisis);
+  --color-crisis-foreground: var(--crisis-foreground);
+  --color-crisis-muted: var(--crisis-muted);
+  --color-crisis-border: var(--crisis-border);
   --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-newsreader);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--glow);
+  }
+  input,
+  textarea,
+  button {
+    font: inherit;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Soft nightlight cast at the top of the "room" screens (auth, list). */
+.ambient-room {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 60% at 50% -10%,
+    var(--glow) 0%,
+    transparent 60%
+  );
+}
+
+/* Message bubbles rise softly into place, like a thought surfacing. */
+@keyframes message-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.animate-message-rise {
+  animation: message-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Crisis card arrives with a calm, grounded rise — never a jolt. */
+@keyframes crisis-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-crisis-rise {
+  animation: crisis-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-message-rise,
+  .animate-crisis-rise {
+    animation: none;
+  }
 }
