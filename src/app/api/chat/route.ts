@@ -56,6 +56,11 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
 
+    // Persist the reply even if the client disconnects mid-stream:
+    // without this, onFinish only fires when the client consumes the
+    // full stream, and an abandoned tab loses the AI turn forever.
+    result.consumeStream();
+
     return result.toUIMessageStreamResponse({ headers: { "x-risk-level": riskLevel } });
   } catch (error) {
     if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
