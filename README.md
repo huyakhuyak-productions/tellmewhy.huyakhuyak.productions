@@ -73,10 +73,10 @@ AI_MOCK=1 bun run dev
 Every message body and conversation title is encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access. The wrapping goes through a swappable `KeyProvider` interface, so a KMS/Vault-backed provider can replace the env-based master key in production without re-encrypting any data.
 
 **Crypto-shredding on deletion:**
-When a user account is deleted, that user's wrapped-key row is destroyed. This immediately and permanently renders all of their data unreadable, including in backups.
+Destroying a user's wrapped-key row is the designed mechanism for account deletion: it immediately and permanently renders that user's data unreadable going forward. The underlying function (`shredUserKey`) is implemented and tested but is not yet wired to a user-facing deletion flow—self-serve account deletion ships with the account-management phase. Note that a database backup taken *before* the key row is destroyed still contains the wrapped DEK and remains decryptable with `MASTER_KEK`; shredding only guarantees unreadability going forward, unless the master key is rotated or key rows are excluded from backup retention.
 
 **Plaintext exists only in memory:**
-Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored.
+Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored. Message timestamps and risk-level flags are not encrypted—a database breach would reveal when conversations happened and which messages were flagged as crisis-level, but never their content.
 
 **OpenRouter data policies:**
 All LLM calls route through OpenRouter with strict per-request `data_collection: "deny"` headers. The OpenRouter account's global data policy must be configured to exclude logging and training providers before production use.
