@@ -13,10 +13,10 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.5",
+    "@ai-sdk/react": "^3.0.216",
     "@node-rs/argon2": "^2.0.2",
     "@openrouter/ai-sdk-provider": "^2.10.0",
-    "ai": "^7.0.4",
+    "ai": "^6",
     "better-auth": "^1.6.22",
     "drizzle-orm": "^0.45.2",
     "next": "16.2.9",
@@ -42,10 +42,6 @@
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.9"
   },
-  "ignoreScripts": [
-    "sharp",
-    "unrs-resolver"
-  ],
   "trustedDependencies": [
     "sharp",
     "unrs-resolver"
