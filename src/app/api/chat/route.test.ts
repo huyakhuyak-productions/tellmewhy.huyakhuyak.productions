@@ -50,6 +50,17 @@ describe("POST /api/chat", () => {
     expect(clientMsg.riskLevel).toBe("crisis");
   });
 
+  it("returns 400 (not a 500) for a malformed JSON body", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "not json",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("rejects a conversation the user does not own", async () => {
     const foreign = await createConversation("someone-else", "Not yours");
     const res = await POST(chatRequest({ conversationId: foreign.id, text: "hi" }));

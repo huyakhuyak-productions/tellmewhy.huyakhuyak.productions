@@ -16,7 +16,8 @@ export async function POST(req: Request): Promise<Response> {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
 
-  const parsed = bodySchema.safeParse(await req.json());
+  const body = await req.json().catch(() => null);
+  const parsed = bodySchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid body" }, { status: 400 });
   const { conversationId, text } = parsed.data;
 

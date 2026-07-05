@@ -14,7 +14,8 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const parsed = createSchema.safeParse(await req.json());
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid body" }, { status: 400 });
   const conversation = await createConversation(session.user.id, parsed.data.title);
   return Response.json(conversation, { status: 201 });
