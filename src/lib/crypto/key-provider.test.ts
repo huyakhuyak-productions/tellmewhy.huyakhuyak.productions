@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EnvKeyProvider } from "./key-provider";
 import { generateDek } from "./envelope";
 
@@ -20,7 +20,12 @@ describe("EnvKeyProvider", () => {
   });
 
   it("rejects a missing or malformed KEK", () => {
-    expect(() => new EnvKeyProvider(undefined)).toThrow(/MASTER_KEK/);
+    vi.stubEnv("MASTER_KEK", "");
+    try {
+      expect(() => new EnvKeyProvider()).toThrow(/MASTER_KEK/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(() => new EnvKeyProvider("dG9vLXNob3J0")).toThrow(/32 bytes/);
   });
 });
