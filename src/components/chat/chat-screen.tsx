@@ -4,17 +4,24 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
+import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
 import { MessageBubble } from "./message-bubble";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
 import { StatsRail, type ChatStats } from "./stats-rail";
 
-// Narrow the UI-message parts down to their text safely (the SDK's part union
-// isn't narrowed by a bare `.filter`, so a switch keeps TypeScript honest).
-function partsToText(parts: UIMessage["parts"]): string {
-  return parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+// The composer autosize lives outside the component so effects can re-measure
+// after a programmatic restore without becoming a hook dependency.
+function resizeComposer(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
 }
+
+// A failed send, kept as an object (not a plain string) so every failure gets
+// a fresh identity — consecutive identical failures must still re-run the
+// restore/focus effect below.
+type SendFailure = { kind: "rate-limit" | "generic" };
 
 export function ChatScreen({
   conversationId,
@@ -30,7 +37,26 @@ export function ChatScreen({
   stats: ChatStats;
 }) {
   const [crisis, setCrisis] = useState(false);
-  const { messages, sendMessage, status } = useChat({
+  const [sendFailure, setSendFailure] = useState<SendFailure | null>(null);
+  // Whether the most recent /api/chat response was the rate limiter's 429.
+  // The transport surfaces failures as a thrown Error carrying only the raw
+  // body text, so the custom fetch below (the established interception point,
+  // like x-risk-level) is the reliable place to read the status code.
+  const rateLimited = useRef(false);
+  const draftKey = `tellmewhy:draft:${conversationId}`;
+  // The failure handler runs inside the SDK's onError callback (an external
+  // event, not an effect — the lint-endorsed place to set state) but needs
+  // the freshest thread/setters, so each render re-syncs it through this ref
+  // (same pattern as conversationsRef below; refs must not be written during
+  // render, so the sync lives in its own effect).
+  const failureHandlerRef = useRef<() => void>(() => {});
+  const { messages, sendMessage, setMessages, status } = useChat({
+    // react-hooks/refs flags the rateLimited write inside the custom fetch
+    // below: it flags any ref touched in a closure built during render unless
+    // the prop is named on* — but that wrapper only ever runs at request time
+    // (the same moment the allowed onError/onFinish fire), never during
+    // render, so the write is safe.
+    // eslint-disable-next-line react-hooks/refs
     transport: new DefaultChatTransport({
       api: "/api/chat",
       prepareSendMessagesRequest: ({ messages }) => {
@@ -39,6 +65,7 @@ export function ChatScreen({
       },
       fetch: async (input, init) => {
         const res = await fetch(input, init);
+        rateLimited.current = res.status === 429;
         if (res.headers.get("x-risk-level") === "crisis") setCrisis(true);
         return res;
       },
@@ -48,6 +75,15 @@ export function ChatScreen({
       role: m.sender === "client" ? ("user" as const) : ("assistant" as const),
       parts: [{ type: "text" as const, text: m.text }],
     })),
+    onError: () => failureHandlerRef.current(),
+    onFinish: ({ isError, isAbort }) => {
+      // Clear the stashed hero draft only on a confirmed clean finish. This
+      // is the earliest signal that can no longer be followed by a failure of
+      // the same exchange — a first streamed token would be a false success
+      // when the stream dies mid-way (onFinish then fires with isError set).
+      // Waiting costs nothing: the key is only ever read on mount.
+      if (!isError && !isAbort) sessionStorage.removeItem(draftKey);
+    },
   });
 
   const router = useRouter();
@@ -76,17 +112,52 @@ export function ChatScreen({
 
   // Consume the first message the home hero stashed for this conversation. The
   // ref guard makes this fire exactly once even though `sendMessage`'s identity
-  // changes across renders (which would otherwise re-run this effect).
+  // changes across renders (which would otherwise re-run this effect). The key
+  // is deliberately NOT removed here: it is cleared on a confirmed clean finish
+  // (onFinish above) or when a failure restores the words into the composer
+  // (the failure handler below) — deleting it before the send would make a
+  // failed hand-off lose the writer's first message forever.
   useEffect(() => {
     if (sentDraft.current) return;
-    const key = `tellmewhy:draft:${conversationId}`;
-    const draft = sessionStorage.getItem(key);
-    if (draft) {
-      sessionStorage.removeItem(key);
+    const stashed = sessionStorage.getItem(draftKey);
+    if (stashed) {
       sentDraft.current = true;
-      sendMessage({ text: draft });
+      sendMessage({ text: stashed });
     }
-  }, [conversationId, sendMessage]);
+  }, [draftKey, sendMessage]);
+
+  // A failed send must never cost the writer their words. When the SDK
+  // reports an error, move the failed message (and any partial reply the
+  // dying stream left behind) out of the thread and back into the composer,
+  // then surface a calm notice. sendMessage always appends a fresh user
+  // message, so leaving the failed copy in the thread would duplicate it on
+  // retry. The thread read is safe: sendMessage pushes the user message and
+  // React commits (re-syncing this ref) before the request can possibly fail.
+  useEffect(() => {
+    failureHandlerRef.current = () => {
+      const failure = harvestFailedSend(messages);
+      if (failure) {
+        setDraft((current) => mergeRestoredDraft(failure.failedText, current));
+        setMessages(failure.messagesWithoutFailure);
+        // The words now live in the composer — the stashed hero draft (if
+        // any) is recovered and must not auto-resend on a later remount.
+        sessionStorage.removeItem(draftKey);
+      }
+      setSendFailure({ kind: rateLimited.current ? "rate-limit" : "generic" });
+    };
+  });
+
+  // Restoring words programmatically bypasses the textarea's onChange
+  // autosize, so re-measure — and hand focus back so the writer can edit or
+  // resend immediately. Keyed on the failure object's identity: it is fresh
+  // per failure, so consecutive identical failures still re-run this.
+  useEffect(() => {
+    if (!sendFailure) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    resizeComposer(el);
+    el.focus();
+  }, [sendFailure]);
 
   // The auto-title lands server-side some time after the stream closes (a
   // fire-and-forget classify+rename call — see /api/chat). Rather than hold
@@ -174,14 +245,9 @@ export function ChatScreen({
     isFirstRender.current = false;
   }, [messages, status]);
 
-  // Grow the composer with its content, up to a comfortable ceiling.
-  function resize(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }
-
   function submit() {
     if (!draft.trim() || isBusy) return;
+    setSendFailure(null);
     sendMessage({ text: draft });
     setDraft("");
     if (textareaRef.current) {
@@ -261,6 +327,28 @@ export function ChatScreen({
           onSubmit={onSend}
           className="cp-hairline sticky bottom-0 border-t bg-background/85 px-3 py-3 backdrop-blur-md lg:px-10 lg:pb-6 lg:pt-3"
         >
+          {sendFailure && (
+            <div
+              role="alert"
+              className="cp-notice animate-message-rise mx-auto mb-2.5 flex w-full max-w-[760px] items-center gap-3 rounded-2xl border px-4 py-2 shadow-sm"
+            >
+              <p className="flex-1 py-1 font-serif text-[0.9rem] italic leading-relaxed text-muted-foreground">
+                {sendFailure.kind === "rate-limit"
+                  ? "Take a breath — a moment before the next message."
+                  : "That didn't send. Your words are safe below — try again."}
+              </p>
+              {sendFailure.kind === "generic" && (
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!draft.trim() || isBusy}
+                  className="shrink-0 rounded-lg px-3.5 py-2.5 text-[0.85rem] font-medium text-accent outline-none transition-[background-color,opacity] duration-150 hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
+          )}
           <div className="mx-auto flex w-full max-w-[760px] items-end gap-2">
             <textarea
               ref={textareaRef}
@@ -269,7 +357,7 @@ export function ChatScreen({
               value={draft}
               onChange={(e) => {
                 setDraft(e.target.value);
-                resize(e.target);
+                resizeComposer(e.target);
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {

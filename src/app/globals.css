@@ -128,6 +128,16 @@
     border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
   }
   /*
+    Send-failure notice: the same quiet lilac family as cp-panel, softened —
+    a gentle aside above the composer that reads as care, never an alarm.
+  */
+  .cp-notice {
+    background: var(--card);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card));
+    border-color: var(--border);
+    border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  }
+  /*
     A drop target for a dragged conversation. At rest it is invisible; while a
     conversation hovers it warms toward the accent — a quiet welcome, never a
     flash. Only color/shadow move, so it reads calm and needs no motion guard.

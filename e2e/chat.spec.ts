@@ -73,6 +73,49 @@ test("the generated title shows on the home card after a client-side navigation"
   await expect(page.getByText("A quiet mock title")).toBeVisible();
 });
 
+test("a failed send keeps the words safe in the composer and can be retried", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  await startFromHero(page, "I had a strange day");
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  await expect(page.getByText("mock reply")).toBeVisible();
+
+  const composer = page.getByPlaceholder("What's on your mind?");
+  // Scoped to the form: Next's route announcer is also role="alert".
+  const notice = page.locator("form [role='alert']");
+
+  // Force the rate-limit shape deterministically (the real limiter needs 20
+  // sends): the 429 becomes the calm breath notice and the words come back.
+  await page.route("**/api/chat", (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Slow down a little" }),
+    }),
+  );
+  await composer.fill("The lamp is still on");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(notice).toContainText("Take a breath");
+  await expect(composer).toHaveValue("The lamp is still on");
+
+  // A generic failure offers the retry affordance — words still safe below.
+  await page.unroute("**/api/chat");
+  await page.route("**/api/chat", (route) => route.fulfill({ status: 500, body: "" }));
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(notice).toContainText("That didn't send");
+  await expect(composer).toHaveValue("The lamp is still on");
+
+  // Let the route through again: Try again delivers the same words for real.
+  await page.unroute("**/api/chat");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("The lamp is still on")).toBeVisible();
+  await expect(page.getByText("mock reply")).toHaveCount(2);
+  await expect(notice).toHaveCount(0);
+  await expect(composer).toHaveValue("");
+});
+
 test("rename a conversation from the home card menu", async ({ page }) => {
   await signUp(page);
 
