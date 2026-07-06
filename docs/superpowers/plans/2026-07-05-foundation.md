@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Encryption:** all message bodies and conversation titles encrypted AES-256-GCM with per-user DEK before Postgres. Ciphertext format: `v1.<iv b64>.<tag b64>.<data b64>`. DEKs wrapped by KEK from `MASTER_KEK` env (base64, 32 bytes) behind the `KeyProvider` interface.
-- **Crypto-shredding:** deleting a user's key row makes their data permanently unreadable — this is the deletion mechanism.
+- **Crypto-shredding:** deleting a user's key row makes their data permanently unreadable going forward — this is the deletion mechanism. (Backups taken before shredding still contain the wrapped DEK and remain decryptable with the master key until it rotates or key rows are excluded from backup retention — never claim backup coverage without one of those.)
 - **Passwords:** Argon2id ONLY, explicit params: `memoryCost: 65536` (64 MiB), `timeCost: 3`, `parallelism: 1`. Never library defaults.
 - **AI output:** always rendered through a markdown component (`streamdown`), never as a plain string.
 - **OpenRouter:** every request sends `provider: { data_collection: "deny" }` (no-logging providers only). Never claim "end-to-end encrypted" in any copy — the honest claim is "encrypted at rest; plaintext only in memory during inference".
@@ -278,7 +278,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 `src/lib/crypto/key-provider.test.ts`:
 
 ```typescript
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EnvKeyProvider } from "./key-provider";
 import { generateDek } from "./envelope";
 
@@ -300,7 +300,14 @@ describe("EnvKeyProvider", () => {
   });
 
   it("rejects a missing or malformed KEK", () => {
-    expect(() => new EnvKeyProvider(undefined)).toThrow(/MASTER_KEK/);
+    // Passing undefined explicitly would trigger the JS default parameter
+    // (which reads the test env's MASTER_KEK) — stub the env instead.
+    vi.stubEnv("MASTER_KEK", "");
+    try {
+      expect(() => new EnvKeyProvider()).toThrow(/MASTER_KEK/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(() => new EnvKeyProvider("dG9vLXNob3J0")).toThrow(/32 bytes/);
   });
 });
@@ -599,11 +606,11 @@ Run: `bun run test src/lib/password.test.ts` — expected: FAIL (module not foun
 `src/lib/password.ts`:
 
 ```typescript
-import { hash, verify, Algorithm } from "@node-rs/argon2";
+import { hash, verify } from "@node-rs/argon2";
 
 // OWASP-recommended Argon2id, explicit params — never library defaults.
 const ARGON2_OPTIONS = {
-  algorithm: Algorithm.Argon2id,
+  algorithm: 2, // Argon2id — numeric literal because @node-rs/argon2 exports Algorithm as an ambient const enum, unusable under isolatedModules (TS2748)
   memoryCost: 65536, // 64 MiB
   timeCost: 3,
   parallelism: 1,
