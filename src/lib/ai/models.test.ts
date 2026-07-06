@@ -1,7 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
 import { getChatModel, getClassifierModel, getTitleModel } from "./models";
+
+describe("AI_MOCK production guard", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("throws at import time when AI_MOCK=1 and NODE_ENV=production", async () => {
+    // AI_MOCK=1 is set globally in test setup; module-scope code only re-runs
+    // on a fresh import, so force one via resetModules. vi.stubEnv (rather than
+    // a direct assignment) sidesteps NODE_ENV's read-only type.
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "production");
+    await expect(import("./models")).rejects.toThrow("AI_MOCK must not be enabled in production");
+  });
+});
 
 describe("mock chat model (AI_MOCK=1 in test setup)", () => {
   it("returns deterministic text without network access", async () => {

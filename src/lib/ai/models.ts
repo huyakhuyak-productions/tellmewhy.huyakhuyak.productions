@@ -2,6 +2,12 @@ import { createOpenRouter, type OpenRouterChatSettings } from "@openrouter/ai-sd
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 
+// A misconfigured production deploy must never serve canned empathy instead
+// of a real model — fail loudly at import time rather than silently mocking.
+if (process.env.AI_MOCK === "1" && process.env.NODE_ENV === "production") {
+  throw new Error("AI_MOCK must not be enabled in production");
+}
+
 // Privacy: refuse providers that log or train on prompts. This ships with
 // EVERY OpenRouter request — it is part of the product's trust contract.
 //
