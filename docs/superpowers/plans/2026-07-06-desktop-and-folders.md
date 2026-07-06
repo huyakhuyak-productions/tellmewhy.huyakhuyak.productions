@@ -8,7 +8,7 @@
 
 **Tech Stack:** unchanged — Next.js (App Router) + Bun, Postgres/Drizzle, existing crypto + auth + AI modules, Tailwind twilight-journal tokens, Vitest + Playwright.
 
-**Prerequisite:** `feature/foundation` merged into `develop`; this plan executes on a new branch `feature/desktop-and-folders` cut from `develop`.
+**Prerequisite:** Foundation merged (done). This plan executes DIRECTLY ON `main` — the user has declared main the only branch for this repo (no feature branches). The compensating discipline: full suite + tsc green before every commit.
 
 ## Global Constraints
 
@@ -24,21 +24,11 @@
 
 ---
 
-### Task 0: Branch + archive the design reference
+### Task 0: Preflight
 
-**Files:**
-- Create: `docs/superpowers/specs/assets/2026-07-06-desktop-mockups.html` (copied)
+- [ ] **Step 1:** Confirm you are on `main` (`git branch --show-current`) — the only branch in this repo. Do NOT create a feature branch.
 
-- [ ] **Step 1:** Confirm `feature/foundation` is merged and cut the branch:
-
-```bash
-git switch develop
-```
-```bash
-git switch --create feature/desktop-and-folders
-```
-
-- [ ] **Step 2:** Verify the archived design reference exists (it was committed to `develop` before this plan executes; the original scratchpad copy was session-temporary and is gone):
+- [ ] **Step 2:** Verify the archived design reference exists (committed with the Foundation merge; the original scratchpad copy was session-temporary and is gone):
 
 ```bash
 ls docs/superpowers/specs/assets/2026-07-06-desktop-mockups.html
