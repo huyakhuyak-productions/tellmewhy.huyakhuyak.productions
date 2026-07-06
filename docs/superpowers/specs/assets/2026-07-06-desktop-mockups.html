@@ -1,0 +1,2089 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tellmewhy — desktop directions</title>
+<style>
+  /* ============================================================
+     tellmewhy — "twilight journal" tokens (from src/app/globals.css)
+     Dark mode is the hero. Light mode is warm, lilac-tinted paper.
+     Tokens are reused verbatim; only shadows/scrim are added for
+     desktop depth (the shipped UI never needed them).
+     ============================================================ */
+  :root[data-theme="dark"] {
+    --background: #131218;
+    --foreground: #e6e2ec;
+    --muted: #201e29;
+    --muted-foreground: #9a93a6;
+    --card: #1a1922;
+    --border: #2b2836;
+    --accent: #9294ef;
+    --accent-hover: #a3a5f3;
+    --accent-foreground: #14131a;
+    --ring: #9294ef;
+    --crisis: #262017;
+    --crisis-foreground: #f2dcac;
+    --crisis-muted: #c9ac74;
+    --crisis-border: #4a3d22;
+    --crisis-glow: rgba(226, 178, 92, 0.18);
+    --glow: rgba(146, 148, 239, 0.16);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 10px 34px -14px rgba(0, 0, 0, 0.7);
+    --scrim: rgba(6, 6, 10, 0.62);
+    --rail: #17161e;
+  }
+  :root[data-theme="light"] {
+    --background: #f7f5fa;
+    --foreground: #201e29;
+    --muted: #eceaf3;
+    --muted-foreground: #6c6579;
+    --card: #ffffff;
+    --border: #e4e0ec;
+    --accent: #5457c4;
+    --accent-hover: #4b4eb4;
+    --accent-foreground: #ffffff;
+    --ring: #5457c4;
+    --crisis: #fbefd9;
+    --crisis-foreground: #5f4514;
+    --crisis-muted: #8a6a2c;
+    --crisis-border: #ecd3a0;
+    --crisis-glow: rgba(226, 178, 92, 0.35);
+    --glow: rgba(126, 122, 224, 0.22);
+    --shadow-sm: 0 1px 2px rgba(32, 24, 48, 0.06);
+    --shadow-md: 0 12px 34px -16px rgba(32, 24, 48, 0.28);
+    --scrim: rgba(40, 34, 58, 0.34);
+    --rail: #f1eef7;
+  }
+
+  :root {
+    --font-serif: "Newsreader", "Iowan Old Style", "Palatino Linotype",
+      Palatino, Georgia, "Times New Roman", serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+      sans-serif;
+    --bar-h: 56px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+  ::selection { background: var(--glow); }
+  a { color: var(--accent); }
+
+  /* ---------- Sticky switcher ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    height: var(--bar-h);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 20px;
+    background: color-mix(in srgb, var(--background) 82%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .wordmark {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .wordmark .dot { color: var(--accent); }
+  .wordmark .tag {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 13px;
+    color: var(--muted-foreground);
+    letter-spacing: 0;
+  }
+  .tabs {
+    display: flex;
+    gap: 3px;
+    margin: 0 auto;
+    padding: 3px;
+    background: var(--muted);
+    border-radius: 12px;
+  }
+  .tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 9px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.18s ease, background-color 0.18s ease;
+  }
+  .tab:hover { color: var(--foreground); }
+  .tab.active {
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: var(--shadow-sm);
+  }
+  .theme-toggle {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: color 0.18s ease, border-color 0.18s ease, transform 0.1s ease;
+  }
+  .theme-toggle:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .theme-toggle:active { transform: scale(0.94); }
+  .theme-toggle svg { width: 18px; height: 18px; }
+  :root[data-theme="dark"] .icon-sun { display: block; }
+  :root[data-theme="dark"] .icon-moon { display: none; }
+  :root[data-theme="light"] .icon-sun { display: none; }
+  :root[data-theme="light"] .icon-moon { display: block; }
+
+  /* ---------- Rationale band ---------- */
+  .band {
+    position: sticky;
+    top: var(--bar-h);
+    z-index: 55;
+    padding: 12px 22px 13px;
+    background: color-mix(in srgb, var(--background) 90%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .band-inner { max-width: 1280px; margin: 0 auto; display: flex; gap: 16px; align-items: baseline; }
+  .band-name {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .band-rat {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+    max-width: 74ch;
+  }
+  .rat { display: none; }
+  .rat.active { display: block; }
+
+  /* ---------- Stage ---------- */
+  .stage {
+    position: relative;
+    min-height: calc(100vh - var(--bar-h) - 52px);
+  }
+  .variant { display: none; }
+  .variant.active { display: block; }
+
+  /* Ambient nightlight, like .ambient-room in the app */
+  .ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(120% 55% at 50% -8%, var(--glow) 0%, transparent 62%);
+  }
+
+  /* ---------- Shared chat atoms ---------- */
+  .stream { display: flex; flex-direction: column; gap: 14px; }
+  .row { display: flex; }
+  .row.them { justify-content: flex-start; }
+  .row.me { justify-content: flex-end; }
+  .bubble {
+    max-width: 86%;
+    font-size: 15.5px;
+    line-height: 1.62;
+    padding: 11px 16px;
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+    text-wrap: pretty;
+  }
+  .bubble.them {
+    background: var(--muted);
+    color: var(--foreground);
+    border-bottom-left-radius: 6px;
+  }
+  .bubble.me {
+    background: var(--accent);
+    color: var(--accent-foreground);
+    border-bottom-right-radius: 6px;
+    max-width: 80%;
+  }
+  .bubble em { font-family: var(--font-serif); font-style: italic; }
+
+  .whisper {
+    font-family: var(--font-serif);
+    font-style: italic;
+    color: var(--muted-foreground);
+    font-size: 15px;
+  }
+  .daymark {
+    align-self: center;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    padding: 2px 0 4px;
+  }
+
+  /* Composer */
+  .composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .composer .field {
+    flex: 1;
+    font-size: 15.5px;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+    padding: 6px 6px;
+    min-height: 24px;
+  }
+  .send {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-foreground);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+  }
+  .send svg { width: 19px; height: 19px; }
+
+  /* Conversation rail (journal TOC) */
+  .rail {
+    background: var(--rail);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .rail-head {
+    padding: 22px 20px 14px;
+  }
+  .rail-title {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .rail-sub { font-size: 12.5px; color: var(--muted-foreground); margin-top: 3px; }
+  .rail-list { padding: 4px 12px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .conv {
+    display: block;
+    text-align: left;
+    width: 100%;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    padding: 11px 12px;
+    border-radius: 12px;
+    color: inherit;
+    font: inherit;
+    transition: background-color 0.16s ease;
+  }
+  .conv:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+  .conv.sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .conv .ct { font-size: 14px; font-weight: 500; letter-spacing: -0.005em; }
+  .conv.sel .ct { color: var(--foreground); }
+  .conv .cd { font-size: 11.5px; color: var(--muted-foreground); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .rail-foot { margin-top: auto; padding: 14px; border-top: 1px solid var(--border); }
+  .newbtn {
+    width: 100%;
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.16s ease;
+  }
+  .newbtn:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+  .chat-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 26px;
+    height: 58px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 80%, transparent);
+    backdrop-filter: blur(10px);
+  }
+  .chat-head .ch-title { font-family: var(--font-serif); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .chat-head .ch-sub { font-size: 12px; color: var(--muted-foreground); }
+  .ghost-btn {
+    appearance: none;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 13px;
+    cursor: pointer;
+    transition: color 0.16s ease, border-color 0.16s ease;
+  }
+  .ghost-btn:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+
+  /* Crisis / support card — warm, grounding, never alarm */
+  .support {
+    border: 1px solid var(--crisis-border);
+    background: var(--crisis);
+    color: var(--crisis-foreground);
+    border-radius: 22px;
+    padding: 20px 22px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 22px 54px -18px var(--crisis-glow);
+  }
+  .support .s-row { display: flex; gap: 14px; align-items: flex-start; }
+  .support svg.heart { width: 20px; height: 20px; color: var(--crisis-muted); flex: none; margin-top: 2px; }
+  .support .s-lead { font-weight: 600; font-size: 15px; line-height: 1.4; }
+  .support .s-body { font-size: 13px; color: var(--crisis-muted); margin-top: 6px; line-height: 1.55; }
+  .support ul { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; font-size: 13.5px; }
+  .support a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--crisis-border); }
+  .support .s-dismiss {
+    margin-top: 16px;
+    width: 100%;
+    appearance: none;
+    border: 1px solid var(--crisis-border);
+    background: transparent;
+    color: var(--crisis-foreground);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 10px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+
+  /* =========================================================
+     VARIANT 1 — Focused column
+     ========================================================= */
+  .v-focus .fc-wrap {
+    position: relative;
+    height: calc(100vh - var(--bar-h) - 52px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .fc-railtab {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 8px 12px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    z-index: 3;
+  }
+  .fc-railtab:hover { color: var(--foreground); }
+  .fc-railtab svg { width: 15px; height: 15px; }
+  .fc-col {
+    width: 100%;
+    max-width: 680px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 24px;
+  }
+  .fc-intro { text-align: center; padding: 40px 0 26px; }
+  .fc-intro .h {
+    font-family: var(--font-serif);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .fc-intro .s { color: var(--muted-foreground); font-size: 13.5px; margin-top: 6px; }
+  .fc-stream { flex: 1; overflow-y: auto; padding: 6px 4px 20px; }
+  .fc-composer { padding: 6px 0 26px; }
+
+  /* slide-over conversations */
+  .slideover-scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
+    z-index: 8;
+  }
+  .slideover-scrim.open { opacity: 1; pointer-events: auto; }
+  .slideover {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 320px;
+    background: var(--rail);
+    border-right: 1px solid var(--border);
+    transform: translateX(-101%);
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 9;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-md);
+  }
+  .slideover.open { transform: translateX(0); }
+
+  /* =========================================================
+     VARIANT 2 — Journal spread
+     ========================================================= */
+  .v-journal .jr-grid {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - var(--bar-h) - 52px);
+  }
+  .jr-chat { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .jr-stream { flex: 1; overflow-y: auto; padding: 26px 0; }
+  .jr-inner { max-width: 720px; margin: 0 auto; padding: 0 30px; }
+  .jr-composer-wrap { padding: 14px 0 20px; border-top: 1px solid var(--border); background: var(--background); }
+  .jr-support-dock {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 96px;
+    width: min(440px, calc(100% - 60px));
+    z-index: 5;
+  }
+
+  /* =========================================================
+     VARIANT 3 — Companion desk
+     ========================================================= */
+  .v-desk .dk-grid {
+    display: grid;
+    grid-template-columns: 264px 1fr 306px;
+    height: calc(100vh - var(--bar-h) - 52px);
+  }
+  .dk-chat { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .dk-stream { flex: 1; overflow-y: auto; padding: 24px 0; }
+  .dk-inner { max-width: 660px; margin: 0 auto; padding: 0 28px; }
+  .dk-composer-wrap { padding: 14px 0 18px; border-top: 1px solid var(--border); }
+  .dk-composer-inner { max-width: 660px; margin: 0 auto; padding: 0 28px; }
+  .dk-aside {
+    border-left: 1px solid var(--border);
+    background: var(--rail);
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+  }
+  .aside-eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    font-weight: 600;
+  }
+  .panel {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 16px;
+    padding: 15px 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .panel .p-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel .p-note { font-size: 12px; color: var(--muted-foreground); line-height: 1.55; margin-top: 7px; }
+  .pill-soon {
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--crisis-muted); flex: none; }
+  .spark { margin-top: 12px; display: block; width: 100%; height: 46px; }
+  .mood-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .note-scrap {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted-foreground);
+    padding-left: 12px;
+    border-left: 2px solid var(--border);
+    margin-top: 12px;
+  }
+
+  /* =========================================================
+     VARIANT 4 — Evening room
+     ========================================================= */
+  .v-evening .ev-wrap {
+    position: relative;
+    height: calc(100vh - var(--bar-h) - 52px);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    overflow: hidden;
+  }
+  .ev-glow {
+    position: absolute;
+    left: 50%;
+    bottom: -18%;
+    transform: translateX(-50%);
+    width: 780px;
+    height: 620px;
+    background: radial-gradient(50% 50% at 50% 60%, var(--glow) 0%, transparent 70%);
+    pointer-events: none;
+    filter: blur(6px);
+  }
+  .ev-mark {
+    position: absolute;
+    top: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .ev-mark .em-time { font-size: 12px; color: var(--muted-foreground); letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
+  .ev-mark .em-h { font-family: var(--font-serif); font-size: 21px; font-weight: 500; margin-top: 4px; letter-spacing: -0.01em; }
+  .ev-col {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 620px;
+    padding: 0 24px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .ev-stream { display: flex; flex-direction: column; gap: 14px; }
+  .ev-composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 14px 14px 14px 20px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    background: var(--card);
+    border-radius: 22px;
+    box-shadow: var(--shadow-md);
+  }
+  .ev-composer .field { flex: 1; font-size: 16.5px; color: var(--muted-foreground); font-family: var(--font-serif); font-style: italic; padding: 8px 0; }
+  .ev-composer .send { width: 46px; height: 46px; border-radius: 16px; }
+
+  /* =========================================================
+     VARIANT 5 — Letters (correspondence, not chat)
+     ========================================================= */
+  .v-letter .lt-scroll {
+    height: calc(100vh - var(--bar-h) - 52px);
+    overflow-y: auto;
+  }
+  .lt-page {
+    max-width: 720px;
+    margin: 36px auto 70px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 60px 78px 54px;
+    box-shadow: var(--shadow-md);
+  }
+  .lt-date {
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .lt-letter { margin-top: 38px; }
+  .lt-from {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .lt-letter.them .lt-body {
+    font-family: var(--font-serif);
+    font-size: 17.5px;
+    line-height: 1.75;
+  }
+  .lt-letter.them .lt-body p { margin: 0 0 14px; }
+  .lt-letter.them .lt-body p:last-child { margin-bottom: 0; }
+  .lt-letter.me {
+    padding-left: 30px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  }
+  .lt-letter.me .lt-from { color: var(--accent); }
+  .lt-letter.me .lt-body { font-size: 15px; line-height: 1.7; }
+  .lt-flourish {
+    text-align: center;
+    margin-top: 38px;
+    color: var(--muted-foreground);
+    letter-spacing: 0.6em;
+    font-size: 12px;
+  }
+  .lt-desk {
+    margin-top: 34px;
+    border-top: 1px solid var(--border);
+    padding-top: 28px;
+  }
+  .lt-desk .lt-prompt {
+    font-family: var(--font-serif);
+    font-style: italic;
+    color: var(--muted-foreground);
+    font-size: 16px;
+    line-height: 1.7;
+    min-height: 64px;
+  }
+  .lt-desk-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+  }
+  .lt-desk-note { font-size: 12px; color: var(--muted-foreground); }
+  .lt-sendbtn {
+    appearance: none;
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-foreground);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* =========================================================
+     VARIANT 6 — Timeline river (one stream, scrub by time)
+     ========================================================= */
+  .v-river .rv-grid {
+    display: grid;
+    grid-template-columns: 208px 1fr;
+    height: calc(100vh - var(--bar-h) - 52px);
+  }
+  .rv-scrub {
+    border-right: 1px solid var(--border);
+    background: var(--rail);
+    padding: 26px 0 18px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .rv-scrub-title {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 600;
+    padding: 0 20px 4px;
+    letter-spacing: -0.01em;
+  }
+  .rv-scrub-sub { font-size: 11.5px; color: var(--muted-foreground); padding: 0 20px 16px; }
+  .rv-month {
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    padding: 12px 20px 4px;
+    font-weight: 600;
+  }
+  .rv-tick {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    font-size: 12.5px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .rv-tick:hover { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 4%, transparent); }
+  .rv-tick.cur { color: var(--foreground); font-weight: 500; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .rv-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .rv-dot.calm { background: var(--accent); }
+  .rv-dot.mid { background: color-mix(in srgb, var(--accent) 45%, var(--muted-foreground)); }
+  .rv-dot.heavy { background: var(--crisis-muted); }
+  .rv-stream { overflow-y: auto; padding: 36px 0 40px; }
+  .rv-inner { max-width: 640px; margin: 0 auto; padding: 0 40px; }
+  .rv-days { position: relative; padding-left: 34px; }
+  .rv-days::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--border);
+  }
+  .rv-day { position: relative; padding-bottom: 34px; }
+  .rv-node {
+    position: absolute;
+    left: -34px;
+    top: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--background);
+    box-sizing: border-box;
+  }
+  .rv-day.heavy .rv-node { border-color: var(--crisis-muted); }
+  .rv-daylabel {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .rv-mood {
+    font-size: 10.5px;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-weight: 500;
+    padding: 1px 9px;
+    border-radius: 999px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .rv-day.heavy .rv-mood { color: var(--crisis-muted); background: color-mix(in srgb, var(--crisis-muted) 14%, transparent); }
+  .rv-entries { margin-top: 12px; display: flex; flex-direction: column; gap: 11px; }
+  .rv-entry { font-size: 14.5px; line-height: 1.62; max-width: 60ch; }
+  .rv-entry .who {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    margin-bottom: 2px;
+  }
+  .rv-entry.me .who { color: var(--accent); }
+  .rv-entry.them { font-family: var(--font-serif); font-size: 15.5px; }
+  .rv-composer-wrap { padding: 4px 0 0 34px; }
+
+  /* =========================================================
+     VARIANT 7 — Card garden (bento landing + chat sheet)
+     ========================================================= */
+  .v-garden .gd-wrap {
+    position: relative;
+    height: calc(100vh - var(--bar-h) - 52px);
+    overflow: hidden;
+  }
+  .gd-scrollarea { height: 100%; overflow-y: auto; }
+  .gd-grid {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 26px 28px 40px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 158px;
+    gap: 14px;
+  }
+  .gd-head { grid-column: 1 / -1; align-self: end; padding: 6px 4px 2px; display: flex; align-items: baseline; justify-content: space-between; }
+  .gd-head .h { font-family: var(--font-serif); font-size: 24px; font-weight: 500; letter-spacing: -0.01em; }
+  .gd-head .s { font-size: 12.5px; color: var(--muted-foreground); }
+  .tile {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 18px;
+    padding: 18px 19px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    transition: border-color 0.16s ease, transform 0.16s ease;
+  }
+  .tile.clickable { cursor: pointer; }
+  .tile.clickable:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); transform: translateY(-1px); }
+  .tile .t-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    font-weight: 600;
+  }
+  .tile .t-title { font-size: 14.5px; font-weight: 600; margin-top: 8px; letter-spacing: -0.005em; }
+  .tile .t-body { font-size: 12.5px; color: var(--muted-foreground); line-height: 1.55; margin-top: 6px; }
+  .tile .t-date { margin-top: auto; font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .tile.start {
+    grid-column: span 2;
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    justify-content: center;
+  }
+  .tile.start .st-q {
+    font-family: var(--font-serif);
+    font-size: 21px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.4;
+  }
+  .tile.start .st-cta {
+    margin-top: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .tile.mood { grid-column: span 2; }
+  .tile.mood .spark { margin-top: auto; height: 40px; }
+  .tile.note-tile .note-scrap { margin-top: 10px; }
+  .gd-scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
+    z-index: 8;
+  }
+  .gd-scrim.open { opacity: 1; pointer-events: auto; }
+  .gd-sheet {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.98);
+    width: min(720px, calc(100% - 80px));
+    height: min(560px, calc(100% - 60px));
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 9;
+    overflow: hidden;
+  }
+  .gd-sheet.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+  .gd-sheet .chat-head { flex: none; }
+  .gd-sheet-stream { flex: 1; overflow-y: auto; padding: 22px 28px; }
+  .gd-sheet-foot { padding: 12px 28px 20px; }
+
+  /* =========================================================
+     VARIANT 8 — Guided session (one question at a time)
+     ========================================================= */
+  .v-guided .gu-wrap {
+    position: relative;
+    height: calc(100vh - var(--bar-h) - 52px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+  .gu-ribbon {
+    display: flex;
+    gap: 8px;
+    padding: 24px 28px 0;
+    justify-content: center;
+    flex-wrap: wrap;
+    max-width: 900px;
+    position: relative;
+    z-index: 2;
+  }
+  .gu-crumb {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 999px;
+    padding: 5px 13px;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: var(--shadow-sm);
+  }
+  .gu-crumb.cur {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  }
+  .gu-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 760px;
+    padding: 0 32px 90px;
+    text-align: center;
+    gap: 30px;
+    position: relative;
+    z-index: 2;
+  }
+  .gu-count {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .gu-q {
+    font-family: var(--font-serif);
+    font-size: 33px;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .gu-answer {
+    width: 100%;
+    max-width: 560px;
+    border-bottom: 1.5px solid var(--border);
+    font-size: 16.5px;
+    color: var(--muted-foreground);
+    text-align: left;
+    padding: 8px 4px 12px;
+  }
+  .gu-hint { font-size: 12px; color: var(--muted-foreground); }
+  .gu-escape {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+  }
+
+  /* =========================================================
+     VARIANT 9 — Composite (the ship direction)
+     Frame from Desk, reading-first center from Journal,
+     home screen from Guided + Garden. Rails recede; the
+     conversation owns the screen.
+     ========================================================= */
+  .cp-wrap {
+    position: relative;
+    height: calc(100vh - var(--bar-h) - 52px);
+  }
+  .cp-subnav {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    background: var(--muted);
+    border-radius: 11px;
+    box-shadow: var(--shadow-sm);
+  }
+  .cp-subnav .sub {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.16s ease, background-color 0.16s ease;
+  }
+  .cp-subnav .sub.active { background: var(--card); color: var(--foreground); }
+  .cp-screen { display: none; height: 100%; }
+  .cp-screen.active { display: block; }
+
+  /* --- 09a Home: guided hero + a few garden blocks --- */
+  .cp-home {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 44px;
+    padding: 56px 32px 36px;
+    position: relative;
+    overflow-y: auto;
+  }
+  .cp-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    width: 100%;
+    max-width: 680px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  .cp-hero .cp-eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .cp-hero .cp-q {
+    font-family: var(--font-serif);
+    font-size: 31px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  /* Underline-only hero field: no box, no fill — an open line to write on. */
+  .cp-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 600px;
+    border-bottom: 1.5px solid var(--border);
+    padding: 2px 2px 10px;
+    transition: border-color 0.22s ease, box-shadow 0.22s ease;
+  }
+  .cp-line:focus-within {
+    border-bottom-color: var(--accent);
+    box-shadow: 0 0.5px 0 var(--accent); /* warms + thickens, no glow */
+  }
+  .cp-line input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    outline: none;
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 19px;
+    color: var(--foreground);
+    padding: 4px 2px;
+  }
+  .cp-line input::placeholder { color: var(--muted-foreground); opacity: 0.85; }
+  .cp-line-send {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: color 0.18s ease;
+  }
+  .cp-line-send svg { width: 19px; height: 19px; }
+  .cp-line:focus-within .cp-line-send,
+  .cp-line-send:hover { color: var(--accent); }
+  .cp-hero .cp-hint { font-size: 12px; color: var(--muted-foreground); }
+  .cp-recent {
+    width: 100%;
+    max-width: 880px;
+    position: relative;
+    z-index: 2;
+  }
+  .cp-recent .cp-recent-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 4px 10px;
+  }
+  .cp-recent .lbl {
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    font-weight: 600;
+  }
+  .cp-recent .all {
+    font-size: 12.5px;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    transition: color 0.16s ease;
+  }
+  .cp-recent .all:hover { color: var(--accent); }
+  .cp-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .cp-cards .tile { min-height: 126px; }
+  /* Folder filter chips: quiet text, one gently lit. */
+  .cp-filters {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-bottom: 18px;
+  }
+  .cp-chip {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    border-radius: 999px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+  }
+  .cp-chip:hover { color: var(--foreground); background: var(--muted); }
+  .cp-chip.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  /* Quiet folder tag on a recent card. */
+  .tile .t-top { display: flex; align-items: center; gap: 8px; }
+  .t-folder {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--muted-foreground);
+    border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+  }
+
+  /* --- 09b Conversation: desk frame, journal-priority center --- */
+  .cp-grid {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr) 280px;
+    height: 100%;
+  }
+  /* Rails recede: no fills, faint separators, quieter type. */
+  .cp-rail {
+    border-right: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+    padding: 52px 10px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .cp-rail .rail-title {
+    font-size: 12px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    padding: 0 12px 8px;
+  }
+  /* Folder groups in the rail: structure without noise. */
+  .cp-folder-h {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
+    padding: 14px 12px 3px;
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.16s ease;
+  }
+  .cp-folder-h:hover { color: var(--muted-foreground); }
+  .cp-folder-h svg { width: 8px; height: 8px; flex: none; opacity: 0.7; }
+  .cp-newfolder {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11.5px;
+    color: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
+    padding: 8px 12px 2px;
+    cursor: pointer;
+    transition: color 0.16s ease;
+  }
+  .cp-newfolder:hover { color: var(--accent); }
+  .cp-rail .conv { padding: 9px 12px; }
+  .cp-rail .conv .ct { font-size: 13px; font-weight: 400; color: var(--muted-foreground); }
+  .cp-rail .conv.sel .ct { color: var(--foreground); font-weight: 500; }
+  .cp-rail .conv .cd { font-size: 11px; }
+  .cp-rail .rail-foot { margin-top: auto; padding: 12px 4px 0; border-top: 0; }
+  .cp-rail .newbtn { background: transparent; box-shadow: none; color: var(--muted-foreground); border-color: color-mix(in srgb, var(--border) 75%, transparent); }
+  .cp-rail .newbtn:hover { color: var(--foreground); }
+  .cp-aside {
+    border-left: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+    padding: 52px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+  }
+  .cp-aside .panel {
+    background: color-mix(in srgb, var(--card) 55%, transparent);
+    box-shadow: none;
+    border-color: color-mix(in srgb, var(--border) 75%, transparent);
+  }
+  .cp-aside .p-note { font-size: 11.5px; }
+
+  /* Center: the star. Wide reading column, generous rhythm. */
+  .cp-chat { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .cp-chat-head {
+    padding: 48px 40px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  }
+  .cp-chat-head .inner { max-width: 760px; margin: 0 auto; width: 100%; display: flex; align-items: baseline; gap: 12px; }
+  .cp-chat-head .ch-title { font-family: var(--font-serif); font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  .cp-chat-head .ch-sub { font-size: 12px; color: var(--muted-foreground); }
+  .cp-stream { flex: 1; overflow-y: auto; padding: 30px 40px 20px; }
+  .cp-stream-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  /* Short exchanges keep light bubble chrome. */
+  .cp-stream .bubble { font-size: 15.5px; }
+  .cp-stream .bubble.them { max-width: 76%; }
+  .cp-stream .bubble.me { max-width: 72%; }
+  /* Long user reflection: tinted panel, body-color text — not a wall of accent. */
+  .cp-me-long {
+    align-self: flex-end;
+    max-width: 88%;
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+    border-radius: 18px;
+    border-bottom-right-radius: 6px;
+    padding: 18px 22px;
+    font-size: 15.5px;
+    line-height: 1.7;
+    box-shadow: var(--shadow-sm);
+  }
+  .cp-me-long p { margin: 0 0 13px; }
+  .cp-me-long p:last-child { margin-bottom: 0; }
+  /* Long AI reflection: a passage, not a bubble. */
+  .cp-passage {
+    align-self: flex-start;
+    max-width: 66ch;
+    padding: 6px 0 6px 24px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  }
+  .cp-passage .p-from {
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    margin-bottom: 10px;
+  }
+  .cp-passage .p-text {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.78;
+  }
+  .cp-passage .p-text p { margin: 0 0 15px; }
+  .cp-passage .p-text p:last-child { margin-bottom: 0; }
+  .cp-composer-wrap {
+    padding: 12px 40px 22px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  }
+  .cp-composer-inner { max-width: 760px; margin: 0 auto; }
+  .cp-support-dock {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 100px;
+    width: min(460px, calc(100% - 80px));
+    z-index: 5;
+  }
+
+  @media (max-width: 920px) {
+    .band-rat { display: none; }
+    .v-desk .dk-grid { grid-template-columns: 220px 1fr; }
+    .v-desk .dk-aside { display: none; }
+    .v-journal .jr-grid { grid-template-columns: 240px 1fr; }
+    .v-river .rv-grid { grid-template-columns: 150px 1fr; }
+    .gd-grid { grid-template-columns: repeat(2, 1fr); }
+    .lt-page { padding: 40px 30px; }
+    .gu-q { font-size: 25px; }
+    .cp-grid { grid-template-columns: 200px 1fr; }
+    .cp-aside { display: none; }
+    .cp-cards { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="topbar">
+  <div class="wordmark">tellmewhy<span class="dot">·</span><span class="tag">desktop directions</span></div>
+  <div class="tabs" role="tablist" aria-label="Design directions">
+    <button class="tab active" data-v="focus" role="tab">Focused</button>
+    <button class="tab" data-v="journal" role="tab">Journal</button>
+    <button class="tab" data-v="desk" role="tab">Desk</button>
+    <button class="tab" data-v="evening" role="tab">Evening</button>
+    <button class="tab" data-v="letter" role="tab">Letters</button>
+    <button class="tab" data-v="river" role="tab">River</button>
+    <button class="tab" data-v="garden" role="tab">Garden</button>
+    <button class="tab" data-v="guided" role="tab">Guided</button>
+    <button class="tab" data-v="comp" role="tab">Composite ★</button>
+  </div>
+  <button class="theme-toggle" id="themeBtn" aria-label="Toggle light and dark">
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v2M12 19.5v2M4.5 12h-2M21.5 12h-2M6 6 4.6 4.6M19.4 19.4 18 18M18 6l1.4-1.4M4.6 19.4 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<div class="band">
+  <div class="band-inner">
+    <div class="rat active" data-r="focus">
+      <div class="band-name">Focused column</div>
+      <p class="band-rat">The phone experience, made dignified — one comfortable reading column (~68ch) floating on a quiet, glowing canvas. Conversations collapse into a slide-over so nothing competes with the words. Honest tradeoff: it wastes horizontal space and hides history one click away, which power users may find slow.</p>
+    </div>
+    <div class="rat" data-r="journal">
+      <div class="band-name">Journal spread</div>
+      <p class="band-rat">The familiar messenger shape, restyled as a private journal: a persistent left rail reads like a table of contents with dated entries, chat on the right. Fast to move between sessions. Tradeoff: the two-pane frame is the most conventional here, and the rail is always visible even when you'd rather forget the backlog.</p>
+    </div>
+    <div class="rat" data-r="desk">
+      <div class="band-name">Companion desk</div>
+      <p class="band-rat">Three zones — history, chat, and a quiet right column reserved for what phase 2/3 brings: a licensed-listener review line, a mood trend, notes to your future self. It sells the roadmap without shipping it. Tradeoff: the most to build and the easiest to make feel clinical if the placeholders ever get loud.</p>
+    </div>
+    <div class="rat" data-r="evening">
+      <div class="band-name">Evening room</div>
+      <p class="band-rat">The risk. Generous negative space with the conversation anchored low, like a fireside chat, and the composer as the visual anchor you're drawn to. Calmest and most distinct. Tradeoff: unconventional scrolling, less at-a-glance density, and it only holds up with real restraint — easy to break.</p>
+    </div>
+    <div class="rat" data-r="letter">
+      <div class="band-name">Letters</div>
+      <p class="band-rat">Not a chat at all — correspondence. The exchange reads as alternating letter blocks on one continuous page: their letters in full serif, yours indented with a quiet rule; the composer is a writing desk at the page's end. Tradeoff: gorgeous for slow, reflective exchange, but it fights the streaming, back-and-forth reality of the product and would feel wrong for quick check-ins.</p>
+    </div>
+    <div class="rat" data-r="river">
+      <div class="band-name">Timeline river</div>
+      <p class="band-rat">No conversations at all — one continuous stream across days, with date nodes and mood marks inline; sessions are just eddies in the river, and you navigate by scrubbing time on the left. Tradeoff: the truest picture of an ongoing relationship with the practice, but it buries "find that one conversation" and needs mood data the product doesn't capture yet.</p>
+    </div>
+    <div class="rat" data-r="garden">
+      <div class="band-name">Card garden</div>
+      <p class="band-rat">The landing is the experience: a calm bento of tiles — start talking, recent entries, mood, a note left for you — and the chat opens as a centered sheet floating over the garden. Tradeoff: the best overview-first shape and a natural roadmap home, but the sheet re-miniaturizes the chat you came to have, and modal chat can feel interruptible.</p>
+    </div>
+    <div class="rat" data-r="guided">
+      <div class="band-name">Guided session</div>
+      <p class="band-rat">Closest to how a session actually feels and least like a chat app: one question at a time, large and centered, your answer beneath, everything prior collapsed into a ribbon of small markers above. Tradeoff: powerful focus and zero interface noise, but it constrains free-form venting — it presumes the AI leads, which isn't always what a hard night needs.</p>
+    </div>
+    <div class="rat" data-r="comp">
+      <div class="band-name">Composite — the ship direction</div>
+      <p class="band-rat">The chosen hybrid, two screens (toggle top-center). Home: a Guided-style prompt leads, a few recent entries support. Conversation: Desk's frame with both rails visually receded, and a Journal center rebuilt for long-form reading — long AI reflections render as serif passages, long user reflections as tinted panels, short exchanges stay bubbles. Watch: the passage/bubble threshold needs a real rule in implementation (~280 chars or 2+ paragraphs), or the thread will feel inconsistent.</p>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+
+  <!-- ============ VARIANT 1 — FOCUSED COLUMN ============ -->
+  <section class="variant v-focus active" data-variant="focus">
+    <div class="ambient"></div>
+    <div class="fc-wrap">
+      <button class="fc-railtab" id="fcOpen">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M2.5 8h11M2.5 12h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Conversations
+      </button>
+
+      <div class="fc-col">
+        <div class="fc-intro">
+          <div class="h">A quiet place to think</div>
+          <div class="s">It's late. Everything here stays between us.</div>
+        </div>
+        <div class="fc-stream">
+          <div class="stream">
+            <div class="row them"><div class="bubble them">I'm glad you're here. What's been sitting with you tonight?</div></div>
+            <div class="row me"><div class="bubble me">I keep replaying the meeting today. I think I talked too much and now I feel like everyone thinks I'm scattered.</div></div>
+            <div class="row them"><div class="bubble them">That replay loop can be exhausting — your mind rehearsing it to keep you safe. Can I ask what <em>scattered</em> means to you in that moment?</div></div>
+            <div class="row me"><div class="bubble me">That I don't have my thoughts together. That I'm not as competent as I want to be.</div></div>
+            <div class="row them"><div class="bubble them">So the fear underneath isn't really the meeting — it's whether you measure up. That's a tender thing to carry into a Tuesday night. Was there a moment today you <em>did</em> feel steady?</div></div>
+            <div class="row me"><div class="bubble me">…actually yeah. When Priya asked me something directly, I knew the answer cold.</div></div>
+          </div>
+        </div>
+        <div class="fc-composer">
+          <div class="composer">
+            <div class="field">What's on your mind?</div>
+            <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- slide-over -->
+      <div class="slideover-scrim" id="fcScrim"></div>
+      <aside class="slideover" id="fcRail">
+        <div class="rail-head">
+          <div class="rail-title">Your conversations</div>
+          <div class="rail-sub">Everything here stays between us.</div>
+        </div>
+        <div class="rail-list">
+          <button class="conv sel"><div class="ct">The meeting that won't quiet down</div><div class="cd">Tonight</div></button>
+          <button class="conv"><div class="ct">Sunday's slow morning</div><div class="cd">3 days ago</div></button>
+          <button class="conv"><div class="ct">When my sister called</div><div class="cd">Jun 28</div></button>
+          <button class="conv"><div class="ct">Starting over, gently</div><div class="cd">Jun 21</div></button>
+          <button class="conv"><div class="ct">First night here</div><div class="cd">Jun 14</div></button>
+        </div>
+        <div class="rail-foot">
+          <button class="newbtn"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Start something new</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 2 — JOURNAL SPREAD ============ -->
+  <section class="variant v-journal" data-variant="journal">
+    <div class="jr-grid">
+      <aside class="rail">
+        <div class="rail-head">
+          <div class="rail-title">Your conversations</div>
+          <div class="rail-sub">Everything here stays between us.</div>
+        </div>
+        <div class="rail-list">
+          <div class="daymark" style="align-self:flex-start;padding-left:12px">This week</div>
+          <button class="conv sel"><div class="ct">The meeting that won't quiet down</div><div class="cd">Tonight · 11:40pm</div></button>
+          <button class="conv"><div class="ct">Sunday's slow morning</div><div class="cd">Jun 30</div></button>
+          <div class="daymark" style="align-self:flex-start;padding-left:12px;margin-top:6px">Earlier</div>
+          <button class="conv"><div class="ct">When my sister called</div><div class="cd">Jun 28</div></button>
+          <button class="conv"><div class="ct">Starting over, gently</div><div class="cd">Jun 21</div></button>
+          <button class="conv"><div class="ct">First night here</div><div class="cd">Jun 14</div></button>
+        </div>
+        <div class="rail-foot">
+          <button class="newbtn"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Start something new</button>
+        </div>
+      </aside>
+
+      <div class="jr-chat">
+        <div class="chat-head">
+          <div>
+            <div class="ch-title">The meeting that won't quiet down</div>
+            <div class="ch-sub">Started tonight · just the two of us</div>
+          </div>
+          <button class="ghost-btn" id="jrSupportToggle" style="margin-left:auto">Show support card</button>
+        </div>
+        <div class="jr-stream">
+          <div class="jr-inner stream">
+            <div class="daymark">Tonight</div>
+            <div class="row them"><div class="bubble them">I'm glad you're here. What's been sitting with you tonight?</div></div>
+            <div class="row me"><div class="bubble me">I keep replaying the meeting today. I think I talked too much and now I feel like everyone thinks I'm scattered.</div></div>
+            <div class="row them"><div class="bubble them">That replay loop can be exhausting — your mind rehearsing it to keep you safe. Can I ask what <em>scattered</em> means to you in that moment?</div></div>
+            <div class="row me"><div class="bubble me">That I don't have my thoughts together. That I'm not as competent as I want to be.</div></div>
+            <div class="row them"><div class="bubble them">So the fear underneath isn't really the meeting — it's whether you measure up. That's a tender thing to carry into a Tuesday night. Was there a moment today you <em>did</em> feel steady?</div></div>
+            <div class="row me"><div class="bubble me">…actually yeah. When Priya asked me something directly, I knew the answer cold.</div></div>
+            <div class="row them"><div class="bubble them">Hold onto that one. Competence isn't the absence of doubt — it's the answer you already had, waiting under the noise.</div></div>
+          </div>
+        </div>
+
+        <!-- Desktop treatment of the support card: docked, width-constrained, over the chat pane only -->
+        <div class="jr-support-dock" id="jrSupport" style="display:none">
+          <div class="support" role="alertdialog" aria-label="Support resources">
+            <div class="s-row">
+              <svg class="heart" viewBox="0 0 24 24" fill="none"><path d="M12 20.5S3.5 14.6 3.5 8.9A4.4 4.4 0 0 1 12 6.6a4.4 4.4 0 0 1 8.5 2.3c0 5.7-8.5 11.6-8.5 11.6Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div>
+                <div class="s-lead">It sounds like you're carrying something really heavy.</div>
+                <div class="s-body">You deserve support from a real person, right now if you need it:</div>
+                <ul>
+                  <li><a href="tel:988">988 — Suicide &amp; Crisis Lifeline (US, call or text)</a></li>
+                  <li><a href="#">findahelpline.com — international lines</a></li>
+                  <li style="color:var(--crisis-muted);text-decoration:none">If you're in immediate danger, call your local emergency number.</li>
+                </ul>
+              </div>
+            </div>
+            <button class="s-dismiss" id="jrSupportClose">I'm safe right now</button>
+          </div>
+        </div>
+
+        <div class="jr-composer-wrap">
+          <div class="jr-inner">
+            <div class="composer">
+              <div class="field">What's on your mind?</div>
+              <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 3 — COMPANION DESK ============ -->
+  <section class="variant v-desk" data-variant="desk">
+    <div class="dk-grid">
+      <aside class="rail">
+        <div class="rail-head">
+          <div class="rail-title" style="font-size:18px">Conversations</div>
+        </div>
+        <div class="rail-list">
+          <button class="conv sel"><div class="ct">The meeting that won't quiet down</div><div class="cd">Tonight</div></button>
+          <button class="conv"><div class="ct">Sunday's slow morning</div><div class="cd">Jun 30</div></button>
+          <button class="conv"><div class="ct">When my sister called</div><div class="cd">Jun 28</div></button>
+          <button class="conv"><div class="ct">Starting over, gently</div><div class="cd">Jun 21</div></button>
+        </div>
+        <div class="rail-foot">
+          <button class="newbtn"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Start something new</button>
+        </div>
+      </aside>
+
+      <div class="dk-chat">
+        <div class="chat-head">
+          <div>
+            <div class="ch-title">A quiet place to think</div>
+            <div class="ch-sub">Tonight · just the two of us</div>
+          </div>
+        </div>
+        <div class="dk-stream">
+          <div class="dk-inner stream">
+            <div class="row them"><div class="bubble them">I'm glad you're here. What's been sitting with you tonight?</div></div>
+            <div class="row me"><div class="bubble me">I keep replaying the meeting today. I think I talked too much and now I feel like everyone thinks I'm scattered.</div></div>
+            <div class="row them"><div class="bubble them">That replay loop can be exhausting — your mind rehearsing it to keep you safe. Can I ask what <em>scattered</em> means to you in that moment?</div></div>
+            <div class="row me"><div class="bubble me">That I don't have my thoughts together. That I'm not as competent as I want to be.</div></div>
+            <div class="row them"><div class="bubble them">So the fear underneath isn't really the meeting — it's whether you measure up. Was there a moment today you <em>did</em> feel steady?</div></div>
+            <div class="row me"><div class="bubble me">…actually yeah. When Priya asked me something directly, I knew the answer cold.</div></div>
+          </div>
+        </div>
+        <div class="dk-composer-wrap">
+          <div class="dk-composer-inner">
+            <div class="composer">
+              <div class="field">What's on your mind?</div>
+              <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="dk-aside">
+        <div class="aside-eyebrow">Alongside you</div>
+
+        <div class="panel">
+          <div class="p-title"><span class="status-dot"></span> Listener review <span class="pill-soon" style="margin-left:auto">Phase 2</span></div>
+          <div class="p-note">A licensed listener will be able to gently review a session you choose to share. Nothing is shared without you asking.</div>
+        </div>
+
+        <div class="panel">
+          <div class="p-title">How the weeks have felt</div>
+          <svg class="spark" viewBox="0 0 260 46" preserveAspectRatio="none" fill="none" aria-hidden="true">
+            <polyline points="4,34 40,30 76,36 112,24 148,28 184,16 220,20 256,12" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="256" cy="12" r="3.2" fill="var(--accent)"/>
+          </svg>
+          <div class="mood-row"><span>6 weeks ago</span><span>Tonight</span></div>
+          <div class="p-note">A private trend, only ever a mirror — never a score.</div>
+        </div>
+
+        <div class="panel">
+          <div class="p-title">Notes to your future self <span class="pill-soon" style="margin-left:auto">Phase 3</span></div>
+          <div class="note-scrap">"You already knew the answer when Priya asked. Remember that the next time the room goes quiet."</div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 4 — EVENING ROOM ============ -->
+  <section class="variant v-evening" data-variant="evening">
+    <div class="ev-wrap">
+      <div class="ev-glow"></div>
+      <div class="ev-mark">
+        <div class="em-time">11:42pm</div>
+        <div class="em-h">A quiet place to think</div>
+      </div>
+      <div class="ev-col">
+        <div class="ev-stream">
+          <div class="row them"><div class="bubble them">So the fear underneath isn't really the meeting — it's whether you measure up. Was there a moment today you <em>did</em> feel steady?</div></div>
+          <div class="row me"><div class="bubble me">…actually yeah. When Priya asked me something directly, I knew the answer cold.</div></div>
+          <div class="row them"><div class="bubble them">Hold onto that one. Competence isn't the absence of doubt — it's the answer that was already there, waiting under the noise.</div></div>
+        </div>
+        <div class="ev-composer">
+          <div class="field">Say the next thing, whenever you're ready…</div>
+          <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 5 — LETTERS ============ -->
+  <section class="variant v-letter" data-variant="letter">
+    <div class="lt-scroll">
+      <div class="lt-page">
+        <div class="lt-date">Tuesday night · July 1</div>
+
+        <div class="lt-letter them">
+          <div class="lt-from">From tellmewhy · 11:12pm</div>
+          <div class="lt-body">
+            <p>You wrote that the meeting is still replaying. I'd like to slow that down with you.</p>
+            <p>When a mind loops on a moment, it's usually holding a question it can't put down. What is the question under yours — is it <em>did I say too much</em>, or is it <em>did they stop taking me seriously</em>?</p>
+          </div>
+        </div>
+
+        <div class="lt-letter me">
+          <div class="lt-from">From you · 11:26pm</div>
+          <div class="lt-body">
+            <p>Honestly? The second one. I can survive being embarrassing for an afternoon. What I can't seem to survive is the idea that they've quietly changed their minds about me.</p>
+          </div>
+        </div>
+
+        <div class="lt-letter them">
+          <div class="lt-from">From tellmewhy · 11:31pm</div>
+          <div class="lt-body">
+            <p>"Quietly changed their minds" — notice that no one has actually said anything. The verdict you're bracing for is one you wrote yourself.</p>
+            <p>Before tomorrow, would you be willing to notice one piece of evidence that the room still trusts you? Not to argue with the fear. Just to let something else be true at the same time.</p>
+          </div>
+        </div>
+
+        <div class="lt-flourish" aria-hidden="true">· · ·</div>
+
+        <div class="lt-desk">
+          <div class="lt-prompt">Write back whenever you're ready. There's no hurry here…</div>
+          <div class="lt-desk-row">
+            <span class="lt-desk-note">Saved as you write · only you can read this</span>
+            <button class="lt-sendbtn">Send letter</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 6 — TIMELINE RIVER ============ -->
+  <section class="variant v-river" data-variant="river">
+    <div class="rv-grid">
+      <aside class="rv-scrub">
+        <div class="rv-scrub-title">One river</div>
+        <div class="rv-scrub-sub">Scrub through time, not folders.</div>
+        <div class="rv-month">July</div>
+        <button class="rv-tick cur"><span class="rv-dot calm"></span>Tonight</button>
+        <div class="rv-month">June</div>
+        <button class="rv-tick"><span class="rv-dot calm"></span>Jun 30</button>
+        <button class="rv-tick"><span class="rv-dot mid"></span>Jun 28</button>
+        <button class="rv-tick"><span class="rv-dot mid"></span>Jun 21</button>
+        <button class="rv-tick"><span class="rv-dot heavy"></span>Jun 14</button>
+      </aside>
+      <div class="rv-stream">
+        <div class="rv-inner">
+          <div class="rv-days">
+            <div class="rv-day heavy">
+              <span class="rv-node"></span>
+              <div class="rv-daylabel">Jun 14 <span class="rv-mood">a heavy night</span></div>
+              <div class="rv-entries">
+                <div class="rv-entry me"><span class="who">You</span>I don't really know how to start. It's been a bad few weeks.</div>
+                <div class="rv-entry them"><span class="who">tellmewhy</span>Then let's not start anywhere in particular. Bad few weeks how — loud bad, or quiet bad?</div>
+              </div>
+            </div>
+            <div class="rv-day">
+              <span class="rv-node"></span>
+              <div class="rv-daylabel">Jun 21 <span class="rv-mood">finding words</span></div>
+              <div class="rv-entries">
+                <div class="rv-entry me"><span class="who">You</span>I noticed I say yes to things just so nobody has a reason to be disappointed in me.</div>
+                <div class="rv-entry them"><span class="who">tellmewhy</span>That's a big thing to notice. Whose disappointment taught you it was dangerous?</div>
+              </div>
+            </div>
+            <div class="rv-day">
+              <span class="rv-node"></span>
+              <div class="rv-daylabel">Jun 28 <span class="rv-mood">steadier</span></div>
+              <div class="rv-entries">
+                <div class="rv-entry me"><span class="who">You</span>Called my sister back. It went fine. It always goes fine.</div>
+                <div class="rv-entry them"><span class="who">tellmewhy</span>"It always goes fine" — your track record keeps disagreeing with your dread. Worth keeping score for a while?</div>
+              </div>
+            </div>
+            <div class="rv-day">
+              <span class="rv-node"></span>
+              <div class="rv-daylabel">Tonight <span class="rv-mood">lighter</span></div>
+              <div class="rv-entries">
+                <div class="rv-entry me"><span class="who">You</span>The meeting today keeps replaying. But I caught myself doing the yes-thing again, at least.</div>
+                <div class="rv-entry them"><span class="who">tellmewhy</span>Catching it in the moment is new — three weeks ago it took you days. The river is moving, even when a single night feels stuck.</div>
+              </div>
+              <div class="rv-composer-wrap">
+                <div class="composer">
+                  <div class="field">What's on your mind?</div>
+                  <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 7 — CARD GARDEN ============ -->
+  <section class="variant v-garden" data-variant="garden">
+    <div class="gd-wrap">
+      <div class="ambient"></div>
+      <div class="gd-scrollarea">
+        <div class="gd-grid">
+          <div class="gd-head">
+            <span class="h">Good evening.</span>
+            <span class="s">Everything here stays between us.</span>
+          </div>
+
+          <div class="tile start clickable" id="gdOpen">
+            <div class="st-q">What's on your mind tonight?</div>
+            <div class="st-cta">Start talking <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
+
+          <div class="tile mood">
+            <div class="t-eyebrow">How the weeks have felt</div>
+            <svg class="spark" viewBox="0 0 260 46" preserveAspectRatio="none" fill="none" aria-hidden="true">
+              <polyline points="4,34 40,30 76,36 112,24 148,28 184,16 220,20 256,12" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="256" cy="12" r="3.2" fill="var(--accent)"/>
+            </svg>
+            <div class="mood-row"><span>6 weeks ago</span><span>Tonight</span></div>
+          </div>
+
+          <div class="tile clickable">
+            <div class="t-eyebrow">Continue</div>
+            <div class="t-title">The meeting that won't quiet down</div>
+            <div class="t-body">"…was there a moment today you did feel steady?"</div>
+            <div class="t-date">Tonight · 11:40pm</div>
+          </div>
+
+          <div class="tile clickable">
+            <div class="t-eyebrow">Earlier</div>
+            <div class="t-title">Sunday's slow morning</div>
+            <div class="t-body">"Rest that doesn't need to be earned."</div>
+            <div class="t-date">Jun 30</div>
+          </div>
+
+          <div class="tile clickable">
+            <div class="t-eyebrow">Earlier</div>
+            <div class="t-title">When my sister called</div>
+            <div class="t-body">"It always goes fine — keep score."</div>
+            <div class="t-date">Jun 28</div>
+          </div>
+
+          <div class="tile note-tile">
+            <div class="t-eyebrow">A note left for you <span class="pill-soon">Phase 3</span></div>
+            <div class="note-scrap">"You already knew the answer when Priya asked. Remember that."</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="gd-scrim open" id="gdScrim"></div>
+      <div class="gd-sheet open" id="gdSheet" role="dialog" aria-label="Conversation">
+        <div class="chat-head">
+          <div>
+            <div class="ch-title">The meeting that won't quiet down</div>
+            <div class="ch-sub">Tonight · just the two of us</div>
+          </div>
+          <button class="ghost-btn" id="gdClose" style="margin-left:auto">Back to overview</button>
+        </div>
+        <div class="gd-sheet-stream">
+          <div class="stream">
+            <div class="row them"><div class="bubble them">I'm glad you're here. What's been sitting with you tonight?</div></div>
+            <div class="row me"><div class="bubble me">I keep replaying the meeting today. I think I talked too much.</div></div>
+            <div class="row them"><div class="bubble them">That replay loop can be exhausting — your mind rehearsing it to keep you safe. Can I ask what <em>too much</em> means to you in that moment?</div></div>
+            <div class="row me"><div class="bubble me">That I don't have my thoughts together. That I'm not as competent as I want to be.</div></div>
+          </div>
+        </div>
+        <div class="gd-sheet-foot">
+          <div class="composer">
+            <div class="field">What's on your mind?</div>
+            <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 8 — GUIDED SESSION ============ -->
+  <section class="variant v-guided" data-variant="guided">
+    <div class="gu-wrap">
+      <div class="ambient"></div>
+      <div class="gu-ribbon" aria-label="Earlier in this session">
+        <span class="gu-crumb">Arriving: wound up</span>
+        <span class="gu-crumb">The meeting replay</span>
+        <span class="gu-crumb">What "scattered" means</span>
+        <span class="gu-crumb">The fear underneath</span>
+        <span class="gu-crumb cur">A steady moment</span>
+      </div>
+      <div class="gu-center">
+        <div class="gu-count">Tonight's session · a fifth question</div>
+        <h2 class="gu-q">Was there a moment today when you <em>did</em> feel steady?</h2>
+        <div class="gu-answer">It was when…</div>
+        <div class="gu-hint">Press Enter when you're done · Shift+Enter for a new line</div>
+      </div>
+      <button class="ghost-btn gu-escape">Talk freely instead</button>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT 9 — COMPOSITE (SHIP DIRECTION) ============ -->
+  <section class="variant v-comp" data-variant="comp">
+    <div class="cp-wrap">
+      <div class="cp-subnav" role="tablist" aria-label="Composite screens">
+        <button class="sub active" data-s="home" role="tab">09a Home</button>
+        <button class="sub" data-s="conv" role="tab">09b Conversation</button>
+      </div>
+
+      <!-- 09a HOME -->
+      <div class="cp-screen active" data-screen="home">
+        <div class="cp-home">
+          <div class="ambient"></div>
+          <div class="cp-hero">
+            <div class="cp-eyebrow">Tonight · 11:42pm</div>
+            <h2 class="cp-q">What's on your mind tonight?</h2>
+            <div class="cp-line">
+              <input type="text" placeholder="One honest sentence is enough…" aria-label="Start writing">
+              <button class="cp-line-send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <div class="cp-hint">Everything here stays between us.</div>
+          </div>
+          <div class="cp-recent">
+            <div class="cp-filters" role="group" aria-label="Filter by folder">
+              <button class="cp-chip on">All</button>
+              <button class="cp-chip">family</button>
+              <button class="cp-chip">work / career</button>
+              <button class="cp-chip">relationships</button>
+              <button class="cp-chip">friends</button>
+            </div>
+            <div class="cp-recent-head">
+              <span class="lbl">Pick up where you left off</span>
+              <a class="all" href="#">All conversations</a>
+            </div>
+            <div class="cp-cards">
+              <div class="tile clickable">
+                <div class="t-top"><span class="t-eyebrow">Continue</span><span class="t-folder">work / career</span></div>
+                <div class="t-title">The meeting that won't quiet down</div>
+                <div class="t-body">"…was there a moment today you did feel steady?"</div>
+                <div class="t-date">Tonight · 11:40pm</div>
+              </div>
+              <div class="tile clickable">
+                <div class="t-top"><span class="t-eyebrow">Earlier</span></div>
+                <div class="t-title">Sunday's slow morning</div>
+                <div class="t-body">"Rest that doesn't need to be earned."</div>
+                <div class="t-date">Jun 30</div>
+              </div>
+              <div class="tile clickable">
+                <div class="t-top"><span class="t-eyebrow">Earlier</span><span class="t-folder">family</span></div>
+                <div class="t-title">When my sister called</div>
+                <div class="t-body">"It always goes fine — keep score."</div>
+                <div class="t-date">Jun 28</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 09b CONVERSATION -->
+      <div class="cp-screen" data-screen="conv">
+        <div class="cp-grid">
+          <aside class="cp-rail">
+            <div class="rail-title">Conversations</div>
+            <button class="cp-folder-h"><svg viewBox="0 0 8 8" fill="none"><path d="M1.5 2.5 4 5l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> work / career</button>
+            <button class="conv sel"><div class="ct">The meeting that won't quiet down</div><div class="cd">Tonight</div></button>
+            <button class="conv"><div class="ct">Why I keep saying yes</div><div class="cd">Jun 24</div></button>
+            <button class="cp-folder-h"><svg viewBox="0 0 8 8" fill="none"><path d="M1.5 2.5 4 5l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> family</button>
+            <button class="conv"><div class="ct">When my sister called</div><div class="cd">Jun 28</div></button>
+            <button class="cp-folder-h"><svg viewBox="0 0 8 8" fill="none"><path d="M1.5 2.5 4 5l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> relationships</button>
+            <button class="conv"><div class="ct">Starting over, gently</div><div class="cd">Jun 21</div></button>
+            <button class="cp-folder-h"><svg viewBox="0 0 8 8" fill="none"><path d="M1.5 2.5 4 5l2.5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> unsorted</button>
+            <button class="conv"><div class="ct">Sunday's slow morning</div><div class="cd">Jun 30</div></button>
+            <button class="conv"><div class="ct">First night here</div><div class="cd">Jun 14</div></button>
+            <button class="cp-newfolder"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> New folder</button>
+            <div class="rail-foot">
+              <button class="newbtn"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Start something new</button>
+            </div>
+          </aside>
+
+          <div class="cp-chat">
+            <div class="cp-chat-head">
+              <div class="inner">
+                <span class="ch-title">The meeting that won't quiet down</span>
+                <span class="ch-sub">Tonight · just the two of us</span>
+                <button class="ghost-btn" id="cpSupportToggle" style="margin-left:auto">Show support card</button>
+              </div>
+            </div>
+            <div class="cp-stream">
+              <div class="cp-stream-inner">
+                <div class="row them"><div class="bubble them">I'm glad you're here. What's been sitting with you tonight?</div></div>
+                <div class="row me"><div class="bubble me">The meeting again. But I think it's bigger than the meeting.</div></div>
+                <div class="row them"><div class="bubble them">Then let's make room for the bigger thing. Take as long as you want.</div></div>
+
+                <div class="cp-me-long">
+                  <p>Okay — the longer version, because I don't think I've said this out loud to anyone. It's not just today. For about a year now I've had this feeling that I'm performing competence instead of having it. Like there's a version of me everyone hired, and my whole job is to keep him from flickering.</p>
+                  <p>The exhausting part isn't the work. It's the monitoring. Every email read twice before sending, every joke in standup weighed for whether it makes me sound relaxed or sloppy. And when a silence like today's happens, all of that monitoring turns on me at once.</p>
+                </div>
+
+                <div class="cp-passage">
+                  <div class="p-from">tellmewhy</div>
+                  <div class="p-text">
+                    <p>Thank you for saying the longer version out loud. I want to reflect two things back, slowly.</p>
+                    <p>First: what you're describing — the performing, the monitoring, the fear of flickering — has a shape. It's the logic of someone who learned early that being valued and being impressive were the same door. The performance isn't vanity; it's safety equipment. It made sense once. It costs too much now.</p>
+                    <p>Second: notice what actually happened today. You answered Priya cold. You caught the yes-reflex in the moment. And tonight you put a year of private weather into words. Someone who was only performing competence could not have written what you just wrote. The monitoring insists it keeps you safe from being found out — but there is nothing underneath to find out. Just someone tired of holding a pose no one asked him to hold.</p>
+                    <p>We can work on setting the equipment down slowly. Not all at once — it's been holding a lot.</p>
+                  </div>
+                </div>
+
+                <div class="row me"><div class="bubble me">…I'm going to sit with "safety equipment" for a while.</div></div>
+                <div class="row them"><div class="bubble them">Sit as long as you like. I'm not going anywhere.</div></div>
+              </div>
+            </div>
+
+            <!-- Docked support card (same treatment as 02) -->
+            <div class="cp-support-dock" id="cpSupport" style="display:none">
+              <div class="support" role="alertdialog" aria-label="Support resources">
+                <div class="s-row">
+                  <svg class="heart" viewBox="0 0 24 24" fill="none"><path d="M12 20.5S3.5 14.6 3.5 8.9A4.4 4.4 0 0 1 12 6.6a4.4 4.4 0 0 1 8.5 2.3c0 5.7-8.5 11.6-8.5 11.6Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <div>
+                    <div class="s-lead">It sounds like you're carrying something really heavy.</div>
+                    <div class="s-body">You deserve support from a real person, right now if you need it:</div>
+                    <ul>
+                      <li><a href="tel:988">988 — Suicide &amp; Crisis Lifeline (US, call or text)</a></li>
+                      <li><a href="#">findahelpline.com — international lines</a></li>
+                      <li style="color:var(--crisis-muted)">If you're in immediate danger, call your local emergency number.</li>
+                    </ul>
+                  </div>
+                </div>
+                <button class="s-dismiss" id="cpSupportClose">I'm safe right now</button>
+              </div>
+            </div>
+
+            <div class="cp-composer-wrap">
+              <div class="cp-composer-inner">
+                <div class="composer">
+                  <div class="field">What's on your mind?</div>
+                  <button class="send" aria-label="Send"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="cp-aside">
+            <div class="aside-eyebrow">Alongside you</div>
+            <div class="panel">
+              <div class="p-title"><span class="status-dot"></span> Listener review <span class="pill-soon" style="margin-left:auto">Phase 2</span></div>
+              <div class="p-note">A licensed listener can gently review a session you choose to share.</div>
+            </div>
+            <div class="panel">
+              <div class="p-title">How the weeks have felt</div>
+              <svg class="spark" viewBox="0 0 260 46" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                <polyline points="4,34 40,30 76,36 112,24 148,28 184,16 220,20 256,12" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="256" cy="12" r="3.2" fill="var(--accent)"/>
+              </svg>
+              <div class="mood-row"><span>6 weeks ago</span><span>Tonight</span></div>
+            </div>
+            <div class="panel">
+              <div class="p-title">Notes to your future self <span class="pill-soon" style="margin-left:auto">Phase 3</span></div>
+              <div class="note-scrap">"You already knew the answer when Priya asked. Remember that."</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // Theme: default to dark (the app's hero). Flip the whole token set.
+  const root = document.documentElement;
+  root.setAttribute("data-theme", "dark");
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    root.setAttribute("data-theme", root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  // Variant switcher
+  const tabs = document.querySelectorAll(".tab");
+  const variants = document.querySelectorAll(".variant");
+  const rats = document.querySelectorAll(".rat");
+  tabs.forEach((t) => t.addEventListener("click", () => {
+    const v = t.dataset.v;
+    tabs.forEach((x) => x.classList.toggle("active", x === t));
+    variants.forEach((x) => x.classList.toggle("active", x.dataset.variant === v));
+    rats.forEach((x) => x.classList.toggle("active", x.dataset.r === v));
+  }));
+
+  // Focused column: slide-over
+  const fcRail = document.getElementById("fcRail");
+  const fcScrim = document.getElementById("fcScrim");
+  const openRail = () => { fcRail.classList.add("open"); fcScrim.classList.add("open"); };
+  const closeRail = () => { fcRail.classList.remove("open"); fcScrim.classList.remove("open"); };
+  document.getElementById("fcOpen").addEventListener("click", openRail);
+  fcScrim.addEventListener("click", closeRail);
+
+  // Journal: support card demo toggle
+  const jrSupport = document.getElementById("jrSupport");
+  const jrToggle = document.getElementById("jrSupportToggle");
+  jrToggle.addEventListener("click", () => {
+    const showing = jrSupport.style.display !== "none";
+    jrSupport.style.display = showing ? "none" : "block";
+    jrToggle.textContent = showing ? "Show support card" : "Hide support card";
+  });
+  document.getElementById("jrSupportClose").addEventListener("click", () => {
+    jrSupport.style.display = "none";
+    jrToggle.textContent = "Show support card";
+  });
+
+  // Card garden: chat sheet over the bento (open by default so the tab
+  // shows the layered idea; "Back to overview" reveals the garden).
+  const gdSheet = document.getElementById("gdSheet");
+  const gdScrim = document.getElementById("gdScrim");
+  const openSheet = () => { gdSheet.classList.add("open"); gdScrim.classList.add("open"); };
+  const closeSheet = () => { gdSheet.classList.remove("open"); gdScrim.classList.remove("open"); };
+  document.getElementById("gdOpen").addEventListener("click", openSheet);
+  document.getElementById("gdClose").addEventListener("click", closeSheet);
+  gdScrim.addEventListener("click", closeSheet);
+
+  // Composite: Home / Conversation sub-screens
+  const subs = document.querySelectorAll(".cp-subnav .sub");
+  const screens = document.querySelectorAll(".cp-screen");
+  subs.forEach((s) => s.addEventListener("click", () => {
+    subs.forEach((x) => x.classList.toggle("active", x === s));
+    screens.forEach((x) => x.classList.toggle("active", x.dataset.screen === s.dataset.s));
+  }));
+
+  // Composite: docked support card (same treatment as Journal)
+  const cpSupport = document.getElementById("cpSupport");
+  const cpToggle = document.getElementById("cpSupportToggle");
+  cpToggle.addEventListener("click", () => {
+    const showing = cpSupport.style.display !== "none";
+    cpSupport.style.display = showing ? "none" : "block";
+    cpToggle.textContent = showing ? "Show support card" : "Hide support card";
+  });
+  document.getElementById("cpSupportClose").addEventListener("click", () => {
+    cpSupport.style.display = "none";
+    cpToggle.textContent = "Show support card";
+  });
+</script>

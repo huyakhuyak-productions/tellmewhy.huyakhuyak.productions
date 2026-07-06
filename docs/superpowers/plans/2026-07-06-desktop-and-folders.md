@@ -38,25 +38,13 @@ git switch develop
 git switch --create feature/desktop-and-folders
 ```
 
-- [ ] **Step 2:** Copy the throwaway mockup into the repo as the durable design reference (the scratchpad is session-temporary):
+- [ ] **Step 2:** Verify the archived design reference exists (it was committed to `develop` before this plan executes; the original scratchpad copy was session-temporary and is gone):
 
 ```bash
-mkdir -p docs/superpowers/specs/assets
-```
-```bash
-cp "/private/tmp/claude-501/-Users-mykolasolodukha-ghq-github-com-huyakhuyak-productions-tellmewhy-huyakhuyak-productions/f1b02ba9-13e2-48d7-9a84-7c1b2a781393/scratchpad/desktop-design-options.html" docs/superpowers/specs/assets/2026-07-06-desktop-mockups.html
+ls docs/superpowers/specs/assets/2026-07-06-desktop-mockups.html
 ```
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/superpowers/specs/assets/2026-07-06-desktop-mockups.html
-```
-```bash
-git commit --message "🍱 Archive the approved desktop mockups as a design reference
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
-```
+Expected: file present (~88KB). If missing, STOP and ask the user — do not proceed without the design reference.
 
 ---
 
