@@ -65,4 +65,29 @@ describe("encrypted conversations", () => {
     expect(list.find((c) => c.id === a.id)?.folderId).toBe(folder.id);
     expect(list.find((c) => c.title === "Unsorted one")?.folderId).toBeNull();
   });
+
+  it("renames with re-encryption and marks the title customized", async () => {
+    const { renameConversation, isTitleCustomized } = await import("./conversations");
+    const { id } = await createConversation(userId, "July 6");
+    await renameConversation(id, userId, "Replaying a work conversation");
+    const list = await listConversations(userId);
+    expect(list.find((c) => c.id === id)?.title).toBe("Replaying a work conversation");
+    expect(await isTitleCustomized(id, userId)).toBe(true);
+    const [row] = await db.select().from(conversations).where(eq(conversations.id, id));
+    expect(row.titleCiphertext).not.toContain("Replaying");
+  });
+
+  it("auto-rename (customized: false) does not claim the title for humans", async () => {
+    const { renameConversation, isTitleCustomized } = await import("./conversations");
+    const { id } = await createConversation(userId, "July 6");
+    await renameConversation(id, userId, "A generated title", { customized: false });
+    expect(await isTitleCustomized(id, userId)).toBe(false);
+  });
+
+  it("refuses foreign rename and metadata reads", async () => {
+    const { renameConversation, isTitleCustomized } = await import("./conversations");
+    const { id } = await createConversation(userId, "Private");
+    await expect(renameConversation(id, "someone-else", "x")).rejects.toThrow(NotFoundError);
+    await expect(isTitleCustomized(id, "someone-else")).rejects.toThrow(NotFoundError);
+  });
 });

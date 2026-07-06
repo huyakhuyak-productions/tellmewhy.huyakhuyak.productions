@@ -78,3 +78,22 @@ export async function loadMessages(conversationId: string, userId: string) {
     createdAt: r.createdAt,
   }));
 }
+
+export async function renameConversation(
+  conversationId: string,
+  userId: string,
+  title: string,
+  opts?: { customized?: boolean },
+): Promise<void> {
+  await requireOwnedConversation(conversationId, userId);
+  const dek = await getOrCreateUserDek(userId);
+  await db
+    .update(conversations)
+    .set({ titleCiphertext: encryptText(dek, title), titleCustomized: opts?.customized ?? true })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+}
+
+export async function isTitleCustomized(conversationId: string, userId: string): Promise<boolean> {
+  const row = await requireOwnedConversation(conversationId, userId);
+  return row.titleCustomized;
+}
