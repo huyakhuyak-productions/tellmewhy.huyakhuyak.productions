@@ -34,7 +34,11 @@ export default function SignInPage() {
         </p>
       </div>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <label htmlFor="signin-email" className="sr-only">
+          Email
+        </label>
         <input
+          id="signin-email"
           className="h-12 rounded-xl border bg-card px-4 text-[0.975rem] shadow-sm outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/35"
           type="email"
           placeholder="Email"
@@ -43,7 +47,11 @@ export default function SignInPage() {
           autoComplete="email"
           required
         />
+        <label htmlFor="signin-password" className="sr-only">
+          Password
+        </label>
         <input
+          id="signin-password"
           className="h-12 rounded-xl border bg-card px-4 text-[0.975rem] shadow-sm outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/35"
           type="password"
           placeholder="Password"
