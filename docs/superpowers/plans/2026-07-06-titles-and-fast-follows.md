@@ -238,6 +238,24 @@ Each its own commit:
 
 ---
 
+### Task 9 (user increment, 2026-07-06): live title without reload
+
+**Problem:** the auto-title lands server-side up to ~5s after the stream closes; the rail/home only show it after a manual reload.
+**Design (locked):** do NOT hold the response stream open for the title (that would keep the composer disabled). Client-side in `ChatScreen`: when THIS session sent the conversation's first exchange (`initialMessages.length <= 1` and the message count reaches 2) and `status` returns to `"ready"`, start a short watcher — fetch `GET /api/conversations` immediately as a baseline, then poll every 1.5s (max 6 attempts) until this conversation's title differs from the baseline; then call `router.refresh()` ONCE and stop. Cleanup on unmount; no polling on later exchanges; a manual rename mid-poll also changes the title and simply triggers the same single refresh. No new endpoints, no new packages.
+**e2e:** desktop spec — after the streamed reply, expect the rail to show "A quiet mock title" WITHOUT `page.reload()` (generous ~12s timeout); mobile spec — client-side navigate home (tap a link, no reload) and expect the card to show the generated title.
+**Commit:** `✨ Show the generated title without a reload`
+
+### Task 10 (user increment, 2026-07-06): drag conversations into folders
+
+**Scope (locked):** native HTML5 drag-and-drop, pointer/desktop only (touch keeps the card menu — no DnD library without approval). Two surfaces:
+- **Rail (lg+):** conversation rows become `draggable`; folder group headings and the "unsorted" group become drop targets (visible drop-affordance on `dragover` — e.g. the heading warms/outline, consistent with the twilight tokens); drop → `PATCH /api/conversations/[id] {folderId}` → `router.refresh()`; same row-level `role="alert"` error surface as the menu path on failure.
+- **Home (lg+ only):** cards draggable onto the folder filter chips (chip highlights on dragover; drop files the conversation and refreshes). Skip if it genuinely fights the chip row's calm — report the judgment call.
+The existing menu path stays (keyboard/touch accessibility path — DnD is an enhancement, never the only way).
+**e2e:** desktop spec — dragDrop a rail row onto a folder heading (Playwright `dragTo`), assert regrouping; keep menu-path coverage intact.
+**Commit:** `✨ Drag conversations into folders on desktop`
+
+---
+
 ## Verification (whole plan)
 
 1. Suite green with all new tests; tsc; lint; `bun run build`.

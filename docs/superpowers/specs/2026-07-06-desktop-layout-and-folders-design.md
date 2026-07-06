@@ -49,7 +49,7 @@ The existing "twilight journal" token system (globals.css) is unchanged. Impleme
 
 ## Out of scope
 
-Mood tracking, therapist data, digests (their rail slots are placeholders); folder-level sharing; drag-and-drop assignment (a simple picker/menu suffices for v1); any change to the encryption model, chat transport, or crisis logic.
+Mood tracking, therapist data, digests (their rail slots are placeholders); folder-level sharing; any change to the encryption model, chat transport, or crisis logic. (Drag-and-drop assignment was originally cut here; the user reinstated it on 2026-07-06 — desktop/pointer only, native HTML5 DnD, with the menu path remaining the accessible/touch route.)
 
 ## Testing
 
