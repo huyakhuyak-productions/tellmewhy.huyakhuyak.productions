@@ -84,6 +84,30 @@ describe("encrypted conversations", () => {
     expect(await isTitleCustomized(id, userId)).toBe(false);
   });
 
+  it("never lets an auto-rename land after a human has already claimed the title", async () => {
+    const { renameConversation, isTitleCustomized } = await import("./conversations");
+    const { id } = await createConversation(userId, "July 6");
+    await renameConversation(id, userId, "Mine"); // human rename, customized: true
+    // Simulates the auto-title write landing after a human renamed mid-window —
+    // the atomic WHERE clause must refuse it outright.
+    await renameConversation(id, userId, "Auto", { customized: false });
+
+    const list = await listConversations(userId);
+    expect(list.find((c) => c.id === id)?.title).toBe("Mine");
+    expect(await isTitleCustomized(id, userId)).toBe(true);
+  });
+
+  it("still lets a human rename win when it comes after an auto-rename", async () => {
+    const { renameConversation, isTitleCustomized } = await import("./conversations");
+    const { id } = await createConversation(userId, "July 6");
+    await renameConversation(id, userId, "Auto", { customized: false });
+    await renameConversation(id, userId, "Mine"); // human rename, customized: true
+
+    const list = await listConversations(userId);
+    expect(list.find((c) => c.id === id)?.title).toBe("Mine");
+    expect(await isTitleCustomized(id, userId)).toBe(true);
+  });
+
   it("refuses foreign rename and metadata reads", async () => {
     const { renameConversation, isTitleCustomized } = await import("./conversations");
     const { id } = await createConversation(userId, "Private");

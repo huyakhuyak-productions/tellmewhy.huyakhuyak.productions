@@ -113,10 +113,19 @@ export async function renameConversation(
 ): Promise<void> {
   await requireOwnedConversation(conversationId, userId);
   const dek = await getOrCreateUserDek(userId);
+  // The route's pre-check (isTitleCustomized before the up-to-5s generateText
+  // call) is only a fast path, not the guarantee: a human rename can land in
+  // that window. For the auto path, the WHERE clause itself must refuse any
+  // row a human has already claimed, so the check-then-write race can't
+  // silently overwrite (or un-claim) a human-picked title.
+  const whereClause =
+    opts?.customized === false
+      ? and(eq(conversations.id, conversationId), eq(conversations.userId, userId), eq(conversations.titleCustomized, false))
+      : and(eq(conversations.id, conversationId), eq(conversations.userId, userId));
   await db
     .update(conversations)
     .set({ titleCiphertext: encryptText(dek, title), titleCustomized: opts?.customized ?? true })
-    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+    .where(whereClause);
 }
 
 export async function isTitleCustomized(conversationId: string, userId: string): Promise<boolean> {
