@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateText, generateObject } from "ai";
-import { z } from "zod";
 import { getChatModel, getClassifierModel, getTitleModel } from "./models";
+import { riskSchema } from "@/test/ai-fixtures";
 
 describe("AI_MOCK production guard", () => {
   afterEach(() => {
@@ -25,8 +25,6 @@ describe("mock chat model (AI_MOCK=1 in test setup)", () => {
     expect(text).toContain("mock reply");
   });
 });
-
-const riskSchema = z.object({ risk: z.enum(["none", "elevated", "crisis"]) });
 
 describe("mock classifier model (AI_MOCK=1 in test setup)", () => {
   it("returns crisis when the prompt contains MOCK_CRISIS", async () => {

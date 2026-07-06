@@ -1,6 +1,7 @@
 import { createOpenRouter, type OpenRouterChatSettings } from "@openrouter/ai-sdk-provider";
-import type { LanguageModel } from "ai";
-import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { simulateReadableStream, type LanguageModel } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
 
 // A misconfigured production deploy must never serve canned empathy instead
 // of a real model — fail loudly at import time rather than silently mocking.
@@ -20,18 +21,6 @@ const NO_LOGGING: OpenRouterChatSettings = { provider: { data_collection: "deny"
 function openrouter() {
   return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY });
 }
-
-// Adaptation: installed `ai@6.0.214` renames `ai/test`'s mock class to
-// `MockLanguageModelV3` (not `MockLanguageModelV2`), and its
-// `LanguageModelV3GenerateResult` / stream `finish` part require nested
-// `finishReason: { unified, raw }` and nested `usage: { inputTokens: {...},
-// outputTokens: {...} }` shapes instead of the brief's flat v5-era shapes.
-// Shape confirmed against src/lib/ai/crisis.test.ts's working mockClassifier.
-const MOCK_FINISH_REASON = { unified: "stop", raw: "stop" } as const;
-const MOCK_USAGE = {
-  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
-  outputTokens: { total: 1, text: 1, reasoning: undefined },
-} as const;
 
 const MOCK_REPLY_TEXT = "This is a **mock reply** for tests.";
 

@@ -1,27 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 import { assessRisk, screenText } from "./crisis";
-
-// Brief was drafted against ai@5-era `MockLanguageModelV2` / flat `doGenerate`
-// result shape. Installed version is ai@6.0.214, whose `ai/test` export is
-// `MockLanguageModelV3`, and whose `LanguageModelV3GenerateResult` requires:
-//   - `finishReason` as `{ unified, raw }` instead of a bare string
-//   - `usage` as nested `{ inputTokens: {...}, outputTokens: {...} }` instead
-//     of flat `{ inputTokens, outputTokens, totalTokens }`
-// Test *behavior* (fixed JSON verdict text / a thrown error) is unchanged.
-function mockClassifier(reply: string) {
-  return new MockLanguageModelV3({
-    doGenerate: async () => ({
-      finishReason: { unified: "stop", raw: "stop" },
-      usage: {
-        inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
-        outputTokens: { total: 1, text: 1, reasoning: undefined },
-      },
-      content: [{ type: "text", text: reply }],
-      warnings: [],
-    }),
-  });
-}
+import { mockClassifier } from "@/test/ai-fixtures";
 
 describe("screenText", () => {
   it.each([
