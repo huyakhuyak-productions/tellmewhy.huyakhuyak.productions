@@ -8,6 +8,7 @@ import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 import chatRateLimiter from "@/lib/rate-limit";
+import { clampTitle } from "@/lib/title";
 
 const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
 
@@ -71,7 +72,9 @@ export async function POST(req: Request): Promise<Response> {
                 prompt: buildTitlePrompt(text, replyText),
                 abortSignal: AbortSignal.timeout(5000),
               });
-              const title = rawTitle.trim().slice(0, 80);
+              // Code-point-safe clamp — see clampTitle for why a plain
+              // `.slice(0, 80)` (UTF-16 code units) can split an emoji.
+              const title = clampTitle(rawTitle.trim());
               if (title) await renameConversation(conversationId, userId, title, { customized: false });
             }
           } catch (error) {
