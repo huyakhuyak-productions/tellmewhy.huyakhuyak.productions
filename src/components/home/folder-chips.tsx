@@ -95,7 +95,7 @@ export function FolderChips({
               className="animate-message-rise h-full"
               style={{ animationDelay: `${Math.min(i, 6) * 55}ms` }}
             >
-              <RecentCard item={item} />
+              <RecentCard item={item} folders={folders} />
             </div>
           ))}
         </div>

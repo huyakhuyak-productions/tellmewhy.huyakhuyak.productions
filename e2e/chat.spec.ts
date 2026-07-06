@@ -49,3 +49,28 @@ test("a crisis first message reaches the conversation", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText(/988/)).toBeVisible();
 });
+
+test("rename a conversation from the home card menu", async ({ page }) => {
+  await signUp(page);
+
+  await startFromHero(page, "A phone thought");
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  const conversationHref = new URL(page.url()).pathname;
+
+  // Phones have no rail — the card's overflow menu is the only path to rename.
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+
+  const renamePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  const input = page.getByRole("textbox", { name: "Rename conversation" });
+  await input.fill("Named from my phone");
+  await input.press("Enter");
+  await renamePersisted;
+
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("Named from my phone"),
+  ).toBeVisible();
+});

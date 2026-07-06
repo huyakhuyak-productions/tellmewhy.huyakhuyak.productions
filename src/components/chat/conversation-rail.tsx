@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { relativeTime } from "@/lib/relative-time";
@@ -37,6 +37,8 @@ export function ConversationRail({
   const [folderError, setFolderError] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<{ id: string; message: string } | null>(null);
 
   const currentFolderId = conversations.find((c) => c.id === currentId)?.folderId ?? null;
   const unsorted = conversations.filter((c) => c.folderId === null);
@@ -70,6 +72,31 @@ export function ConversationRail({
       setMoveError({ id: conversationId, message: "Couldn't move — try again." });
     } finally {
       setMovingId(null);
+    }
+  }
+
+  async function rename(conversationId: string, title: string): Promise<boolean> {
+    setRenameError(null);
+    setRenamingId(conversationId);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) {
+        setRenameError({ id: conversationId, message: "Couldn't rename — try again." });
+        return false;
+      }
+      router.refresh();
+      return true;
+    } catch {
+      // Offline / network failure — surfaced the same way as a non-OK response
+      // so a rename never dies silently.
+      setRenameError({ id: conversationId, message: "Couldn't rename — try again." });
+      return false;
+    } finally {
+      setRenamingId(null);
     }
   }
 
@@ -120,6 +147,9 @@ export function ConversationRail({
           onMove={move}
           movingId={movingId}
           moveError={moveError}
+          onRename={rename}
+          renamingId={renamingId}
+          renameError={renameError}
         />
       ))}
 
@@ -135,6 +165,9 @@ export function ConversationRail({
           onMove={move}
           movingId={movingId}
           moveError={moveError}
+          onRename={rename}
+          renamingId={renamingId}
+          renameError={renameError}
         />
       )}
 
@@ -209,6 +242,9 @@ function FolderGroup({
   onMove,
   movingId,
   moveError,
+  onRename,
+  renamingId,
+  renameError,
 }: {
   label: string;
   collapsed: boolean;
@@ -220,6 +256,9 @@ function FolderGroup({
   onMove: (conversationId: string, folderId: string | null) => void;
   movingId: string | null;
   moveError: { id: string; message: string } | null;
+  onRename: (conversationId: string, title: string) => Promise<boolean>;
+  renamingId: string | null;
+  renameError: { id: string; message: string } | null;
 }) {
   return (
     <div>
@@ -263,6 +302,9 @@ function FolderGroup({
                 onMove={onMove}
                 moving={movingId === c.id}
                 error={moveError?.id === c.id ? moveError.message : null}
+                onRename={onRename}
+                renaming={renamingId === c.id}
+                renameError={renameError?.id === c.id ? renameError.message : null}
               />
             ))
           )}
@@ -280,6 +322,9 @@ function ConversationRow({
   onMove,
   moving,
   error,
+  onRename,
+  renaming,
+  renameError,
 }: {
   item: RailConversation;
   selected: boolean;
@@ -288,11 +333,29 @@ function ConversationRow({
   onMove: (conversationId: string, folderId: string | null) => void;
   moving: boolean;
   error: string | null;
+  onRename: (conversationId: string, title: string) => Promise<boolean>;
+  renaming: boolean;
+  renameError: string | null;
 }) {
   // The row lives inside the folder accordion's overflow-hidden clip, so the
   // menu is positioned `fixed` off the trigger's rect to escape that clip.
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
+  const [renameMode, setRenameMode] = useState(false);
+  const [draft, setDraft] = useState(item.title);
+
+  const menuOpen = menu !== null;
+
+  // Escape dismisses the open menu whether it was reached by mouse or keyboard —
+  // a single listener covers both the Move list and the Rename entry.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -300,51 +363,92 @@ function ConversationRow({
     setMenu({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
   }
 
-  const menuOpen = menu !== null;
+  function startRename() {
+    setMenu(null);
+    setDraft(item.title);
+    setRenameMode(true);
+  }
+
+  async function submitRename(e: React.FormEvent) {
+    e.preventDefault();
+    const title = draft.trim();
+    if (!title || renaming) return;
+    if (title === item.title) {
+      setRenameMode(false);
+      return;
+    }
+    const ok = await onRename(item.id, title);
+    if (ok) setRenameMode(false);
+  }
 
   return (
     <div>
       <div className="group/row relative flex items-center">
-        <Link
-          href={`/chat/${item.id}`}
-          aria-current={selected ? "page" : undefined}
-          className={`min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
-            selected ? "bg-accent/[0.10]" : "hover:bg-foreground/[0.04]"
-          }`}
-        >
-          <span
-            className={`block truncate text-[13px] tracking-[-0.005em] ${
-              selected ? "font-medium text-foreground" : "text-muted-foreground"
+        {renameMode ? (
+          <form onSubmit={submitRename} className="flex-1 px-2 py-1">
+            <input
+              autoFocus
+              aria-label="Rename conversation"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => {
+                if (!renaming) setRenameMode(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setRenameMode(false);
+                }
+              }}
+              disabled={renaming}
+              maxLength={200}
+              className="w-full rounded-md border bg-card px-2.5 py-1.5 text-[13px] outline-none transition-[border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent disabled:opacity-60"
+            />
+          </form>
+        ) : (
+          <Link
+            href={`/chat/${item.id}`}
+            aria-current={selected ? "page" : undefined}
+            className={`min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
+              selected ? "bg-accent/[0.10]" : "hover:bg-foreground/[0.04]"
             }`}
           >
-            {item.title}
-          </span>
-          <span
-            suppressHydrationWarning
-            className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground/80"
-          >
-            {relativeTime(item.updatedAt)}
-          </span>
-        </Link>
+            <span
+              className={`block truncate text-[13px] tracking-[-0.005em] ${
+                selected ? "font-medium text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              {item.title}
+            </span>
+            <span
+              suppressHydrationWarning
+              className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground/80"
+            >
+              {relativeTime(item.updatedAt)}
+            </span>
+          </Link>
+        )}
 
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-label="Move to folder"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          disabled={moving}
-          onClick={() => (menuOpen ? setMenu(null) : openMenu())}
-          className={`absolute right-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-[opacity,color] duration-150 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] group-hover/row:opacity-100 disabled:pointer-events-none disabled:opacity-40 ${
-            menuOpen ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-            <circle cx="3.2" cy="8" r="1.3" />
-            <circle cx="8" cy="8" r="1.3" />
-            <circle cx="12.8" cy="8" r="1.3" />
-          </svg>
-        </button>
+        {!renameMode && (
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label="Conversation actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            disabled={moving}
+            onClick={() => (menuOpen ? setMenu(null) : openMenu())}
+            className={`absolute right-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-[opacity,color] duration-150 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] group-hover/row:opacity-100 disabled:pointer-events-none disabled:opacity-40 ${
+              menuOpen ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+              <circle cx="3.2" cy="8" r="1.3" />
+              <circle cx="8" cy="8" r="1.3" />
+              <circle cx="12.8" cy="8" r="1.3" />
+            </svg>
+          </button>
+        )}
 
         {menu && (
           <>
@@ -360,6 +464,15 @@ function ConversationRow({
               style={{ top: menu.top, right: menu.right }}
               className="animate-cp-pop fixed z-50 min-w-40 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)]"
             >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={startRename}
+                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+              >
+                Rename
+              </button>
+              <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
               <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
                 Move to…
               </div>
@@ -395,7 +508,11 @@ function ConversationRow({
         )}
       </div>
 
-      {error ? (
+      {renameError ? (
+        <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
+          {renameError}
+        </p>
+      ) : error ? (
         <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
           {error}
         </p>

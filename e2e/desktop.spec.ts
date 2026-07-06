@@ -49,7 +49,7 @@ test("folders group the rail and filter the home cards", async ({ page }) => {
   const movePersisted = page.waitForResponse(
     (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
   );
-  await page.getByRole("button", { name: "Move to folder" }).click();
+  await page.getByRole("button", { name: "Conversation actions" }).click();
   await page.getByRole("menuitem", { name: "family" }).click();
   await movePersisted;
 
@@ -65,4 +65,36 @@ test("folders group the rail and filter the home cards", async ({ page }) => {
   // recent slice — selecting the folder should surface the moved card.
   await page.getByRole("button", { name: "family", exact: true }).click();
   await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
+});
+
+test("rename a conversation from the rail menu", async ({ page }) => {
+  await signUp(page);
+
+  await page.getByLabel("Start a conversation").fill("Something worth keeping");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+
+  // Open the row's overflow menu and rename in place.
+  await page.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+
+  const renamePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  const input = page.getByRole("textbox", { name: "Rename conversation" });
+  await input.fill("A named reflection");
+  await input.press("Enter");
+  await renamePersisted;
+
+  // The new title shows in the rail immediately...
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A named reflection"),
+  ).toBeVisible();
+
+  // ...and survives a reload onto the home cards.
+  await page.goto("/chat");
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A named reflection"),
+  ).toBeVisible();
 });
