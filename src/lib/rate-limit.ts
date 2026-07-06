@@ -61,3 +61,9 @@ export class RateLimiter {
 // limitation documented on the class above).
 const chatRateLimiter = new RateLimiter();
 export default chatRateLimiter;
+
+// Separate instance (own bucket namespace, keyed by userId) for conversation
+// creation — generous enough for real use, just enough to stop orphan
+// conversations piling up from a runaway client or a scripted retry loop.
+// Kept apart from chatRateLimiter so exhausting one never throttles the other.
+export const conversationCreateRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });

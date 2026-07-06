@@ -56,7 +56,10 @@ export function HeroComposer() {
       });
       if (!res.ok) {
         setPending(false);
-        return setError("Couldn't start the conversation — try again.");
+        // A rate-limit 429 carries its own calm copy; anything else (a 401
+        // from a stale session, a 500) falls back to the generic message.
+        const body: { error?: string } | null = await res.json().catch(() => null);
+        return setError(body?.error ?? "Couldn't start the conversation — try again.");
       }
       // res.json() lives in this same try: a connection drop mid-body (after
       // headers land but before the response finishes streaming) throws here
