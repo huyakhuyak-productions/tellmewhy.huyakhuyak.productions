@@ -1,7 +1,60 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { wrapFocus } from "@/lib/focus-trap";
+
 export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const dismissRef = useRef<HTMLButtonElement>(null);
+
+  // The overlay variant (phones) floats over the whole screen, so it behaves
+  // as a modal dialog. The lg variant is docked in the reading column beside
+  // the composer and messages — content around it stays live, so claiming
+  // `aria-modal` there would lie to assistive tech. Track which variant is on.
+  const [overlay, setOverlay] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023.98px)");
+    const sync = () => setOverlay(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // Move focus into the card on open and restore it to whatever was focused
+  // before (the composer, usually) when the card is dismissed.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dismissRef.current?.focus();
+    return () => previouslyFocused?.focus?.();
+  }, []);
+
+  // Minimal hand-rolled trap: keep Tab / Shift+Tab cycling within the card's
+  // own focusables (the two resource links and the dismiss button).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      const target = wrapFocus(focusables, document.activeElement as HTMLElement | null, e.shiftKey);
+      if (target) {
+        e.preventDefault();
+        target.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div
+      ref={dialogRef}
       role="alertdialog"
+      aria-modal={overlay || undefined}
       aria-label="Support resources"
       className="animate-crisis-rise fixed inset-x-3 bottom-24 z-50 mx-auto max-w-md overflow-hidden rounded-3xl border border-[color:var(--crisis-border)] bg-[color:var(--crisis)] p-5 text-[color:var(--crisis-foreground)] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_48px_-12px_var(--crisis-glow)] lg:inset-x-auto lg:bottom-[104px] lg:left-1/2 lg:z-20 lg:mx-0 lg:w-[min(460px,calc(100%-80px))] lg:max-w-none lg:-translate-x-1/2"
     >
@@ -53,8 +106,8 @@ export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
         </div>
       </div>
       <button
+        ref={dismissRef}
         onClick={onDismiss}
-        autoFocus
         className="mt-4 h-11 w-full rounded-xl border border-[color:var(--crisis-border)] bg-[color:var(--crisis)] text-sm font-medium outline-none transition-[transform,background-color] duration-150 hover:bg-[color:var(--crisis-border)]/40 focus-visible:ring-2 focus-visible:ring-[color:var(--crisis-muted)]/50 active:scale-[0.98]"
       >
         I&apos;m safe right now
