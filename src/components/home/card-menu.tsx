@@ -204,9 +204,11 @@ export function CardMenu({
       )}
 
       {error && !open ? (
+        // No interactive children — pointer-events-none keeps it from
+        // intercepting clicks meant for the card link underneath.
         <p
           role="alert"
-          className="absolute inset-x-2 bottom-2 z-30 rounded-md bg-card/95 px-2 py-1 font-serif text-[11px] italic text-accent shadow-sm"
+          className="pointer-events-none absolute inset-x-2 bottom-2 z-30 rounded-md bg-card/95 px-2 py-1 font-serif text-[11px] italic text-accent shadow-sm"
         >
           {error}
         </p>
