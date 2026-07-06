@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { conversations, folders } from "@/db/schema";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./conversations";
+import { NotFoundError } from "./errors";
 
 async function requireOwnedFolder(folderId: string, userId: string) {
   const [row] = await db

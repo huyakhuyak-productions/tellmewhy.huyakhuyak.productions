@@ -2,7 +2,8 @@ import { convertToModelMessages, generateText, streamText, type UIMessage } from
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import { isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import { NotFoundError } from "@/lib/errors";
 import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";

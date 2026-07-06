@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/conversations";
+import { NotFoundError } from "@/lib/errors";
 import { deleteFolder, renameFolder } from "@/lib/folders";
 
 const renameSchema = z.object({ name: z.string().min(1).max(80) });

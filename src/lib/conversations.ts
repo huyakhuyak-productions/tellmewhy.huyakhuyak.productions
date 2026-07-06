@@ -3,8 +3,11 @@ import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
+import { NotFoundError } from "./errors";
 
-export class NotFoundError extends Error {}
+// Re-exported for compatibility — existing callers importing NotFoundError
+// from here keep working; new code should import it from "./errors" directly.
+export { NotFoundError };
 
 type Sender = "client" | "ai" | "therapist" | "system";
 type RiskLevel = "none" | "elevated" | "crisis";

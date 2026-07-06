@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, renameConversation } from "@/lib/conversations";
+import { renameConversation } from "@/lib/conversations";
+import { NotFoundError } from "@/lib/errors";
 import { assignConversationToFolder } from "@/lib/folders";
 
 const bodySchema = z
