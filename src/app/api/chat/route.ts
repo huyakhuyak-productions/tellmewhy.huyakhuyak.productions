@@ -60,7 +60,10 @@ export async function POST(req: Request): Promise<Response> {
           console.error(`Failed to persist AI reply for conversation ${conversationId}`, error);
         }
 
-        if (history.length === 1) {
+        // A generated title can echo crisis phrasing prominently on the home
+        // screen — display exposure, distinct from encryption at rest — so
+        // crisis-flagged first exchanges keep the neutral date title instead.
+        if (history.length === 1 && riskLevel !== "crisis") {
           try {
             if (!(await isTitleCustomized(conversationId, userId))) {
               const { text: rawTitle } = await generateText({

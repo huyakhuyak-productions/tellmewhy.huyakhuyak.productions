@@ -136,6 +136,20 @@ describe("POST /api/chat", () => {
     expect(await isTitleCustomized(id, userId)).toBe(false);
   });
 
+  it("keeps the neutral date title when the first exchange is flagged as crisis", async () => {
+    const { id } = await createConversation(userId, "July 6");
+    const res = await POST(chatRequest({ conversationId: id, text: "MOCK_CRISIS I want to hurt myself" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-risk-level")).toBe("crisis");
+    await res.text(); // drain the stream so onFinish (and the skipped title call) runs
+
+    // Give any (unwanted) auto-title call a chance to run before asserting it didn't.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
+    expect(conversation?.title).toBe("July 6");
+    expect(await isTitleCustomized(id, userId)).toBe(false);
+  });
+
   it("never overwrites a title the user already customized", async () => {
     const { id } = await createConversation(userId, "Untitled");
     await renameConversation(id, userId, "Mine");
