@@ -599,8 +599,10 @@ async function submit(e: React.FormEvent) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ title: new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" }) }),
   });
-  setPending(false);
-  if (!res.ok) return setError("Couldn't start the conversation — try again.");
+  if (!res.ok) {
+    setPending(false); // only re-enable on error — success stays locked until navigation unmounts us
+    return setError("Couldn't start the conversation — try again.");
+  }
   const { id } = await res.json();
   // Never put message text in the URL — history and logs. Task 7 reads+clears this key.
   sessionStorage.setItem(`tellmewhy:draft:${id}`, text);
