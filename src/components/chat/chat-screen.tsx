@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { MessageBubble } from "./message-bubble";
@@ -49,11 +50,13 @@ export function ChatScreen({
     })),
   });
 
+  const router = useRouter();
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isFirstRender = useRef(true);
   const sentDraft = useRef(false);
+  const titleWatchStarted = useRef(false);
 
   const isBusy = status === "submitted" || status === "streaming";
 
@@ -70,6 +73,70 @@ export function ChatScreen({
       sendMessage({ text: draft });
     }
   }, [conversationId, sendMessage]);
+
+  // The auto-title lands server-side some time after the stream closes (a
+  // fire-and-forget classify+rename call — see /api/chat). Rather than hold
+  // the response stream open (which would keep the composer disabled), watch
+  // for it client-side: once THIS session's first exchange finishes, poll
+  // GET /api/conversations for a title change and refresh exactly once. The
+  // ref guard keeps this from starting twice (StrictMode) and from ever
+  // re-arming for later exchanges in the same mount.
+  useEffect(() => {
+    if (titleWatchStarted.current) return;
+    if (initialMessages.length > 1) return;
+    if (messages.length < 2 || status !== "ready") return;
+    titleWatchStarted.current = true;
+
+    // What the rail/home are currently showing for this conversation (from
+    // the server render before this exchange). A fast rename can land before
+    // this effect even gets to run its own baseline fetch below — in that
+    // case the "baseline" would already be the new title and would never
+    // appear to change on its own, so this is the reference a real change
+    // must diverge from.
+    const displayedTitle = conversations.find((c) => c.id === conversationId)?.title;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function currentTitle(): Promise<string | undefined> {
+      try {
+        const res = await fetch("/api/conversations");
+        if (!res.ok) return undefined;
+        const list = (await res.json()) as { id: string; title: string }[];
+        return list.find((c) => c.id === conversationId)?.title;
+      } catch {
+        return undefined;
+      }
+    }
+
+    function poll(baseline: string | undefined, attempt: number) {
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        const latest = await currentTitle();
+        if (cancelled) return;
+        if (latest !== undefined && latest !== baseline) {
+          router.refresh();
+          return;
+        }
+        if (attempt < 6) poll(baseline, attempt + 1);
+      }, 1500);
+    }
+
+    void (async () => {
+      const baseline = await currentTitle();
+      if (cancelled) return;
+      if (baseline !== undefined && baseline !== displayedTitle) {
+        router.refresh();
+        return;
+      }
+      poll(baseline, 1);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [initialMessages.length, messages.length, status, conversationId, router, conversations]);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {

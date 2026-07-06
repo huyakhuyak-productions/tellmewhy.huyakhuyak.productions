@@ -67,6 +67,26 @@ test("folders group the rail and filter the home cards", async ({ page }) => {
   await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
 });
 
+test("the generated title appears in the rail without a reload", async ({ page }) => {
+  await signUp(page);
+
+  await page.getByLabel("Start a conversation").fill("Thinking about a career change");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // The auto-title lands async after the stream closes (see route.ts's
+  // fire-and-forget classify+rename). ChatScreen polls for it client-side and
+  // calls router.refresh() once — no page.reload() here, so this only passes
+  // if that watcher (not a manual refresh) is what surfaces the new title.
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A quiet mock title"),
+  ).toBeVisible({ timeout: 12_000 });
+});
+
 test("rename a conversation from the rail menu", async ({ page }) => {
   await signUp(page);
 

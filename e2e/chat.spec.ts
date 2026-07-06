@@ -50,6 +50,29 @@ test("a crisis first message reaches the conversation", async ({ page }) => {
   await expect(page.getByText(/988/)).toBeVisible();
 });
 
+test("the generated title shows on the home card after a client-side navigation", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  await startFromHero(page, "Thinking about a career change");
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  await expect(page.getByText("mock reply")).toBeVisible();
+
+  // The auto-title lands via a fire-and-forget rename after the stream closes
+  // (see api/chat/route.ts's onFinish) — there is no client signal for "done"
+  // on this screen (only ChatScreen polls; the home page doesn't), so give the
+  // mock title model its brief moment to land before navigating away.
+  await page.waitForTimeout(2000);
+
+  // Phones have no rail — "Back to your conversations" is the only home link,
+  // and it's a next/link (client-side, no page.reload()).
+  await page.getByRole("link", { name: "Back to your conversations" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+
+  await expect(page.getByText("A quiet mock title")).toBeVisible();
+});
+
 test("rename a conversation from the home card menu", async ({ page }) => {
   await signUp(page);
 
