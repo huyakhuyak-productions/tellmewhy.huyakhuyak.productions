@@ -10,10 +10,21 @@ export const userKeys = pgTable("user_keys", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// User-defined conversation folders. Names are topic metadata
+// ("relationships", "health") — encrypted like conversation titles.
+export const folders = pgTable("folders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  nameCiphertext: text("name_ciphertext").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const conversations = pgTable("conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
   titleCiphertext: text("title_ciphertext").notNull(),
+  // null = unsorted. Deleting a folder unsorts its conversations.
+  folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
