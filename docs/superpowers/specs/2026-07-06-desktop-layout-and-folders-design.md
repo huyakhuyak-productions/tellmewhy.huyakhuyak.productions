@@ -41,6 +41,11 @@ The existing "twilight journal" token system (globals.css) is unchanged. Impleme
 - Repository layer owns encryption + ownership enforcement (same pattern and invariants as `conversations.ts`); routes stay thin. API: CRUD for folders, assign/unassign on conversations, folder filter on the conversations list.
 - Phase-2 note: sharing grants remain per-conversation. Per-folder grant convenience may come later; the adversarial invariant stays conversation-scoped.
 
+## Amendment (2026-07-06, user-requested): conversation titles
+
+- **Auto-generated titles:** after the FIRST AI reply in a conversation, a cheap model call (classifier tier, same no-logging OpenRouter constraint) summarizes the opening exchange into a 3–6 word title, stored encrypted like any title. Runs fire-and-forget in the chat route's `onFinish` (no queue infra yet); failures logged (conversationId only), never surfaced mid-chat. Auto-titling only fires when the title is still the default — it never overwrites a human choice. No new privacy exposure: the model already saw these messages to reply.
+- **Manual rename:** from the conversation rail's per-conversation menu (desktop) and a new overflow menu on the home cards (all viewports — which also brings folder-move to mobile, previously rail/desktop-only). Backed by extending `PATCH /api/conversations/[id]` with an optional `title`. Manual rename wins permanently (a `title_customized` flag suppresses future auto-titling).
+
 ## Out of scope
 
 Mood tracking, therapist data, digests (their rail slots are placeholders); folder-level sharing; drag-and-drop assignment (a simple picker/menu suffices for v1); any change to the encryption model, chat transport, or crisis logic.
