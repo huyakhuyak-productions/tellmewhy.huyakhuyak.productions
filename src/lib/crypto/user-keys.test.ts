@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { getOrCreateUserDek, shredUserKey } from "./user-keys";
+import { getKeyProvider } from "./key-provider";
+import { withRequestScope } from "@/lib/request-scope";
 import { db } from "@/db";
 import { userKeys } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -30,5 +32,49 @@ describe("user key lifecycle", () => {
     await shredUserKey(userId);
     const rows = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
     expect(rows).toHaveLength(0);
+  });
+
+  describe("per-request memoization", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("unwraps once per request scope no matter how many callers ask", async () => {
+      await getOrCreateUserDek(userId); // seed the row outside any scope
+      const unwrapSpy = vi.spyOn(getKeyProvider(), "unwrapDek");
+
+      await withRequestScope(async () => {
+        await getOrCreateUserDek(userId); // saveMessage (client turn)
+        await getOrCreateUserDek(userId); // loadMessages
+        await getOrCreateUserDek(userId); // saveMessage (AI reply)
+        await getOrCreateUserDek(userId); // renameConversation
+      });
+
+      expect(unwrapSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // The security property the memoization must never trade away: a raw DEK
+    // must not outlive the request that decrypted it. Two separate scopes —
+    // standing in for two separate HTTP requests — must each pay for their
+    // own unwrap.
+    it("does not share the cached DEK across two different request scopes", async () => {
+      await getOrCreateUserDek(userId); // seed the row outside any scope
+      const unwrapSpy = vi.spyOn(getKeyProvider(), "unwrapDek");
+
+      await withRequestScope(() => getOrCreateUserDek(userId));
+      await withRequestScope(() => getOrCreateUserDek(userId));
+
+      expect(unwrapSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not cache at all when called outside any request scope", async () => {
+      await getOrCreateUserDek(userId); // seed the row outside any scope
+      const unwrapSpy = vi.spyOn(getKeyProvider(), "unwrapDek");
+
+      await getOrCreateUserDek(userId);
+      await getOrCreateUserDek(userId);
+
+      expect(unwrapSpy).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
 
@@ -40,6 +41,22 @@ describe("POST /api/chat", () => {
       const msgs = await loadMessages(id, userId);
       expect(msgs.map((m) => m.sender)).toEqual(["client", "ai"]);
       expect(msgs[1].text).toContain("mock reply");
+    });
+  });
+
+  // saveMessage runs twice (client turn, AI reply), loadMessages runs once,
+  // and the title-generation branch runs renameConversation once — four call
+  // sites that would each unwrap this user's DEK without per-request
+  // memoization (see request-scope.ts / user-keys.ts).
+  it("unwraps the user's DEK once per request despite four call sites", async () => {
+    const { id } = await createConversation(userId, "Untitled"); // seeds the row, one unwrap outside the spy
+    const unwrapSpy = vi.spyOn(getKeyProvider(), "unwrapDek");
+
+    const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+    await res.text(); // drain the stream so onFinish (saveMessage + rename) runs
+
+    await vi.waitFor(() => {
+      expect(unwrapSpy).toHaveBeenCalledTimes(1);
     });
   });
 

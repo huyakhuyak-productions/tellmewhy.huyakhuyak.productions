@@ -8,13 +8,20 @@ import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 import chatRateLimiter from "@/lib/rate-limit";
+import { withRequestScope } from "@/lib/request-scope";
 import { clampTitle } from "@/lib/title";
 
 const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
 
 const CONTEXT_WINDOW = 30; // most recent messages sent to the model
 
+// This route unwraps the same user's DEK several times (see user-keys.ts) —
+// scope the request so getOrCreateUserDek can memoize within it, never across.
 export async function POST(req: Request): Promise<Response> {
+  return withRequestScope(() => handlePost(req));
+}
+
+async function handlePost(req: Request): Promise<Response> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;

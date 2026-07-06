@@ -3,8 +3,19 @@ import { userKeys } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { generateDek } from "./envelope";
 import { getKeyProvider } from "./key-provider";
+import { scopedMemo } from "@/lib/request-scope";
 
+// A single chat POST unwraps this user's DEK 3-4x (saveMessage for the
+// client turn, loadMessages, saveMessage again for the AI reply, plus
+// renameConversation when the title-generation branch runs). Memoizing
+// within one request cuts that down to one real unwrap. `scopedMemo` is
+// request-scoped only (see request-scope.ts) — it never caches across
+// requests, so a raw DEK never outlives the request that decrypted it.
 export async function getOrCreateUserDek(userId: string): Promise<Buffer> {
+  return scopedMemo(`dek:${userId}`, () => fetchOrCreateUserDek(userId));
+}
+
+async function fetchOrCreateUserDek(userId: string): Promise<Buffer> {
   const provider = getKeyProvider();
   const existing = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
   if (existing.length > 0) return provider.unwrapDek(existing[0].wrappedDek);
