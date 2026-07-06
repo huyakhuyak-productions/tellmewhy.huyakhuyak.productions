@@ -1,10 +1,15 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/conversations";
+import { NotFoundError, renameConversation } from "@/lib/conversations";
 import { assignConversationToFolder } from "@/lib/folders";
 
-const bodySchema = z.object({ folderId: z.uuid().nullable() });
+const bodySchema = z
+  .object({
+    folderId: z.uuid().nullable().optional(),
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((b) => b.folderId !== undefined || b.title !== undefined, { message: "Nothing to update" });
 const paramsSchema = z.object({ conversationId: z.uuid() });
 
 export async function PATCH(
@@ -17,7 +22,12 @@ export async function PATCH(
   const body = bodySchema.safeParse(await req.json().catch(() => null));
   if (!params.success || !body.success) return Response.json({ error: "Invalid input" }, { status: 400 });
   try {
-    await assignConversationToFolder(params.data.conversationId, session.user.id, body.data.folderId);
+    if (body.data.title !== undefined) {
+      await renameConversation(params.data.conversationId, session.user.id, body.data.title, { customized: true });
+    }
+    if (body.data.folderId !== undefined) {
+      await assignConversationToFolder(params.data.conversationId, session.user.id, body.data.folderId);
+    }
     return new Response(null, { status: 204 });
   } catch (error) {
     if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
