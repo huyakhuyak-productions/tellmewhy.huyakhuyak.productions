@@ -13,11 +13,12 @@ const storage = new AsyncLocalStorage<Scope>();
 // without that gap.
 
 /**
- * Runs `fn` inside a fresh, isolated request scope. Anything memoized via
- * `scopedMemo` during `fn` is thrown away the moment it settles — nothing
- * survives to the next call, and no other concurrent scope can see it. This
- * is deliberate: callers that hold secrets (e.g. a decrypted key) must never
- * leak them across requests via a shared, longer-lived cache.
+ * Runs `fn` inside a fresh, isolated request scope. The scope follows the
+ * async context, so it deliberately survives into detached continuations the
+ * request spawns (e.g. a streaming route's onFinish work) — but nothing
+ * survives to the NEXT request, and no other concurrent scope can see it.
+ * This is the point: callers that hold secrets (e.g. a decrypted key) must
+ * never leak them across requests via a shared, longer-lived cache.
  */
 export function withRequestScope<T>(fn: () => Promise<T>): Promise<T> {
   return storage.run(new Map(), fn);

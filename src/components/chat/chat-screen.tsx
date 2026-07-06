@@ -67,6 +67,9 @@ export function ChatScreen({
         return { body: { conversationId, text: partsToText(last.parts) } };
       },
       fetch: async (input, init) => {
+        // Reset before the attempt: a thrown fetch (offline) after an earlier
+        // 429 must not inherit the rate-limit copy and lose the Retry button.
+        rateLimited.current = false;
         const res = await fetch(input, init);
         rateLimited.current = res.status === 429;
         if (res.headers.get("x-risk-level") === "crisis") setCrisis(true);
