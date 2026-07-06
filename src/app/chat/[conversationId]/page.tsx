@@ -39,6 +39,10 @@ export default async function ConversationPage({
 
   return (
     <ChatScreen
+      // Remount per conversation: rail-to-rail navigation reuses the component
+      // instance, which would carry the draft/title-watcher ref-guards (and
+      // dismissed-crisis state) from one conversation into the next.
+      key={conversationId}
       conversationId={conversationId}
       initialMessages={initialMessages}
       conversations={conversationList.map((c) => ({
