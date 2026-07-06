@@ -199,4 +199,17 @@
   .animate-cp-pop {
     animation: none;
   }
+  /*
+    Hold interactive elements still. The press-scale (active:scale-*) and the
+    home card's hover-lift (hover:-translate-y-px) read as motion; Tailwind v4
+    emits them as the standalone `scale` / `translate` properties on :hover /
+    :active, so neutralize exactly those states. Color, opacity, and shadow
+    transitions stay — they don't imply movement, and this scope never touches
+    the crisis card's static -translate-x-1/2 centering.
+  */
+  *:hover,
+  *:active {
+    scale: none !important;
+    translate: none !important;
+  }
 }
