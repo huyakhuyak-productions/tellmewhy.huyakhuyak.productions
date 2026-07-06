@@ -126,11 +126,30 @@ describe("POST /api/chat", () => {
     });
 
     await renameConversation(id, userId, "A quiet mock title", { customized: false });
+
+    // Deterministic stand-in for "onFinish ran to completion" (no fixed
+    // real-time sleep): for a second exchange, the title branch is skipped
+    // synchronously right after the AI reply's own save resolves, so flag
+    // that moment and wait on the flag instead of guessing at a delay. The
+    // real implementation comes from importActual, not getMockImplementation
+    // — a prior test's mockImplementationOnce + restoreAllMocks cycle can
+    // leave the spy's recorded default implementation slot empty even though
+    // its pass-through invocation still works.
+    const { saveMessage: realSaveMessage } =
+      await vi.importActual<typeof import("@/lib/conversations")>("@/lib/conversations");
+    let aiReplyPersisted = false;
+    vi.mocked(saveMessage).mockImplementation(async (input) => {
+      const result = await realSaveMessage(input);
+      if (input.sender === "ai") aiReplyPersisted = true;
+      return result;
+    });
+
     const second = await POST(chatRequest({ conversationId: id, text: "Still thinking about it" }));
     await second.text();
+    await vi.waitFor(() => {
+      expect(aiReplyPersisted).toBe(true);
+    });
 
-    // Give any (unwanted) second auto-title call a chance to run before asserting it didn't.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
     expect(conversation?.title).toBe("A quiet mock title");
     expect(await isTitleCustomized(id, userId)).toBe(false);
@@ -138,13 +157,27 @@ describe("POST /api/chat", () => {
 
   it("keeps the neutral date title when the first exchange is flagged as crisis", async () => {
     const { id } = await createConversation(userId, "July 6");
+
+    // Same deterministic stand-in as the "second exchange" test above: the
+    // crisis skip is decided synchronously right after the AI reply's own
+    // save resolves.
+    const { saveMessage: realSaveMessage } =
+      await vi.importActual<typeof import("@/lib/conversations")>("@/lib/conversations");
+    let aiReplyPersisted = false;
+    vi.mocked(saveMessage).mockImplementation(async (input) => {
+      const result = await realSaveMessage(input);
+      if (input.sender === "ai") aiReplyPersisted = true;
+      return result;
+    });
+
     const res = await POST(chatRequest({ conversationId: id, text: "MOCK_CRISIS I want to hurt myself" }));
     expect(res.status).toBe(200);
     expect(res.headers.get("x-risk-level")).toBe("crisis");
     await res.text(); // drain the stream so onFinish (and the skipped title call) runs
+    await vi.waitFor(() => {
+      expect(aiReplyPersisted).toBe(true);
+    });
 
-    // Give any (unwanted) auto-title call a chance to run before asserting it didn't.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
     expect(conversation?.title).toBe("July 6");
     expect(await isTitleCustomized(id, userId)).toBe(false);
@@ -153,11 +186,27 @@ describe("POST /api/chat", () => {
   it("never overwrites a title the user already customized", async () => {
     const { id } = await createConversation(userId, "Untitled");
     await renameConversation(id, userId, "Mine");
+
+    // Deterministic stand-in for "onFinish's title check ran to completion":
+    // here the skip is only decided once isTitleCustomized's own DB read
+    // resolves (true, since it was just customized above) — one await later
+    // than the AI reply's save — so flag that resolution instead of a fixed
+    // real-time sleep.
+    const { isTitleCustomized: realIsTitleCustomized } =
+      await vi.importActual<typeof import("@/lib/conversations")>("@/lib/conversations");
+    let titleCheckResolved = false;
+    vi.mocked(isTitleCustomized).mockImplementation(async (conversationIdArg, userIdArg) => {
+      const result = await realIsTitleCustomized(conversationIdArg, userIdArg);
+      titleCheckResolved = true;
+      return result;
+    });
+
     const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
     await res.text();
+    await vi.waitFor(() => {
+      expect(titleCheckResolved).toBe(true);
+    });
 
-    // Give the (unwanted) auto-title call a chance to run before asserting it didn't.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
     expect(conversation?.title).toBe("Mine");
     expect(await isTitleCustomized(id, userId)).toBe(true);
