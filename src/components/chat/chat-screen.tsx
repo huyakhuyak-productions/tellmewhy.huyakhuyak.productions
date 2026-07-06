@@ -58,6 +58,20 @@ export function ChatScreen({
   const sentDraft = useRef(false);
   const titleWatchStarted = useRef(false);
 
+  // The rail/home re-render (and hand this component a brand-new
+  // `conversations` array) on every `router.refresh()` — including ones
+  // triggered by DnD, rename, or folder actions on OTHER rows that have
+  // nothing to do with this conversation. The title watcher below must
+  // survive those refreshes, so it reads `conversations` through this ref
+  // instead of depending on the prop directly (see the effect for why). The
+  // sync happens in its own effect (declared ahead of the watcher, so it
+  // always commits first) rather than inline during render, since refs must
+  // not be written while rendering (react-hooks/refs).
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  });
+
   const isBusy = status === "submitted" || status === "streaming";
 
   // Consume the first message the home hero stashed for this conversation. The
@@ -92,8 +106,12 @@ export function ChatScreen({
     // this effect even gets to run its own baseline fetch below — in that
     // case the "baseline" would already be the new title and would never
     // appear to change on its own, so this is the reference a real change
-    // must diverge from.
-    const displayedTitle = conversations.find((c) => c.id === conversationId)?.title;
+    // must diverge from. Read via the ref, not the `conversations` prop
+    // directly: this effect intentionally does NOT depend on `conversations`
+    // (see below), so the prop binding here would otherwise be stale.
+    const displayedTitle = conversationsRef.current.find(
+      (c) => c.id === conversationId,
+    )?.title;
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -136,7 +154,16 @@ export function ChatScreen({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [initialMessages.length, messages.length, status, conversationId, router, conversations]);
+    // `conversations` is deliberately excluded: the rail hands us a fresh
+    // array identity on every `router.refresh()` (including refreshes from
+    // unrelated rows — a drag, rename, or folder move elsewhere), which would
+    // re-run this effect, cancel the in-flight poll via the cleanup above,
+    // and then immediately bail at the `titleWatchStarted` guard — killing
+    // the watcher for good. Read the latest value via `conversationsRef`
+    // instead so this effect only re-runs when the trigger conditions
+    // actually change (exhaustive-deps doesn't flag this: the ref read isn't
+    // a reactive dependency).
+  }, [initialMessages.length, messages.length, status, conversationId, router]);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {

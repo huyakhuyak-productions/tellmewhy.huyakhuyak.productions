@@ -87,6 +87,51 @@ test("the generated title appears in the rail without a reload", async ({ page }
   ).toBeVisible({ timeout: 12_000 });
 });
 
+test("the title watcher survives a router.refresh from an unrelated rename", async ({ page }) => {
+  await signUp(page);
+
+  // A second, unrelated conversation that we'll rename mid-poll. Its rename
+  // calls router.refresh(), which used to hand ChatScreen a brand-new
+  // `conversations` array identity and — because that array was wrongly a
+  // dependency of the title-watcher effect — silently kill the poll for the
+  // FIRST conversation below (see chat-screen.tsx).
+  await page.getByLabel("Start a conversation").fill("A thread to rename elsewhere");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const otherHref = new URL(page.url()).pathname;
+
+  await page.goto("/chat");
+  await page.getByLabel("Start a conversation").fill("Weighing a big decision");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // Rename the OTHER conversation right away — this is the unrelated
+  // router.refresh() that must not stop the watcher started above. (The mock
+  // title can land before or after this rename resolves — both orders are
+  // fine and deliberately not pinned down; the thing under test is that the
+  // refresh never kills the outcome, not the exact interleaving.)
+  const otherRow = page.locator(`div:has(> a[href="${otherHref}"])`).first();
+  await otherRow.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const renamePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  const input = page.getByRole("textbox", { name: "Rename conversation" });
+  await input.fill("Renamed elsewhere");
+  await input.press("Enter");
+  await renamePersisted;
+
+  // The generated title for THIS conversation still surfaces without a
+  // manual reload, proving the unrelated refresh above didn't cancel the poll.
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A quiet mock title"),
+  ).toBeVisible({ timeout: 12_000 });
+});
+
 test("drag a rail conversation onto a folder heading to file it", async ({ page }) => {
   await signUp(page);
 
