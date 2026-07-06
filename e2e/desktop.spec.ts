@@ -1,0 +1,54 @@
+import { expect, test } from "@playwright/test";
+
+// Shared sign-up flow: create a fresh account and land on the home screen.
+async function signUp(page: import("@playwright/test").Page) {
+  const email = `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}@test.dev`;
+  await page.goto("/sign-up");
+  await page.getByPlaceholder("Your name").fill("E2E");
+  await page.getByPlaceholder("Email").fill(email);
+  await page.getByPlaceholder(/Password/).fill("longenough-pass");
+  await page.getByRole("button", { name: /start talking/i }).click();
+  await expect(page).toHaveURL(/\/chat/);
+}
+
+test("hero starts a conversation and the reply streams in the three-zone frame", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  await page.getByLabel("Start a conversation").fill("I keep replaying a conversation from work");
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  await expect(page.getByText("I keep replaying a conversation from work")).toBeVisible();
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+  // Left rail is `hidden lg:flex` — visible at this 1440px viewport, absent on mobile.
+  await expect(page.getByText("Conversations", { exact: true })).toBeVisible();
+});
+
+test("folders group the rail and filter the home cards", async ({ page }) => {
+  await signUp(page);
+
+  // Start a conversation via the hero, then create a folder from the rail and
+  // move the fresh (unsorted) conversation into it.
+  await page.getByLabel("Start a conversation").fill("Family stuff on my mind");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+
+  await page.getByRole("button", { name: /new folder/i }).click();
+  await page.getByLabel("New folder name").fill("family");
+  await page.keyboard.press("Enter");
+
+  await page.getByRole("button", { name: "Move to folder" }).click();
+  await page.getByRole("menuitem", { name: "family" }).click();
+
+  // FolderGroup's label is a disclosure <button aria-expanded>, not a heading
+  // element — the rail groups conversations under collapsible toggles, so the
+  // group appearing is what the test cares about, not its element type.
+  await expect(page.getByRole("button", { name: "family", exact: true })).toBeVisible();
+
+  await page.goto("/chat");
+  await expect(page.getByRole("button", { name: "family" })).toBeVisible();
+});

@@ -16,8 +16,20 @@ export default defineConfig({
   use: { baseURL: "http://localhost:3000" },
   // devices["iPhone 14"] defaults to the webkit engine; only chromium is
   // installed/pre-approved here, so pin the engine while keeping the device's
-  // viewport/touch/UA emulation.
-  projects: [{ name: "mobile", use: { ...devices["iPhone 14"], browserName: "chromium" } }],
+  // viewport/touch/UA emulation. Each project owns its own spec file so the
+  // mobile-only and desktop-only scenarios never run under the wrong viewport.
+  projects: [
+    {
+      name: "mobile",
+      use: { ...devices["iPhone 14"], browserName: "chromium" },
+      testMatch: /chat\.spec\.ts/,
+    },
+    {
+      name: "desktop",
+      use: { ...devices["Desktop Chrome"], browserName: "chromium", viewport: { width: 1440, height: 900 } },
+      testMatch: /desktop\.spec\.ts/,
+    },
+  ],
   webServer: {
     command: "bun run dev",
     url: "http://localhost:3000",

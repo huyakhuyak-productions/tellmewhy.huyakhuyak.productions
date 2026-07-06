@@ -1,6 +1,6 @@
 # tellmewhy
 
-A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. Therapist review is planned for phase 2.
+A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. Therapist review is planned for phase 2. On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
 
 ## Local Setup
 
@@ -70,7 +70,7 @@ AI_MOCK=1 bun run dev
 ## Privacy Model
 
 **Per-user envelope encryption at rest:**
-Every message body and conversation title is encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access. The wrapping goes through a swappable `KeyProvider` interface, so a KMS/Vault-backed provider can replace the env-based master key in production without re-encrypting any data.
+Every message body and conversation title, and every folder name, are encrypted with AES-256-GCM using a per-user data encryption key (DEK). DEKs are wrapped by a master key (`MASTER_KEK`) before being stored. This means that without the master key, no message is readable—even with database access. The wrapping goes through a swappable `KeyProvider` interface, so a KMS/Vault-backed provider can replace the env-based master key in production without re-encrypting any data.
 
 **Crypto-shredding on deletion:**
 Destroying a user's wrapped-key row is the designed mechanism for account deletion: it immediately and permanently renders that user's data unreadable going forward. The underlying function (`shredUserKey`) is implemented and tested but is not yet wired to a user-facing deletion flow—self-serve account deletion ships with the account-management phase. Note that a database backup taken *before* the key row is destroyed still contains the wrapped DEK and remains decryptable with `MASTER_KEK`; shredding only guarantees unreadability going forward, unless the master key is rotated or key rows are excluded from backup retention.
