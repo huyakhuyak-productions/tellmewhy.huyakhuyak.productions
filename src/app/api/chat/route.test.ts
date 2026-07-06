@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import chatRateLimiter from "@/lib/rate-limit";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -139,5 +140,19 @@ describe("POST /api/chat", () => {
     const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
     expect(conversation?.title).toBe("Mine");
     expect(await isTitleCustomized(id, userId)).toBe(true);
+  });
+
+  // Runs last in this file: it drains the shared in-memory bucket for `userId`
+  // down to zero, which would make every earlier test in this file see a 429
+  // if it ran after this one. Exhausting via the limiter's own API (rather
+  // than firing 20 real POSTs) keeps this fast and deterministic — see
+  // src/lib/rate-limit.test.ts for the limiter's own consume/refill coverage.
+  it("returns 429 once the per-user rate limit bucket is exhausted", async () => {
+    const { id } = await createConversation(userId, "Rate limited");
+    for (let i = 0; i < 25; i++) chatRateLimiter.consume(userId);
+
+    const res = await POST(chatRequest({ conversationId: id, text: "one more" }));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "Slow down a little" });
   });
 });

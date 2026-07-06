@@ -6,6 +6,7 @@ import { NotFoundError, isTitleCustomized, loadMessages, renameConversation, sav
 import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
+import chatRateLimiter from "@/lib/rate-limit";
 
 const bodySchema = z.object({ conversationId: z.string().uuid(), text: z.string().min(1).max(8000) });
 
@@ -15,6 +16,10 @@ export async function POST(req: Request): Promise<Response> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
+
+  if (!chatRateLimiter.consume(userId)) {
+    return Response.json({ error: "Slow down a little" }, { status: 429 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
