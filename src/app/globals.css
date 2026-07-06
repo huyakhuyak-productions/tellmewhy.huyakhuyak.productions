@@ -99,6 +99,53 @@
   }
 }
 
+/*
+  Desktop three-zone frame (spec 09b). Every color-mix() carries a plain-color
+  fallback line above it so browsers without color-mix() still get a sensible
+  (if slightly bolder) edge instead of no color at all.
+*/
+@layer components {
+  /* Rails recede: faint separators, no fill. */
+  .cp-edge {
+    border-color: var(--border);
+    border-color: color-mix(in srgb, var(--border) 62%, transparent);
+  }
+  /* Head / composer hairlines within the reading center. */
+  .cp-hairline {
+    border-color: var(--border);
+    border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  }
+  /* Long user reflection: a gently tinted panel carrying body-colored text. */
+  .cp-panel {
+    background: var(--card);
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    border-color: var(--border);
+    border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+  }
+  /* Long AI reflection: a passage marked by an accent rule, not a bubble. */
+  .cp-passage-rule {
+    border-color: var(--border);
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  }
+}
+
+/* Move-to menu grows from its trigger — a calm, origin-aware pop. */
+@keyframes cp-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-cp-pop {
+  animation: cp-pop 0.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top right;
+}
+
 /* Soft nightlight cast at the top of the "room" screens (auth, list). */
 .ambient-room {
   position: fixed;
@@ -148,7 +195,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-message-rise,
-  .animate-crisis-rise {
+  .animate-crisis-rise,
+  .animate-cp-pop {
     animation: none;
   }
 }

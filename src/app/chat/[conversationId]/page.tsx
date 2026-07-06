@@ -2,7 +2,9 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, loadMessages } from "@/lib/conversations";
+import { NotFoundError, listConversations, loadMessages } from "@/lib/conversations";
+import { listFolders } from "@/lib/folders";
+import { deriveChatStats } from "@/lib/chat-stats";
 import { ChatScreen } from "@/components/chat/chat-screen";
 
 export default async function ConversationPage({
@@ -17,6 +19,9 @@ export default async function ConversationPage({
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
+  // Ownership check first and separate: a foreign id must 404 before we do any
+  // other work, so the rails/stats fetches never run for a conversation the
+  // reader can't see.
   let initialMessages: Awaited<ReturnType<typeof loadMessages>>;
   try {
     initialMessages = await loadMessages(conversationId, session.user.id);
@@ -25,10 +30,25 @@ export default async function ConversationPage({
     throw error;
   }
 
+  const [conversationList, folderList] = await Promise.all([
+    listConversations(session.user.id),
+    listFolders(session.user.id),
+  ]);
+
+  const stats = deriveChatStats(conversationList, session.user.createdAt);
+
   return (
     <ChatScreen
       conversationId={conversationId}
       initialMessages={initialMessages}
+      conversations={conversationList.map((c) => ({
+        id: c.id,
+        title: c.title,
+        updatedAt: c.updatedAt,
+        folderId: c.folderId,
+      }))}
+      folders={folderList.map((f) => ({ id: f.id, name: f.name }))}
+      stats={stats}
     />
   );
 }

@@ -27,13 +27,13 @@ test("start a conversation from the home hero", async ({ page }) => {
   await startFromHero(page, "I had a strange day");
   await expect(page).toHaveURL(CONVERSATION_URL);
 
-  // TODO(Task 7): the hero stashes the first message under
-  // `tellmewhy:draft:<id>` and ChatScreen's mount-send consumes it on arrival.
-  // Once that lands, extend here with:
-  //   await expect(page.getByText("mock reply")).toBeVisible();
-  //   await expect(
-  //     page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
-  //   ).toBeVisible();
+  // The hero stashes the first message under `tellmewhy:draft:<id>` and
+  // ChatScreen's mount-send consumes it on arrival, so the assistant's streamed
+  // reply lands without any further typing.
+  await expect(page.getByText("mock reply")).toBeVisible();
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
 });
 
 test("a crisis first message reaches the conversation", async ({ page }) => {
@@ -42,10 +42,10 @@ test("a crisis first message reaches the conversation", async ({ page }) => {
   await startFromHero(page, "MOCK_CRISIS I want to kill myself");
   await expect(page).toHaveURL(CONVERSATION_URL);
 
-  // TODO(Task 7): with mount-send in place the crisis message is delivered on
-  // arrival and breaks the chat frame. Once that lands, extend here with:
-  //   await expect(
-  //     page.getByRole("alertdialog", { name: /support resources/i }),
-  //   ).toBeVisible();
-  //   await expect(page.getByText(/988/)).toBeVisible();
+  // With mount-send in place the crisis message is delivered on arrival and
+  // breaks the chat frame into the docked support card.
+  await expect(
+    page.getByRole("alertdialog", { name: /support resources/i }),
+  ).toBeVisible();
+  await expect(page.getByText(/988/)).toBeVisible();
 });
