@@ -49,7 +49,7 @@ Open [http://localhost:3000](http://localhost:3000) on a mobile viewport (iPhone
 bun run test
 ```
 
-Integration tests that require the database will connect via `DATABASE_URL` from `.env.local`.
+Integration tests connect to the docker-compose database by default — deliberately ignoring `.env.local`, so a test run can never follow an env file to a real database. Export `DATABASE_URL` explicitly to override.
 
 **Run end-to-end tests (Playwright):**
 
