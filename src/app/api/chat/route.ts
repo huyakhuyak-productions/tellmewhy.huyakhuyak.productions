@@ -1,11 +1,11 @@
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { convertToModelMessages, generateText, streamText, type UIMessage } from "ai";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, loadMessages, saveMessage } from "@/lib/conversations";
+import { NotFoundError, isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
 import { assessRisk } from "@/lib/ai/crisis";
-import { getChatModel, getClassifierModel } from "@/lib/ai/models";
-import { buildSystemPrompt } from "@/lib/ai/system-prompt";
+import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
+import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 
 const bodySchema = z.object({ conversationId: z.string().uuid(), text: z.string().min(1).max(8000) });
 
@@ -52,6 +52,23 @@ export async function POST(req: Request): Promise<Response> {
           // The stream already reached the client; without this log the reply
           // would vanish silently (ai v6 swallows onFinish rejections).
           console.error(`Failed to persist AI reply for conversation ${conversationId}`, error);
+        }
+
+        if (history.length === 1) {
+          try {
+            if (!(await isTitleCustomized(conversationId, userId))) {
+              const { text: rawTitle } = await generateText({
+                model: getTitleModel(),
+                prompt: buildTitlePrompt(text, replyText),
+                abortSignal: AbortSignal.timeout(5000),
+              });
+              const title = rawTitle.trim().slice(0, 80);
+              if (title) await renameConversation(conversationId, userId, title, { customized: false });
+            }
+          } catch (error) {
+            // Fire-and-forget by design — a failed title never disturbs the chat.
+            console.error(`Failed to auto-title conversation ${conversationId}`, error);
+          }
         }
       },
     });

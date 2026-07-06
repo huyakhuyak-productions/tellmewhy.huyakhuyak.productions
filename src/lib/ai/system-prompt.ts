@@ -18,3 +18,13 @@ export function buildSystemPrompt(): string {
     "  trusted person right away. Never provide methods or encouragement of self-harm.",
   ].join("\n");
 }
+
+export function buildTitlePrompt(userText: string, replyText: string): string {
+  return [
+    "Name the emotional topic of this exchange in 3 to 6 plain words.",
+    "No quotes, no punctuation, no names.",
+    "",
+    `Person: ${userText}`,
+    `Companion: ${replyText}`,
+  ].join("\n");
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
-import { getChatModel, getClassifierModel } from "./models";
+import { getChatModel, getClassifierModel, getTitleModel } from "./models";
 
 describe("mock chat model (AI_MOCK=1 in test setup)", () => {
   it("returns deterministic text without network access", async () => {
@@ -29,5 +29,12 @@ describe("mock classifier model (AI_MOCK=1 in test setup)", () => {
       prompt: "an ordinary day",
     });
     expect(object.risk).toBe("none");
+  });
+});
+
+describe("mock title model (AI_MOCK=1 in test setup)", () => {
+  it("returns a deterministic mock title without network access", async () => {
+    const { text } = await generateText({ model: getTitleModel(), prompt: "hello" });
+    expect(text).toBe("A quiet mock title");
   });
 });

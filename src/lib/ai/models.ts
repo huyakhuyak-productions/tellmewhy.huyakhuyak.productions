@@ -74,3 +74,21 @@ export function getClassifierModel(): LanguageModel {
   if (process.env.AI_MOCK === "1") return mockClassifierModel();
   return openrouter()(process.env.OPENROUTER_CLASSIFIER_MODEL ?? "google/gemini-2.5-flash-lite", NO_LOGGING);
 }
+
+const MOCK_TITLE_TEXT = "A quiet mock title";
+
+function mockTitleModel(): LanguageModel {
+  return new MockLanguageModelV3({
+    doGenerate: async () => ({
+      finishReason: MOCK_FINISH_REASON,
+      usage: MOCK_USAGE,
+      content: [{ type: "text", text: MOCK_TITLE_TEXT }],
+      warnings: [],
+    }),
+  });
+}
+
+export function getTitleModel(): LanguageModel {
+  if (process.env.AI_MOCK === "1") return mockTitleModel();
+  return openrouter()(process.env.OPENROUTER_CLASSIFIER_MODEL ?? "google/gemini-2.5-flash-lite", NO_LOGGING);
+}
