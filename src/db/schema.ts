@@ -1,4 +1,4 @@
-import { boolean, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const senderEnum = pgEnum("sender", ["client", "ai", "therapist", "system"]);
 export const riskLevelEnum = pgEnum("risk_level", ["none", "elevated", "crisis"]);
@@ -12,35 +12,51 @@ export const userKeys = pgTable("user_keys", {
 
 // User-defined conversation folders. Names are topic metadata
 // ("relationships", "health") — encrypted like conversation titles.
-export const folders = pgTable("folders", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
-  nameCiphertext: text("name_ciphertext").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    nameCiphertext: text("name_ciphertext").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("folders_user_id_idx").on(table.userId)],
+);
 
-export const conversations = pgTable("conversations", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
-  titleCiphertext: text("title_ciphertext").notNull(),
-  // null = unsorted. Deleting a folder unsorts its conversations.
-  folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // True once a human renamed the conversation — auto-titling must never overwrite.
-  titleCustomized: boolean("title_customized").notNull().default(false),
-});
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Intentionally no FK to `user.id`: existing rows include orphaned
+    // smoke-test user ids not present in the `user` table, so a FK add
+    // fails against real data (verified against the dev database — see
+    // Task 6 report). Indexed for lookup performance regardless.
+    userId: text("user_id").notNull(),
+    titleCiphertext: text("title_ciphertext").notNull(),
+    // null = unsorted. Deleting a folder unsorts its conversations.
+    folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    // True once a human renamed the conversation — auto-titling must never overwrite.
+    titleCustomized: boolean("title_customized").notNull().default(false),
+  },
+  (table) => [index("conversations_user_id_idx").on(table.userId)],
+);
 
-export const messages = pgTable("messages", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  conversationId: uuid("conversation_id")
-    .notNull()
-    .references(() => conversations.id, { onDelete: "cascade" }),
-  sender: senderEnum("sender").notNull(),
-  ciphertext: text("ciphertext").notNull(),
-  riskLevel: riskLevelEnum("risk_level").notNull().default("none"),
-  flaggedAt: timestamp("flagged_at"), // "flag for my therapist" — used from phase 2
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    sender: senderEnum("sender").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    riskLevel: riskLevelEnum("risk_level").notNull().default("none"),
+    flaggedAt: timestamp("flagged_at"), // "flag for my therapist" — used from phase 2
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("messages_conversation_id_idx").on(table.conversationId)],
+);
 
 export * from "./auth-schema";
