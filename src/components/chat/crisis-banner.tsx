@@ -11,7 +11,13 @@ export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
   // as a modal dialog. The lg variant is docked in the reading column beside
   // the composer and messages — content around it stays live, so claiming
   // `aria-modal` there would lie to assistive tech. Track which variant is on.
-  const [overlay, setOverlay] = useState(false);
+  // Initialized synchronously: a false-then-corrected default would mount the
+  // docked-only live region for one paint on phones — enough for some screen
+  // readers to double-announce. The banner never renders during SSR (crisis
+  // state is client-set), so the window guard only covers hypothetical prerender.
+  const [overlay, setOverlay] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 1023.98px)").matches,
+  );
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023.98px)");
     const sync = () => setOverlay(mq.matches);
