@@ -45,29 +45,34 @@ export function HeroComposer() {
     if (!text || pending) return;
     setError(null);
     setPending(true);
-    let res: Response;
+    let id: string;
     try {
-      res = await fetch("/api/conversations", {
+      const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           title: new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" }),
         }),
       });
+      if (!res.ok) {
+        setPending(false);
+        return setError("Couldn't start the conversation — try again.");
+      }
+      // res.json() lives in this same try: a connection drop mid-body (after
+      // headers land but before the response finishes streaming) throws here
+      // too, and previously escaped uncaught — stranding `pending` at true
+      // forever with the form locked and no error shown.
+      ({ id } = await res.json());
     } catch {
-      // Offline / network failure — same message as a non-OK response so the
-      // form unlocks instead of staying stuck on a request that never lands.
+      // Offline / network failure, or a mid-body drop while parsing the
+      // response — same message either way so the form unlocks instead of
+      // staying stuck on a request that never resolves.
       setPending(false);
       return setError("Couldn't start the conversation — try again.");
     }
-    if (!res.ok) {
-      setPending(false);
-      return setError("Couldn't start the conversation — try again.");
-    }
-    // Success path: `pending` stays true through json/sessionStorage/navigation
-    // so a rapid second Enter can't fire a duplicate create — the component
+    // Success path: `pending` stays true through sessionStorage/navigation so
+    // a rapid second Enter can't fire a duplicate create — the component
     // unmounts when the route changes.
-    const { id } = await res.json();
     // Never put message text in the URL — history and logs. Task 7's ChatScreen
     // reads and clears this exact key on mount to send the first message.
     sessionStorage.setItem(`tellmewhy:draft:${id}`, text);
