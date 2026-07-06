@@ -52,8 +52,13 @@ export function HeroComposer() {
         title: new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" }),
       }),
     });
-    setPending(false);
-    if (!res.ok) return setError("Couldn't start the conversation — try again.");
+    if (!res.ok) {
+      setPending(false);
+      return setError("Couldn't start the conversation — try again.");
+    }
+    // Success path: `pending` stays true through json/sessionStorage/navigation
+    // so a rapid second Enter can't fire a duplicate create — the component
+    // unmounts when the route changes.
     const { id } = await res.json();
     // Never put message text in the URL — history and logs. Task 7's ChatScreen
     // reads and clears this exact key on mount to send the first message.
