@@ -62,7 +62,12 @@ export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
       role="alertdialog"
       aria-modal={overlay || undefined}
       aria-label="Support resources"
-      className="animate-crisis-rise fixed inset-x-3 bottom-24 z-50 mx-auto max-w-md overflow-hidden rounded-3xl border border-[color:var(--crisis-border)] bg-[color:var(--crisis)] p-5 text-[color:var(--crisis-foreground)] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_48px_-12px_var(--crisis-glow)] lg:absolute lg:inset-x-auto lg:bottom-[104px] lg:left-1/2 lg:z-20 lg:mx-0 lg:w-[min(460px,calc(100%-80px))] lg:max-w-none lg:-translate-x-1/2"
+      // Both variants clear the composer by tracking its measured height
+      // (`--composer-height`, published by ChatScreen): the failure notice and
+      // the textarea's autosize can grow the form well past any static offset.
+      // The fallbacks are the composer's base heights (69px / 81px), keeping
+      // the original resting positions (96px / 104px) before the first measure.
+      className="animate-crisis-rise fixed inset-x-3 bottom-[calc(var(--composer-height,69px)+27px)] z-50 mx-auto max-w-md overflow-hidden rounded-3xl border border-[color:var(--crisis-border)] bg-[color:var(--crisis)] p-5 text-[color:var(--crisis-foreground)] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_18px_48px_-12px_var(--crisis-glow)] lg:absolute lg:inset-x-auto lg:bottom-[calc(var(--composer-height,81px)+23px)] lg:left-1/2 lg:z-20 lg:mx-0 lg:w-[min(460px,calc(100%-80px))] lg:max-w-none lg:-translate-x-1/2"
     >
       <div className="flex items-start gap-3">
         <svg

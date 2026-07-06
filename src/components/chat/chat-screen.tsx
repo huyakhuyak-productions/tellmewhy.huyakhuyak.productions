@@ -52,10 +52,13 @@ export function ChatScreen({
   const failureHandlerRef = useRef<() => void>(() => {});
   const { messages, sendMessage, setMessages, status } = useChat({
     // react-hooks/refs flags the rateLimited write inside the custom fetch
-    // below: it flags any ref touched in a closure built during render unless
-    // the prop is named on* — but that wrapper only ever runs at request time
-    // (the same moment the allowed onError/onFinish fire), never during
-    // render, so the write is safe.
+    // below: the rule cannot see when a render-created closure runs, so it
+    // only trusts on*-named props. This wrapper only ever runs at request
+    // time (the same moment the allowed onError/onFinish callbacks fire),
+    // never during render, so the write is safe — a false positive. The
+    // sync-in-own-effect pattern used for conversationsRef doesn't apply:
+    // that cures ref writes DURING render, while this is an event-time write
+    // the rule merely can't classify.
     // eslint-disable-next-line react-hooks/refs
     transport: new DefaultChatTransport({
       api: "/api/chat",
@@ -90,6 +93,8 @@ export function ChatScreen({
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const isFirstRender = useRef(true);
   const sentDraft = useRef(false);
   const titleWatchStarted = useRef(false);
@@ -146,6 +151,25 @@ export function ChatScreen({
       setSendFailure({ kind: rateLimited.current ? "rate-limit" : "generic" });
     };
   });
+
+  // The crisis card docks just above the composer, but the composer's height
+  // is not static: the failure notice (and the textarea's own autosize) can
+  // grow the form past any fixed offset, which would paint the card over the
+  // recovery affordance. Publish the form's real height as a CSS variable on
+  // the column — custom properties inherit into both banner variants (the
+  // fixed mobile card is still a DOM child of the column) — so the card
+  // always clears the composer, whatever its height.
+  useEffect(() => {
+    const column = columnRef.current;
+    const form = composerFormRef.current;
+    if (!column || !form) return;
+    const sync = () =>
+      column.style.setProperty("--composer-height", `${form.offsetHeight}px`);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(form);
+    return () => observer.disconnect();
+  }, []);
 
   // Restoring words programmatically bypasses the textarea's onChange
   // autosize, so re-measure — and hand focus back so the writer can edit or
@@ -274,7 +298,10 @@ export function ChatScreen({
       {/* Center: the reading-optimized column. On mobile it is the whole screen
           (the old single-column layout); on lg it fills the middle grid track
           and anchors the docked support card. */}
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col lg:mx-0 lg:h-dvh lg:min-h-0 lg:max-w-none">
+      <div
+        ref={columnRef}
+        className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col lg:mx-0 lg:h-dvh lg:min-h-0 lg:max-w-none"
+      >
         <header className="cp-hairline sticky top-0 z-10 flex items-center gap-1 border-b bg-background/80 px-3 py-2.5 backdrop-blur-md lg:px-10 lg:py-4">
           <div className="mx-auto flex w-full max-w-[760px] items-center gap-1">
             <Link
@@ -324,6 +351,7 @@ export function ChatScreen({
         {crisis && <CrisisBanner onDismiss={() => setCrisis(false)} />}
 
         <form
+          ref={composerFormRef}
           onSubmit={onSend}
           className="cp-hairline sticky bottom-0 border-t bg-background/85 px-3 py-3 backdrop-blur-md lg:px-10 lg:pb-6 lg:pt-3"
         >
