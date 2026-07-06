@@ -20,17 +20,20 @@ export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  // Move focus into the card on open and restore it to whatever was focused
-  // before (the composer, usually) when the card is dismissed.
+  // Modal focus management — overlay variant only. The docked lg card is
+  // deliberately non-modal (no aria-modal above): the composer and messages
+  // around it stay live, so stealing focus on open or trapping Tab there would
+  // hijack a mid-thought typist. It sits in the natural Tab order and its
+  // alertdialog role announces assertively without needing focus. The overlay
+  // covers the screen, so there it behaves as a true modal: focus moves onto
+  // the dismiss action on open, Tab / Shift+Tab cycle within the card's own
+  // focusables (the two resource links and the dismiss button — a minimal
+  // hand-rolled trap), and focus returns to the previously-focused element
+  // (the composer, usually) on dismiss.
   useEffect(() => {
+    if (!overlay) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     dismissRef.current?.focus();
-    return () => previouslyFocused?.focus?.();
-  }, []);
-
-  // Minimal hand-rolled trap: keep Tab / Shift+Tab cycling within the card's
-  // own focusables (the two resource links and the dismiss button).
-  useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Tab") return;
       const root = dialogRef.current;
@@ -47,8 +50,11 @@ export function CrisisBanner({ onDismiss }: { onDismiss: () => void }) {
       }
     }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [overlay]);
 
   return (
     <div
