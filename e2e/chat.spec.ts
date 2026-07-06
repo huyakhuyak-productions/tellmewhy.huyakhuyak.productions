@@ -116,6 +116,40 @@ test("a failed send keeps the words safe in the composer and can be retried", as
   await expect(composer).toHaveValue("");
 });
 
+test("the hero's rate-limited create shows the server error and allows recovery", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  // Mock the /api/conversations endpoint to return 429 with the actual rate-limit message.
+  await page.route("**/api/conversations", (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "A gentle pace — try again in a moment" }),
+    }),
+  );
+
+  const input = page.getByRole("textbox", { name: /start a conversation/i });
+  const alert = page.locator("form [role='alert']");
+
+  await input.fill("I had a strange day");
+  await page.getByRole("button", { name: /send/i }).click();
+
+  // The error message from the server is parsed and shown in the alert.
+  await expect(alert).toContainText("A gentle pace — try again in a moment");
+  // The typed text remains safe in the input.
+  await expect(input).toHaveValue("I had a strange day");
+
+  // Remove the mock and allow the route through for recovery.
+  await page.unroute("**/api/conversations");
+  await page.getByRole("button", { name: /send/i }).click();
+
+  // Recovery succeeds: navigation to the conversation.
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  await expect(page.getByText("mock reply")).toBeVisible();
+});
+
 test("rename a conversation from the home card menu", async ({ page }) => {
   await signUp(page);
 
