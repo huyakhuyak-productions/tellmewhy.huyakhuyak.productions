@@ -34,7 +34,7 @@ export async function listConversations(userId: string) {
     .from(conversations)
     .where(eq(conversations.userId, userId))
     .orderBy(desc(conversations.updatedAt), desc(conversations.createdAt));
-  return rows.map((r) => ({ id: r.id, title: decryptText(dek, r.titleCiphertext), updatedAt: r.updatedAt }));
+  return rows.map((r) => ({ id: r.id, title: decryptText(dek, r.titleCiphertext), updatedAt: r.updatedAt, folderId: r.folderId }));
 }
 
 export async function saveMessage(input: {

@@ -54,4 +54,15 @@ describe("encrypted conversations", () => {
     const [m] = await loadMessages(id, userId);
     expect(m.riskLevel).toBe("crisis");
   });
+
+  it("includes the folder assignment in the list", async () => {
+    const { createFolder, assignConversationToFolder } = await import("./folders");
+    const folder = await createFolder(userId, "work / career");
+    const a = await createConversation(userId, "Deadline spiral");
+    await createConversation(userId, "Unsorted one");
+    await assignConversationToFolder(a.id, userId, folder.id);
+    const list = await listConversations(userId);
+    expect(list.find((c) => c.id === a.id)?.folderId).toBe(folder.id);
+    expect(list.find((c) => c.title === "Unsorted one")?.folderId).toBeNull();
+  });
 });
