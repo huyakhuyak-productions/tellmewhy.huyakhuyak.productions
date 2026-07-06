@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { relativeTime } from "@/lib/relative-time";
+import { setConversationDragData } from "@/lib/dnd";
 import { CardMenu, type CardFolder } from "./card-menu";
 
 export type RecentItem = {
@@ -12,11 +16,40 @@ export type RecentItem = {
   updatedAt: Date;
 };
 
-export function RecentCard({ item, folders }: { item: RecentItem; folders: CardFolder[] }) {
+export function RecentCard({
+  item,
+  folders,
+  dndEnabled = false,
+}: {
+  item: RecentItem;
+  folders: CardFolder[];
+  /** Desktop only: let the card be dragged onto a folder chip to file it. */
+  dndEnabled?: boolean;
+}) {
+  const [dragging, setDragging] = useState(false);
   return (
-    <div className="group relative h-full">
+    <div
+      // The card lifts onto a folder chip to file it. A plain click still
+      // navigates — the browser only starts a drag past its movement threshold.
+      draggable={dndEnabled}
+      onDragStart={
+        dndEnabled
+          ? (e) => {
+              setConversationDragData(e.dataTransfer, item.id);
+              setDragging(true);
+            }
+          : undefined
+      }
+      onDragEnd={() => setDragging(false)}
+      className={`group relative h-full transition-opacity duration-150 ${
+        dragging ? "opacity-50" : ""
+      }`}
+    >
       <Link
         href={`/chat/${item.id}`}
+        // The card wrapper owns the drag; disable the anchor's native drag so
+        // it never hijacks the gesture with a link/URL payload.
+        draggable={false}
         className="flex h-full min-h-[112px] flex-col gap-2 rounded-[18px] border bg-card p-[18px] shadow-sm outline-none transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-accent/40 hover:shadow-md focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.99]"
       >
         {item.folderName ? (

@@ -87,6 +87,38 @@ test("the generated title appears in the rail without a reload", async ({ page }
   ).toBeVisible({ timeout: 12_000 });
 });
 
+test("drag a rail conversation onto a folder heading to file it", async ({ page }) => {
+  await signUp(page);
+
+  // A fresh (unsorted) conversation plus an empty folder to drop it into.
+  await page.getByLabel("Start a conversation").fill("A thought to file away");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+
+  await page.getByRole("button", { name: /new folder/i }).click();
+  await page.getByLabel("New folder name").fill("keepsakes");
+  await page.keyboard.press("Enter");
+  const heading = page.getByRole("button", { name: "keepsakes", exact: true });
+  await expect(heading).toBeVisible();
+
+  // The draggable element is the row wrapper around the conversation link.
+  const row = page.locator(`div:has(> a[href="${conversationHref}"])`).first();
+  await expect(row).toBeVisible();
+
+  const movePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await row.dragTo(heading);
+  await movePersisted;
+
+  // After the drop the conversation regroups under the folder — filtering the
+  // home chips by "keepsakes" surfaces the row that was previously unsorted.
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "keepsakes", exact: true }).click();
+  await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
+});
+
 test("rename a conversation from the rail menu", async ({ page }) => {
   await signUp(page);
 

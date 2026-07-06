@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { relativeTime } from "@/lib/relative-time";
+import { setConversationDragData, useConversationDropTarget } from "@/lib/dnd";
 
 export type RailConversation = {
   id: string;
@@ -75,6 +76,14 @@ export function ConversationRail({
     }
   }
 
+  // A conversation dropped onto a folder heading files it there. Same folder =
+  // no-op: skip the PATCH silently so an accidental in-place drop is a no-event.
+  function handleDrop(conversationId: string, folderId: string | null) {
+    const current = conversations.find((c) => c.id === conversationId)?.folderId ?? null;
+    if (current === folderId) return;
+    move(conversationId, folderId);
+  }
+
   async function rename(conversationId: string, title: string): Promise<boolean> {
     setRenameError(null);
     setRenamingId(conversationId);
@@ -138,6 +147,8 @@ export function ConversationRail({
         <FolderGroup
           key={f.id}
           label={f.name}
+          folderId={f.id}
+          onDropConversation={handleDrop}
           collapsed={collapsed.has(f.id)}
           onToggle={() => toggle(f.id)}
           items={conversations.filter((c) => c.folderId === f.id)}
@@ -156,6 +167,8 @@ export function ConversationRail({
       {unsorted.length > 0 && (
         <FolderGroup
           label="unsorted"
+          folderId={null}
+          onDropConversation={handleDrop}
           collapsed={collapsed.has(UNSORTED_KEY)}
           onToggle={() => toggle(UNSORTED_KEY)}
           items={unsorted}
@@ -233,6 +246,8 @@ export function ConversationRail({
 
 function FolderGroup({
   label,
+  folderId,
+  onDropConversation,
   collapsed,
   onToggle,
   items,
@@ -247,6 +262,8 @@ function FolderGroup({
   renameError,
 }: {
   label: string;
+  folderId: string | null;
+  onDropConversation: (conversationId: string, folderId: string | null) => void;
   collapsed: boolean;
   onToggle: () => void;
   items: RailConversation[];
@@ -260,13 +277,28 @@ function FolderGroup({
   renamingId: string | null;
   renameError: { id: string; message: string } | null;
 }) {
+  const { over, dropProps } = useConversationDropTarget((id) => onDropConversation(id, folderId));
+
+  // A collapsed group opens after a beat of hovering a dragged conversation, so
+  // you can drop into a folder you can't currently see the contents of.
+  // `onToggle` is stable through a hover (the parent doesn't re-render while
+  // `over` flips locally), so the timer isn't reset out from under itself.
+  useEffect(() => {
+    if (!over || !collapsed) return;
+    const t = setTimeout(onToggle, 600);
+    return () => clearTimeout(t);
+  }, [over, collapsed, onToggle]);
+
   return (
     <div>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={!collapsed}
-        className="flex w-full items-center gap-1.5 px-3 pb-1 pt-3.5 text-left text-[10px] font-semibold uppercase tracking-[0.11em] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-muted-foreground focus-visible:text-muted-foreground"
+        {...dropProps}
+        className={`cp-drop flex w-full items-center gap-1.5 rounded-md px-3 pb-1 pt-3.5 text-left text-[10px] font-semibold uppercase tracking-[0.11em] outline-none focus-visible:text-muted-foreground ${
+          over ? "cp-drop-over" : "text-muted-foreground/80 hover:text-muted-foreground"
+        }`}
       >
         <svg
           width="8"
@@ -343,6 +375,7 @@ function ConversationRow({
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
   const [renameMode, setRenameMode] = useState(false);
   const [draft, setDraft] = useState(item.title);
+  const [dragging, setDragging] = useState(false);
 
   const menuOpen = menu !== null;
 
@@ -395,7 +428,20 @@ function ConversationRow({
 
   return (
     <div>
-      <div className="group/row relative flex items-center">
+      <div
+        // The row lifts onto folder headings; renaming turns it off so the
+        // inline input stays selectable. A plain click still navigates — the
+        // browser only starts a drag past its own movement threshold.
+        draggable={!renameMode && !moving}
+        onDragStart={(e) => {
+          setConversationDragData(e.dataTransfer, item.id);
+          setDragging(true);
+        }}
+        onDragEnd={() => setDragging(false)}
+        className={`group/row relative flex items-center transition-opacity duration-150 ${
+          dragging ? "opacity-50" : ""
+        }`}
+      >
         {renameMode ? (
           <form onSubmit={submitRename} className="flex-1 px-2 py-1">
             <input
@@ -421,6 +467,9 @@ function ConversationRow({
           <Link
             href={`/chat/${item.id}`}
             aria-current={selected ? "page" : undefined}
+            // The wrapping row owns the drag; disable the anchor's native
+            // drag so it never hijacks the gesture with a link/URL payload.
+            draggable={false}
             className={`min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
               selected ? "bg-accent/[0.10]" : "hover:bg-foreground/[0.04]"
             }`}
