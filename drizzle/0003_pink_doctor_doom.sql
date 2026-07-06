@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "title_customized" boolean DEFAULT false NOT NULL;

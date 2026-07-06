@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const senderEnum = pgEnum("sender", ["client", "ai", "therapist", "system"]);
 export const riskLevelEnum = pgEnum("risk_level", ["none", "elevated", "crisis"]);
@@ -27,6 +27,8 @@ export const conversations = pgTable("conversations", {
   folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // True once a human renamed the conversation — auto-titling must never overwrite.
+  titleCustomized: boolean("title_customized").notNull().default(false),
 });
 
 export const messages = pgTable("messages", {
