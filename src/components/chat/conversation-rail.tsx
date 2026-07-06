@@ -34,6 +34,9 @@ export function ConversationRail({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
 
   const currentFolderId = conversations.find((c) => c.id === currentId)?.folderId ?? null;
   const unsorted = conversations.filter((c) => c.folderId === null);
@@ -48,29 +51,51 @@ export function ConversationRail({
   }
 
   async function move(conversationId: string, folderId: string | null) {
-    await fetch(`/api/conversations/${conversationId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ folderId }),
-    });
-    router.refresh();
+    setMoveError(null);
+    setMovingId(conversationId);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folderId }),
+      });
+      if (!res.ok) {
+        setMoveError({ id: conversationId, message: "Couldn't move — try again." });
+        return;
+      }
+      router.refresh();
+    } catch {
+      // Offline / network failure — same message as a non-OK response so the
+      // move never fails silently.
+      setMoveError({ id: conversationId, message: "Couldn't move — try again." });
+    } finally {
+      setMovingId(null);
+    }
   }
 
   async function submitFolder(e: React.FormEvent) {
     e.preventDefault();
     const name = newName.trim();
     if (!name || busy) return;
+    setFolderError(null);
     setBusy(true);
-    const res = await fetch("/api/folders", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    setBusy(false);
-    if (res.ok) {
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        setFolderError("Couldn't create the folder — try again.");
+        return;
+      }
       setNewName("");
       setCreating(false);
       router.refresh();
+    } catch {
+      setFolderError("Couldn't create the folder — try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -93,6 +118,8 @@ export function ConversationRail({
           currentFolderId={currentFolderId}
           folders={folders}
           onMove={move}
+          movingId={movingId}
+          moveError={moveError}
         />
       ))}
 
@@ -106,6 +133,8 @@ export function ConversationRail({
           currentFolderId={currentFolderId}
           folders={folders}
           onMove={move}
+          movingId={movingId}
+          moveError={moveError}
         />
       )}
 
@@ -131,6 +160,14 @@ export function ConversationRail({
               maxLength={80}
               className="w-full rounded-md border bg-card px-2.5 py-1.5 text-[12.5px] outline-none transition-[border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent disabled:opacity-60"
             />
+            {folderError ? (
+              <span
+                role="alert"
+                className="mt-1.5 block font-serif text-[11.5px] italic text-accent"
+              >
+                {folderError}
+              </span>
+            ) : null}
           </form>
         ) : (
           <button
@@ -170,6 +207,8 @@ function FolderGroup({
   currentFolderId,
   folders,
   onMove,
+  movingId,
+  moveError,
 }: {
   label: string;
   collapsed: boolean;
@@ -179,6 +218,8 @@ function FolderGroup({
   currentFolderId: string | null;
   folders: RailFolder[];
   onMove: (conversationId: string, folderId: string | null) => void;
+  movingId: string | null;
+  moveError: { id: string; message: string } | null;
 }) {
   return (
     <div>
@@ -220,6 +261,8 @@ function FolderGroup({
                 currentFolderId={currentFolderId}
                 folders={folders}
                 onMove={onMove}
+                moving={movingId === c.id}
+                error={moveError?.id === c.id ? moveError.message : null}
               />
             ))
           )}
@@ -235,12 +278,16 @@ function ConversationRow({
   currentFolderId,
   folders,
   onMove,
+  moving,
+  error,
 }: {
   item: RailConversation;
   selected: boolean;
   currentFolderId: string | null;
   folders: RailFolder[];
   onMove: (conversationId: string, folderId: string | null) => void;
+  moving: boolean;
+  error: string | null;
 }) {
   // The row lives inside the folder accordion's overflow-hidden clip, so the
   // menu is positioned `fixed` off the trigger's rect to escape that clip.
@@ -256,94 +303,103 @@ function ConversationRow({
   const menuOpen = menu !== null;
 
   return (
-    <div className="group/row relative flex items-center">
-      <Link
-        href={`/chat/${item.id}`}
-        aria-current={selected ? "page" : undefined}
-        className={`min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
-          selected ? "bg-accent/[0.10]" : "hover:bg-foreground/[0.04]"
-        }`}
-      >
-        <span
-          className={`block truncate text-[13px] tracking-[-0.005em] ${
-            selected ? "font-medium text-foreground" : "text-muted-foreground"
+    <div>
+      <div className="group/row relative flex items-center">
+        <Link
+          href={`/chat/${item.id}`}
+          aria-current={selected ? "page" : undefined}
+          className={`min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
+            selected ? "bg-accent/[0.10]" : "hover:bg-foreground/[0.04]"
           }`}
         >
-          {item.title}
-        </span>
-        <span
-          suppressHydrationWarning
-          className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground/80"
-        >
-          {relativeTime(item.updatedAt)}
-        </span>
-      </Link>
-
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Move to folder"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => (menuOpen ? setMenu(null) : openMenu())}
-        className={`absolute right-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-[opacity,color] duration-150 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] group-hover/row:opacity-100 ${
-          menuOpen ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-          <circle cx="3.2" cy="8" r="1.3" />
-          <circle cx="8" cy="8" r="1.3" />
-          <circle cx="12.8" cy="8" r="1.3" />
-        </svg>
-      </button>
-
-      {menu && (
-        <>
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            onClick={() => setMenu(null)}
-            className="fixed inset-0 z-40 cursor-default"
-          />
-          <div
-            role="menu"
-            style={{ top: menu.top, right: menu.right }}
-            className="animate-cp-pop fixed z-50 min-w-40 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)]"
+          <span
+            className={`block truncate text-[13px] tracking-[-0.005em] ${
+              selected ? "font-medium text-foreground" : "text-muted-foreground"
+            }`}
           >
-            <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
-              Move to…
-            </div>
-            {folders.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="menuitem"
-                disabled={f.id === currentFolderId}
-                onClick={() => {
-                  setMenu(null);
-                  onMove(item.id, f.id);
-                }}
-                className="block w-full truncate rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                {f.name}
-              </button>
-            ))}
+            {item.title}
+          </span>
+          <span
+            suppressHydrationWarning
+            className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground/80"
+          >
+            {relativeTime(item.updatedAt)}
+          </span>
+        </Link>
+
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label="Move to folder"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          disabled={moving}
+          onClick={() => (menuOpen ? setMenu(null) : openMenu())}
+          className={`absolute right-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-[opacity,color] duration-150 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] group-hover/row:opacity-100 disabled:pointer-events-none disabled:opacity-40 ${
+            menuOpen ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+            <circle cx="3.2" cy="8" r="1.3" />
+            <circle cx="8" cy="8" r="1.3" />
+            <circle cx="12.8" cy="8" r="1.3" />
+          </svg>
+        </button>
+
+        {menu && (
+          <>
             <button
               type="button"
-              role="menuitem"
-              disabled={currentFolderId === null}
-              onClick={() => {
-                setMenu(null);
-                onMove(item.id, null);
-              }}
-              className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setMenu(null)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+            <div
+              role="menu"
+              style={{ top: menu.top, right: menu.right }}
+              className="animate-cp-pop fixed z-50 min-w-40 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)]"
             >
-              Unsorted
-            </button>
-          </div>
-        </>
-      )}
+              <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+                Move to…
+              </div>
+              {folders.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={f.id === currentFolderId}
+                  onClick={() => {
+                    setMenu(null);
+                    onMove(item.id, f.id);
+                  }}
+                  className="block w-full truncate rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  {f.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                disabled={currentFolderId === null}
+                onClick={() => {
+                  setMenu(null);
+                  onMove(item.id, null);
+                }}
+                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Unsorted
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {error ? (
+        <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

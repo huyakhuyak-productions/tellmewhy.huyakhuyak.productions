@@ -45,13 +45,21 @@ export function HeroComposer() {
     if (!text || pending) return;
     setError(null);
     setPending(true);
-    const res = await fetch("/api/conversations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" }),
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" }),
+        }),
+      });
+    } catch {
+      // Offline / network failure — same message as a non-OK response so the
+      // form unlocks instead of staying stuck on a request that never lands.
+      setPending(false);
+      return setError("Couldn't start the conversation — try again.");
+    }
     if (!res.ok) {
       setPending(false);
       return setError("Couldn't start the conversation — try again.");
