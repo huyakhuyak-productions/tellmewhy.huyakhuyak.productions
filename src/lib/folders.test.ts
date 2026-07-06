@@ -8,7 +8,7 @@ import {
   listFolders,
   renameFolder,
 } from "./folders";
-import { NotFoundError, createConversation, listConversations } from "./conversations";
+import { NotFoundError, createConversation } from "./conversations";
 import { db } from "@/db";
 import { conversations, folders } from "@/db/schema";
 
