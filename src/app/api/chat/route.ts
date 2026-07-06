@@ -9,7 +9,7 @@ import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models
 import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 import chatRateLimiter from "@/lib/rate-limit";
 
-const bodySchema = z.object({ conversationId: z.string().uuid(), text: z.string().min(1).max(8000) });
+const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
 
 const CONTEXT_WINDOW = 30; // most recent messages sent to the model
 
