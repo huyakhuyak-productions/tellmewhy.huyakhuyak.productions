@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { NotFoundError, createConversation, listConversations, loadMessages, saveMessage } from "./conversations";
@@ -89,5 +89,64 @@ describe("encrypted conversations", () => {
     const { id } = await createConversation(userId, "Private");
     await expect(renameConversation(id, "someone-else", "x")).rejects.toThrow(NotFoundError);
     await expect(isTitleCustomized(id, "someone-else")).rejects.toThrow(NotFoundError);
+  });
+
+  it("rolls back the message insert if bumping the conversation's updatedAt fails", async () => {
+    const { id } = await createConversation(userId, "Transactional");
+
+    // Force the transaction's second statement (the updatedAt bump) to throw,
+    // via the real db.transaction/tx — not a hand-rolled mock of "atomicity" —
+    // so a genuine Postgres rollback is what we're actually asserting on below.
+    const originalTransaction = db.transaction.bind(db);
+    const transactionSpy = vi.spyOn(db, "transaction").mockImplementationOnce((callback: Parameters<typeof db.transaction>[0]) =>
+      originalTransaction(async (tx) => {
+        vi.spyOn(tx, "update").mockImplementationOnce(() => {
+          throw new Error("simulated updatedAt bump failure");
+        });
+        return callback(tx);
+      }),
+    );
+
+    await expect(
+      saveMessage({ conversationId: id, userId, sender: "client", text: "should not persist" }),
+    ).rejects.toThrow("simulated updatedAt bump failure");
+    transactionSpy.mockRestore();
+
+    const msgRows = await db.select().from(messages).where(eq(messages.conversationId, id));
+    expect(msgRows).toHaveLength(0);
+  });
+
+  it("skips a conversation with corrupted ciphertext instead of failing the whole list", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const healthy = await createConversation(userId, "Healthy");
+    const corrupt = await createConversation(userId, "Will corrupt");
+    await db
+      .update(conversations)
+      .set({ titleCiphertext: "not-valid-ciphertext" })
+      .where(eq(conversations.id, corrupt.id));
+
+    const list = await listConversations(userId);
+    expect(list.map((c) => c.id)).toContain(healthy.id);
+    expect(list.map((c) => c.id)).not.toContain(corrupt.id);
+    // Only the row id may be logged — never the ciphertext or decrypted text.
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id), expect.any(Error));
+    const [loggedMessage] = consoleErrorSpy.mock.calls[0]!;
+    expect(loggedMessage).not.toContain("not-valid-ciphertext");
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("skips a message with corrupted ciphertext instead of failing the whole conversation", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { id } = await createConversation(userId, "Mixed health");
+    await saveMessage({ conversationId: id, userId, sender: "client", text: "good message" });
+    const corrupt = await saveMessage({ conversationId: id, userId, sender: "client", text: "will corrupt" });
+    await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, corrupt.id));
+
+    const loaded = await loadMessages(id, userId);
+    expect(loaded.map((m) => m.text)).toEqual(["good message"]);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id), expect.any(Error));
+    const [loggedMessage] = consoleErrorSpy.mock.calls[0]!;
+    expect(loggedMessage).not.toContain("not-valid-ciphertext");
+    consoleErrorSpy.mockRestore();
   });
 });

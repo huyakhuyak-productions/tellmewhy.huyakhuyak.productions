@@ -34,7 +34,17 @@ export async function listConversations(userId: string) {
     .from(conversations)
     .where(eq(conversations.userId, userId))
     .orderBy(desc(conversations.updatedAt), desc(conversations.createdAt));
-  return rows.map((r) => ({ id: r.id, title: decryptText(dek, r.titleCiphertext), updatedAt: r.updatedAt, folderId: r.folderId }));
+  // A single corrupted row (bit rot, a bad migration, manual tampering) must
+  // never take the rest of the list down with it — skip and log just the row
+  // id (never ciphertext or decrypted text) and keep serving the healthy rows.
+  return rows.flatMap((r) => {
+    try {
+      return [{ id: r.id, title: decryptText(dek, r.titleCiphertext), updatedAt: r.updatedAt, folderId: r.folderId }];
+    } catch (error) {
+      console.error(`Failed to decrypt conversation ${r.id}`, error);
+      return [];
+    }
+  });
 }
 
 export async function saveMessage(input: {
@@ -46,20 +56,22 @@ export async function saveMessage(input: {
 }): Promise<{ id: string }> {
   await requireOwnedConversation(input.conversationId, input.userId);
   const dek = await getOrCreateUserDek(input.userId);
-  const [row] = await db
-    .insert(messages)
-    .values({
-      conversationId: input.conversationId,
-      sender: input.sender,
-      ciphertext: encryptText(dek, input.text),
-      riskLevel: input.riskLevel ?? "none",
-    })
-    .returning({ id: messages.id });
-  await db
-    .update(conversations)
-    .set({ updatedAt: new Date() })
-    .where(eq(conversations.id, input.conversationId));
-  return row;
+  // The insert and the updatedAt bump must succeed or fail together — a
+  // reply persisted without bumping the conversation's ordering (or vice
+  // versa) would silently corrupt the sidebar's "most recent" sort.
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(messages)
+      .values({
+        conversationId: input.conversationId,
+        sender: input.sender,
+        ciphertext: encryptText(dek, input.text),
+        riskLevel: input.riskLevel ?? "none",
+      })
+      .returning({ id: messages.id });
+    await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));
+    return row;
+  });
 }
 
 export async function loadMessages(conversationId: string, userId: string) {
@@ -70,13 +82,24 @@ export async function loadMessages(conversationId: string, userId: string) {
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
-  return rows.map((r) => ({
-    id: r.id,
-    sender: r.sender,
-    text: decryptText(dek, r.ciphertext),
-    riskLevel: r.riskLevel,
-    createdAt: r.createdAt,
-  }));
+  // Same corrupt-row isolation as listConversations: skip and log the row id
+  // only, never abort the whole conversation over one bad row.
+  return rows.flatMap((r) => {
+    try {
+      return [
+        {
+          id: r.id,
+          sender: r.sender,
+          text: decryptText(dek, r.ciphertext),
+          riskLevel: r.riskLevel,
+          createdAt: r.createdAt,
+        },
+      ];
+    } catch (error) {
+      console.error(`Failed to decrypt message ${r.id}`, error);
+      return [];
+    }
+  });
 }
 
 export async function renameConversation(
