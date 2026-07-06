@@ -347,14 +347,26 @@ function ConversationRow({
   const menuOpen = menu !== null;
 
   // Escape dismisses the open menu whether it was reached by mouse or keyboard —
-  // a single listener covers both the Move list and the Rename entry.
+  // a single listener covers both the Move list and the Rename entry. Scrolling
+  // dismisses it too: the menu is positioned `fixed` off the trigger's rect, so
+  // any scroll (the rail's own overflow scroller included) would leave it
+  // stranded away from the row it belongs to.
   useEffect(() => {
     if (!menuOpen) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setMenu(null);
     }
+    function onScroll() {
+      setMenu(null);
+    }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Capture phase: scroll events don't bubble, so this also catches the rail's
+    // inner overflow-y-auto scroller moving the trigger out from under the menu.
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
   }, [menuOpen]);
 
   function openMenu() {
