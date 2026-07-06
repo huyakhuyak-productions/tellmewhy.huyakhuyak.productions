@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { auth } from "@/lib/auth";
 
 const userId = `test-${randomUUID()}`;
 vi.mock("@/lib/auth", () => ({
@@ -94,6 +95,26 @@ describe("folder routes", () => {
       body: "not json",
     });
     expect((await POST(bad)).status).toBe(400);
+  });
+
+  it("returns 401 from the folders collection route when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
+    const res = await GET();
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 from the folder-id route when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
+    const params = Promise.resolve({ folderId: randomUUID() });
+    const res = await PATCH_FOLDER(jsonRequest("PATCH", { name: "x" }), { params });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 from the conversation-id route when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
+    const params = Promise.resolve({ conversationId: randomUUID() });
+    const res = await PATCH_CONV(jsonRequest("PATCH", { title: "x" }), { params });
+    expect(res.status).toBe(401);
   });
 
   it("rejects bad folder id before applying rename in combined update", async () => {

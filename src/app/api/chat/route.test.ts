@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
 import chatRateLimiter from "@/lib/rate-limit";
+import { auth } from "@/lib/auth";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -49,6 +50,12 @@ describe("POST /api/chat", () => {
     await res.text();
     const [clientMsg] = await loadMessages(id, userId);
     expect(clientMsg.riskLevel).toBe("crisis");
+  });
+
+  it("returns 401 when there is no session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
+    const res = await POST(chatRequest({ conversationId: randomUUID(), text: "hi" }));
+    expect(res.status).toBe(401);
   });
 
   it("returns 400 (not a 500) for a malformed JSON body", async () => {
