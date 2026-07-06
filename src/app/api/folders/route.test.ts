@@ -95,4 +95,18 @@ describe("folder routes", () => {
     });
     expect((await POST(bad)).status).toBe(400);
   });
+
+  it("rejects bad folder id before applying rename in combined update", async () => {
+    const conv = await createConversation(userId, "original title");
+    const params = Promise.resolve({ conversationId: conv.id });
+    const nonexistentFolderId = randomUUID();
+    const res = await PATCH_CONV(
+      jsonRequest("PATCH", { title: "attempted rename", folderId: nonexistentFolderId }),
+      { params },
+    );
+    expect(res.status).toBe(404);
+    const conversations = await listConversations(userId);
+    const unchanged = conversations.find((c) => c.id === conv.id);
+    expect(unchanged?.title).toBe("original title");
+  });
 });

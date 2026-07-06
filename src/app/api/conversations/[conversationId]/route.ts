@@ -22,11 +22,13 @@ export async function PATCH(
   const body = bodySchema.safeParse(await req.json().catch(() => null));
   if (!params.success || !body.success) return Response.json({ error: "Invalid input" }, { status: 400 });
   try {
-    if (body.data.title !== undefined) {
-      await renameConversation(params.data.conversationId, session.user.id, body.data.title, { customized: true });
-    }
+    // Apply folder assignment first: it validates ownership of both conversation and folder.
+    // Once it succeeds, the rename on the same conversation cannot realistically fail.
     if (body.data.folderId !== undefined) {
       await assignConversationToFolder(params.data.conversationId, session.user.id, body.data.folderId);
+    }
+    if (body.data.title !== undefined) {
+      await renameConversation(params.data.conversationId, session.user.id, body.data.title, { customized: true });
     }
     return new Response(null, { status: 204 });
   } catch (error) {
