@@ -32,18 +32,31 @@ function Chip({
 
 /**
  * The "pick up where you left off" section: a centered folder filter row plus
- * the recent cards it narrows. Filtering is entirely client-side — `null` is
- * the "All" state. The chip row is skipped when the user keeps no folders.
+ * the cards it narrows. Filtering is entirely client-side — `null` is the
+ * "All" state, which shows only the 6 most recent until the reader asks for
+ * more (mobile has no conversation rail, so this row is the only way to
+ * reach older conversations). Selecting a folder always shows everything
+ * filed there, uncapped — a full folder should never look emptier than it
+ * is. The chip row is skipped when the user keeps no folders.
  */
 export function FolderChips({
   folders,
-  recent,
+  conversations,
 }: {
   folders: Folder[];
-  recent: RecentItem[];
+  conversations: RecentItem[];
 }) {
   const [active, setActive] = useState<string | null>(null);
-  const shown = active === null ? recent : recent.filter((r) => r.folderId === active);
+  const [expanded, setExpanded] = useState(false);
+
+  const recent = conversations.slice(0, 6);
+  const shown =
+    active === null
+      ? expanded
+        ? conversations
+        : recent
+      : conversations.filter((c) => c.folderId === active);
+  const canExpand = active === null && !expanded && conversations.length > recent.length;
 
   return (
     <section className="w-full max-w-[880px]">
@@ -87,6 +100,18 @@ export function FolderChips({
           ))}
         </div>
       )}
+
+      {canExpand ? (
+        <div className="flex justify-center pt-4">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-[11.5px] text-muted-foreground/75 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent active:scale-[0.97]"
+          >
+            Show all {conversations.length} conversations
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

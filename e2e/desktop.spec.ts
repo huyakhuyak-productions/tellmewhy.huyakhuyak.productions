@@ -36,13 +36,22 @@ test("folders group the rail and filter the home cards", async ({ page }) => {
   await page.getByLabel("Start a conversation").fill("Family stuff on my mind");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/chat\/.+/);
+  // The card title is the hero's date-based conversation title, not the
+  // first message — so later assertions key off the conversation's id/url.
+  const conversationHref = new URL(page.url()).pathname;
 
   await page.getByRole("button", { name: /new folder/i }).click();
   await page.getByLabel("New folder name").fill("family");
   await page.keyboard.press("Enter");
 
+  // Wait for the PATCH to actually land — otherwise `page.goto` below can
+  // navigate away before the move persists, making the filter assertion flaky.
+  const movePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
   await page.getByRole("button", { name: "Move to folder" }).click();
   await page.getByRole("menuitem", { name: "family" }).click();
+  await movePersisted;
 
   // FolderGroup's label is a disclosure <button aria-expanded>, not a heading
   // element — the rail groups conversations under collapsible toggles, so the
@@ -51,4 +60,9 @@ test("folders group the rail and filter the home cards", async ({ page }) => {
 
   await page.goto("/chat");
   await expect(page.getByRole("button", { name: "family" })).toBeVisible();
+
+  // The home chips must filter the full history, not just the six-card
+  // recent slice — selecting the folder should surface the moved card.
+  await page.getByRole("button", { name: "family", exact: true }).click();
+  await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
 });

@@ -16,7 +16,9 @@ export default async function HomePage() {
   ]);
 
   const folderNames = new Map(folders.map((f) => [f.id, f.name]));
-  const recent = conversations.slice(0, 6).map((c) => ({
+  // The full history, not just a slice — mobile has no rail, so these chips
+  // are the only way to reach conversation #7 and beyond.
+  const allConversations = conversations.map((c) => ({
     id: c.id,
     title: c.title,
     folderId: c.folderId,
@@ -30,14 +32,14 @@ export default async function HomePage() {
 
       <HeroComposer />
 
-      {recent.length === 0 ? (
+      {allConversations.length === 0 ? (
         <p className="text-pretty font-serif text-lg italic text-muted-foreground">
           This space is yours. Start whenever you&apos;re ready.
         </p>
       ) : (
         <FolderChips
           folders={folders.map((f) => ({ id: f.id, name: f.name }))}
-          recent={recent}
+          conversations={allConversations}
         />
       )}
     </main>
