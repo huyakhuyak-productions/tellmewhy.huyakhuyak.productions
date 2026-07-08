@@ -39,6 +39,20 @@ describe("DELETE /api/links/[linkId]", () => {
     expect(row.status).toBe("revoked");
   });
 
+  it("revokes a link when called by the therapist", async () => {
+    const clientId = `test-${randomUUID()}`;
+    const { linkId, token } = await createInvite(clientId, "client");
+    const therapistId = `test-${randomUUID()}`;
+    await acceptInvite(token, therapistId);
+
+    session = { user: { id: therapistId } };
+    const res = await deleteRequest(linkId);
+    expect(res.status).toBe(204);
+
+    const [row] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(row.status).toBe("revoked");
+  });
+
   it("returns 401 when there is no session", async () => {
     session = null;
     const res = await deleteRequest(randomUUID());

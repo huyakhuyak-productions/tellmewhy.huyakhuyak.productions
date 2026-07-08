@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { therapistLinks } from "@/db/schema";
-import { inviteCreateRateLimiter } from "@/lib/rate-limit";
+import chatRateLimiter, { conversationCreateRateLimiter, inviteCreateRateLimiter } from "@/lib/rate-limit";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
@@ -85,5 +85,15 @@ describe("POST /api/links/invite", () => {
 
     const res = await POST();
     expect(res.status).toBe(429);
+  });
+
+  // The invite-create bucket is its own instance with its own namespace —
+  // draining it must never throttle the chat or conversation-create buckets,
+  // and vice versa.
+  it("keeps the invite-create bucket isolated from chat and conversation-create buckets", async () => {
+    for (let i = 0; i < 5; i++) inviteCreateRateLimiter.consume(userId);
+    expect(inviteCreateRateLimiter.consume(userId)).toBe(false);
+    expect(chatRateLimiter.consume(userId)).toBe(true);
+    expect(conversationCreateRateLimiter.consume(userId)).toBe(true);
   });
 });

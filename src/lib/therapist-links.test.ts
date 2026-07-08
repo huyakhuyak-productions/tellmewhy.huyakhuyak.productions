@@ -56,6 +56,16 @@ describe("therapist link lifecycle", () => {
     await expect(acceptInvite(token, therapistId)).rejects.toThrow();
   });
 
+  it("keeps an expired invite in 'invited' status after rejection", async () => {
+    const { linkId, token } = await createInvite(clientId, "client");
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await db.update(therapistLinks).set({ createdAt: eightDaysAgo }).where(eq(therapistLinks.id, linkId));
+    await expect(acceptInvite(token, therapistId)).rejects.toThrow();
+
+    const [row] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(row.status).toBe("invited");
+  });
+
   it("rejects a second use of the same token", async () => {
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
