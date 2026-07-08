@@ -5,7 +5,8 @@
 // title or body in the message.
 import { and, count, eq, inArray, max, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { auditEvents, conversations, messages, sharingGrants, therapistLinks } from "@/db/schema";
+import { conversations, messages, sharingGrants, therapistLinks } from "@/db/schema";
+import { recordAudit } from "./audit";
 import { decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
@@ -21,15 +22,6 @@ export type GrantedConversationSummary = {
   flaggedCount: number;
   crisisCount: number;
 };
-
-async function recordAudit(fields: {
-  clientId: string;
-  therapistId: string | null;
-  conversationId: string;
-  action: "grant_created" | "grant_revoked";
-}): Promise<void> {
-  await db.insert(auditEvents).values(fields);
-}
 
 // THE gate: a live grant joined to an `active` link whose therapistId
 // matches the caller. Anything else — no grant, a revoked link, a grant that

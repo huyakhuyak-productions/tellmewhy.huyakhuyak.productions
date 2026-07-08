@@ -1,15 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
-import { auditEvents, sharingGrants, therapistLinks, user } from "@/db/schema";
+import { sharingGrants, therapistLinks, user } from "@/db/schema";
+import { recordAudit } from "./audit";
 import { NotFoundError } from "./errors";
 
 const TOKEN_BYTES = 32;
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ONE_PER_CLIENT_INDEX = "therapist_links_one_per_client_idx";
 const ALREADY_LINKED_MESSAGE = "This client already has a pending or active therapist link";
-
-type LinkAuditAction = "link_invited" | "link_accepted" | "link_revoked";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -54,19 +53,6 @@ async function hasPendingOrActiveLink(clientId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-// Audit rows are ids + times only. A therapist-initiated invite has no
-// clientId until it's accepted (the column is NOT NULL), so there's nothing
-// to write yet — the create-time audit for that direction happens instead at
-// accept, once a client id exists.
-async function recordAudit(fields: {
-  clientId: string;
-  therapistId: string | null;
-  action: LinkAuditAction;
-  createdAt?: Date;
-}): Promise<void> {
-  await db.insert(auditEvents).values(fields);
-}
-
 export async function createInvite(
   initiatorUserId: string,
   initiatedBy: "client" | "therapist",
@@ -97,6 +83,10 @@ export async function createInvite(
     throw error;
   }
 
+  // Audit rows are ids + times only. A therapist-initiated invite has no
+  // clientId until it's accepted (the column is NOT NULL), so there's nothing
+  // to write yet — the create-time audit for that direction happens instead at
+  // accept, once a client id exists.
   if (initiatedBy === "client") {
     await recordAudit({ clientId: initiatorUserId, therapistId: null, action: "link_invited" });
   }
