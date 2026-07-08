@@ -189,6 +189,29 @@ describe("therapist access — reads, review line, attention queue", () => {
       expect(await getReviewMarkerForClient(clientId, conv.id)).toBeNull();
     });
 
+    it("hides the marker when the grant alone is revoked (link stays active), and restores it on re-grant", async () => {
+      const therapistUser = await insertUser("Dr. Ilse");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistUser);
+      const conv = await createConversation(clientId, "Grant-only revoke");
+      await grantConversation(clientId, conv.id);
+      const msg = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "hi" });
+      await advanceReviewMarker(therapistUser, conv.id, msg.id);
+      expect(await getReviewMarkerForClient(clientId, conv.id)).not.toBeNull();
+
+      // Revoke only the GRANT — the link stays active. The divider is an
+      // indirect surface of shared data and must obey the gate too.
+      await revokeGrant(clientId, conv.id);
+      expect(await getReviewMarkerForClient(clientId, conv.id)).toBeNull();
+
+      // The marker row itself persists — re-granting restores the divider.
+      // Revocation hides, re-grant restores: that's the designed semantic.
+      await grantConversation(clientId, conv.id);
+      const restored = await getReviewMarkerForClient(clientId, conv.id);
+      expect(restored).not.toBeNull();
+      expect(restored!.lastReviewedMessageId).toBe(msg.id);
+    });
+
     it("hides the marker once the link is revoked", async () => {
       const therapistUser = await insertUser("Dr. Vance");
       const { linkId, token } = await createInvite(clientId, "client");

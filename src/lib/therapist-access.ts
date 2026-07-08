@@ -90,9 +90,13 @@ export type ReviewMarkerForClient = {
   updatedAt: Date;
 };
 
-// The client's divider ("Reviewed by <name> up to here"). Scoped to the
-// active link only — a marker left behind by a since-revoked link is not
-// this client's therapist anymore and must not surface.
+// The client's divider ("Reviewed by <name> up to here"). Mirrors the FULL
+// gate, just like listAttentionItems: a live grant for this exact (link,
+// conversation) pair, an active link, and the defense-in-depth check that
+// the conversation really belongs to the link's client. The divider is an
+// indirect surface of shared data — revoking just the grant (link still
+// active) must hide it, and re-granting restores it (the marker row itself
+// persists; revocation hides, re-grant restores is the designed semantic).
 export async function getReviewMarkerForClient(
   clientId: string,
   conversationId: string,
@@ -105,12 +109,24 @@ export async function getReviewMarkerForClient(
     })
     .from(reviewMarkers)
     .innerJoin(therapistLinks, eq(reviewMarkers.linkId, therapistLinks.id))
+    .innerJoin(
+      sharingGrants,
+      and(
+        eq(sharingGrants.linkId, reviewMarkers.linkId),
+        eq(sharingGrants.conversationId, reviewMarkers.conversationId),
+      ),
+    )
+    .innerJoin(conversations, eq(reviewMarkers.conversationId, conversations.id))
     .innerJoin(user, eq(user.id, therapistLinks.therapistId))
     .where(
       and(
         eq(reviewMarkers.conversationId, conversationId),
         eq(therapistLinks.clientId, clientId),
         eq(therapistLinks.status, "active"),
+        // Defense-in-depth, same as the gate: the conversation must belong
+        // to the link's client — a corrupted marker/grant row cannot leak a
+        // divider across clients.
+        eq(conversations.userId, therapistLinks.clientId),
       ),
     );
   return row ?? null;
