@@ -132,3 +132,21 @@ export async function isTitleCustomized(conversationId: string, userId: string):
   const row = await requireOwnedConversation(conversationId, userId);
   return row.titleCustomized;
 }
+
+// "Flag for my therapist" — ownership-checked via the message's own
+// conversation, same as every other client-facing message operation. No
+// therapist grant is required: the flag waits until the client actually
+// shares the conversation, at which point it surfaces in the attention
+// queue. Idempotent: flagging an already-flagged message is a no-op that
+// keeps the original timestamp, not a fresh "now".
+export async function flagMessageForTherapist(userId: string, messageId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: messages.id, flaggedAt: messages.flaggedAt })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(and(eq(messages.id, messageId), eq(conversations.userId, userId)));
+  if (!row) throw new NotFoundError("Message not found");
+  if (row.flaggedAt) return;
+
+  await db.update(messages).set({ flaggedAt: new Date() }).where(eq(messages.id, messageId));
+}

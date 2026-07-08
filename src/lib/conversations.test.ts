@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { NotFoundError, createConversation, listConversations, loadMessages, saveMessage } from "./conversations";
+import {
+  NotFoundError,
+  createConversation,
+  flagMessageForTherapist,
+  listConversations,
+  loadMessages,
+  saveMessage,
+} from "./conversations";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 
@@ -172,5 +179,50 @@ describe("encrypted conversations", () => {
     const [loggedMessage] = consoleErrorSpy.mock.calls[0]!;
     expect(loggedMessage).not.toContain("not-valid-ciphertext");
     consoleErrorSpy.mockRestore();
+  });
+
+  describe("flagMessageForTherapist", () => {
+    it("sets flaggedAt on the owner's own message", async () => {
+      const { id } = await createConversation(userId, "Flag me");
+      const msg = await saveMessage({ conversationId: id, userId, sender: "client", text: "flag this" });
+
+      await flagMessageForTherapist(userId, msg.id);
+
+      const [row] = await db.select().from(messages).where(eq(messages.id, msg.id));
+      expect(row.flaggedAt).not.toBeNull();
+    });
+
+    it("is idempotent — flagging an already-flagged message keeps the original timestamp", async () => {
+      const { id } = await createConversation(userId, "Flag twice");
+      const msg = await saveMessage({ conversationId: id, userId, sender: "client", text: "flag this" });
+
+      await flagMessageForTherapist(userId, msg.id);
+      const [firstFlag] = await db.select().from(messages).where(eq(messages.id, msg.id));
+
+      await flagMessageForTherapist(userId, msg.id);
+      const [secondFlag] = await db.select().from(messages).where(eq(messages.id, msg.id));
+
+      expect(secondFlag.flaggedAt!.getTime()).toBe(firstFlag.flaggedAt!.getTime());
+    });
+
+    it("refuses to flag a message in someone else's conversation", async () => {
+      const { id } = await createConversation(userId, "Not yours");
+      const msg = await saveMessage({ conversationId: id, userId, sender: "client", text: "private" });
+
+      await expect(flagMessageForTherapist("someone-else", msg.id)).rejects.toThrow(NotFoundError);
+      const [row] = await db.select().from(messages).where(eq(messages.id, msg.id));
+      expect(row.flaggedAt).toBeNull();
+    });
+
+    it("refuses a nonexistent message id", async () => {
+      await expect(flagMessageForTherapist(userId, randomUUID())).rejects.toThrow(NotFoundError);
+    });
+
+    it("does not require a therapist grant — the flag waits until shared", async () => {
+      const { id } = await createConversation(userId, "Unshared entirely");
+      const msg = await saveMessage({ conversationId: id, userId, sender: "client", text: "no link at all" });
+
+      await expect(flagMessageForTherapist(userId, msg.id)).resolves.toBeUndefined();
+    });
   });
 });
