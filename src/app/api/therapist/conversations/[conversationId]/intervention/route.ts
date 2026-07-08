@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { NotFoundError } from "@/lib/errors";
 import { sendIntervention } from "@/lib/interventions";
+import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { requireTherapist } from "../../../_lib/require-therapist";
 
 const paramsSchema = z.object({ conversationId: z.uuid() });
@@ -14,6 +15,10 @@ type Ctx = { params: Promise<{ conversationId: string }> };
 export async function POST(req: Request, ctx: Ctx): Promise<Response> {
   const authResult = await requireTherapist();
   if (!authResult.ok) return authResult.response;
+
+  if (!therapistWriteRateLimiter.consume(authResult.therapistId)) {
+    return Response.json({ error: "A gentle pace — your work is saved as you go" }, { status: 429 });
+  }
 
   const params = paramsSchema.safeParse(await ctx.params);
   if (!params.success) return Response.json({ error: "Invalid input" }, { status: 400 });

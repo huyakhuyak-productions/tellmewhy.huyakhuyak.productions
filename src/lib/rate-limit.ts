@@ -73,3 +73,6 @@ export const conversationCreateRateLimiter = new RateLimiter({ capacity: 10, ref
 // therapist link), so creating them gets its own small, tighter bucket
 // rather than sharing the conversation-create one.
 export const inviteCreateRateLimiter = new RateLimiter({ capacity: 5, refillWindowMs: 5 * 60 * 1000 });
+
+// Therapist interventions and notes reach the client's chat directly; keyed by therapistId.
+export const therapistWriteRateLimiter = new RateLimiter({ capacity: 20, refillWindowMs: 5 * 60 * 1000 });

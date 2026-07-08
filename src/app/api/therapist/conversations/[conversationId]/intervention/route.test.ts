@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation, loadMessages } from "@/lib/conversations";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import chatRateLimiter, { therapistWriteRateLimiter } from "@/lib/rate-limit";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -98,5 +99,28 @@ describe("POST /api/therapist/conversations/[conversationId]/intervention", () =
     expect(messages[0].sender).toBe("therapist");
     expect(messages[0].text).toBe("You're doing great.");
     expect(messages[0].authorId).toBe(therapistId);
+  });
+
+  // Runs last in this file: it drains the shared in-memory bucket for
+  // `therapistId`, which would make an earlier test in this file see a 429 if
+  // it ran after this one. Exhausting via the limiter's own API (rather than
+  // via the route) ensures the test doesn't depend on slow network conditions,
+  // and isolates this test's logic from the internals of sendIntervention.
+  // See src/lib/rate-limit.test.ts for the limiter's own consume/refill coverage.
+  it("returns 429 once the per-therapist write bucket is exhausted", async () => {
+    const therapistId = `test-${randomUUID()}`;
+    for (let i = 0; i < 20; i++) therapistWriteRateLimiter.consume(therapistId);
+
+    session = { user: { id: therapistId, role: "therapist" } };
+    const res = await POST(jsonRequest({ text: "hi" }), ctxFor(randomUUID()));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "A gentle pace — your work is saved as you go" });
+  });
+
+  it("therapistWriteRateLimiter isolation: draining it does not affect chatRateLimiter", async () => {
+    const therapistId = `test-${randomUUID()}`;
+    for (let i = 0; i < 20; i++) therapistWriteRateLimiter.consume(therapistId);
+    // chatRateLimiter should still have tokens available
+    expect(chatRateLimiter.consume(therapistId)).toBe(true);
   });
 });

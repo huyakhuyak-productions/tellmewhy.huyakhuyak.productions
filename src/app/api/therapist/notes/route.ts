@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { NotFoundError } from "@/lib/errors";
 import { createNote } from "@/lib/therapist-notes";
+import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { requireTherapist } from "../_lib/require-therapist";
 
 const bodySchema = z.object({
@@ -14,6 +15,10 @@ const bodySchema = z.object({
 export async function POST(req: Request): Promise<Response> {
   const authResult = await requireTherapist();
   if (!authResult.ok) return authResult.response;
+
+  if (!therapistWriteRateLimiter.consume(authResult.therapistId)) {
+    return Response.json({ error: "A gentle pace — your work is saved as you go" }, { status: 429 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
