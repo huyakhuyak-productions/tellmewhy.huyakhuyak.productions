@@ -4,7 +4,7 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { auditEvents, sharingGrants, therapistLinks, user } from "@/db/schema";
 import { NotFoundError } from "./errors";
-import { acceptInvite, createInvite, getActiveLinkForClient, getActiveLinksForTherapist, revokeLink } from "./therapist-links";
+import { acceptInvite, createInvite, getActiveLinkForClient, getActiveLinksForTherapist, getPendingInviteForClient, revokeLink } from "./therapist-links";
 
 async function insertUser(overrides: { name?: string; role?: string } = {}): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -313,5 +313,16 @@ describe("therapist link lifecycle", () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.therapistId, therapistId), eq(auditEvents.action, "link_invited")));
     expect(invitedEvent.createdAt.getTime()).toBe(threeDaysAgo.getTime());
+  });
+
+  it("surfaces a client's own still-pending invite, then stops once accepted", async () => {
+    expect(await getPendingInviteForClient(clientId)).toBeNull();
+
+    const { linkId, token } = await createInvite(clientId, "client");
+    expect(await getPendingInviteForClient(clientId)).toEqual({ linkId });
+
+    await acceptInvite(token, therapistId);
+    // Now active, not invited — the pending lookup must go quiet.
+    expect(await getPendingInviteForClient(clientId)).toBeNull();
   });
 });

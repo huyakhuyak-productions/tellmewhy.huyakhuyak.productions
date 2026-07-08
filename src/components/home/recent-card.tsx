@@ -20,11 +20,17 @@ export function RecentCard({
   item,
   folders,
   dndEnabled = false,
+  shared = false,
+  hasActiveLink = false,
 }: {
   item: RecentItem;
   folders: CardFolder[];
   /** Desktop only: let the card be dragged onto a folder chip to file it. */
   dndEnabled?: boolean;
+  /** Whether this conversation is currently shared with the trusted person. */
+  shared?: boolean;
+  /** Whether a share/stop-share action should appear in the card menu at all. */
+  hasActiveLink?: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
   return (
@@ -62,12 +68,18 @@ export function RecentCard({
         <span className="line-clamp-2 text-pretty pr-8 text-[0.9rem] font-semibold tracking-[-0.005em]">
           {item.title}
         </span>
-        <time
-          suppressHydrationWarning
-          className="mt-auto text-[11px] tabular-nums text-muted-foreground"
-        >
-          {relativeTime(item.updatedAt)}
-        </time>
+        <div className="mt-auto flex items-center gap-2">
+          <time suppressHydrationWarning className="text-[11px] tabular-nums text-muted-foreground">
+            {relativeTime(item.updatedAt)}
+          </time>
+          {shared ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-accent/90">
+              <span aria-hidden className="size-1.5 rounded-full bg-accent/80" />
+              Shared
+              <span className="sr-only"> with your therapist</span>
+            </span>
+          ) : null}
+        </div>
       </Link>
 
       <CardMenu
@@ -75,6 +87,8 @@ export function RecentCard({
         title={item.title}
         currentFolderId={item.folderId}
         folders={folders}
+        shared={shared}
+        hasActiveLink={hasActiveLink}
       />
     </div>
   );

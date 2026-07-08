@@ -5,6 +5,11 @@ import { auth } from "@/lib/auth";
 import { NotFoundError, listConversations, loadMessages } from "@/lib/conversations";
 import { listFolders } from "@/lib/folders";
 import { deriveChatStats } from "@/lib/chat-stats";
+import { getGrantStateForClient, listGrantsForClient } from "@/lib/sharing";
+import { getReviewMarkerForClient } from "@/lib/therapist-access";
+import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
+import { listPublicNotesForClient } from "@/lib/therapist-notes";
+import { getUserDisplayNames } from "@/lib/users";
 import { ChatScreen } from "@/components/chat/chat-screen";
 
 export default async function ConversationPage({
@@ -18,22 +23,49 @@ export default async function ConversationPage({
   if (!z.uuid().safeParse(conversationId).success) notFound();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
+  const userId = session.user.id;
 
   // Ownership check first and separate: a foreign id must 404 before we do any
-  // other work, so the rails/stats fetches never run for a conversation the
-  // reader can't see.
+  // other work, so the rails/stats/trust fetches never run for a conversation
+  // the reader can't see.
   let initialMessages: Awaited<ReturnType<typeof loadMessages>>;
   try {
-    initialMessages = await loadMessages(conversationId, session.user.id);
+    initialMessages = await loadMessages(conversationId, userId);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     throw error;
   }
 
-  const [conversationList, folderList] = await Promise.all([
-    listConversations(session.user.id),
-    listFolders(session.user.id),
-  ]);
+  const [conversationList, folderList, activeLink, shared, sharedIds, reviewMarkerRow, publicNotes] =
+    await Promise.all([
+      listConversations(userId),
+      listFolders(userId),
+      getActiveLinkForClient(userId),
+      getGrantStateForClient(userId, conversationId),
+      listGrantsForClient(userId),
+      getReviewMarkerForClient(userId, conversationId),
+      listPublicNotesForClient(userId, conversationId),
+    ]);
+
+  // Link state for the (now live) stats-rail panel — invited only matters when
+  // there's no active link, matching the one-therapist rule.
+  const pending = activeLink ? null : await getPendingInviteForClient(userId);
+
+  // Resolve therapist message authors to names by authorId — correct even if
+  // the link was later revoked, since the messages themselves remain.
+  const authorIds = initialMessages
+    .filter((m) => m.sender === "therapist" && m.authorId)
+    .map((m) => m.authorId!);
+  const authorNames = await getUserDisplayNames(authorIds);
+
+  const messages = initialMessages.map((m) => ({
+    id: m.id,
+    sender: m.sender,
+    text: m.text,
+    authorName:
+      m.sender === "therapist" ? (m.authorId ? (authorNames.get(m.authorId) ?? null) : null) : undefined,
+    flaggedAt: m.sender === "client" ? m.flaggedAt : undefined,
+  }));
 
   const stats = deriveChatStats(conversationList, session.user.createdAt);
 
@@ -44,7 +76,7 @@ export default async function ConversationPage({
       // dismissed-crisis state) from one conversation into the next.
       key={conversationId}
       conversationId={conversationId}
-      initialMessages={initialMessages}
+      initialMessages={messages}
       conversations={conversationList.map((c) => ({
         id: c.id,
         title: c.title,
@@ -53,6 +85,28 @@ export default async function ConversationPage({
       }))}
       folders={folderList.map((f) => ({ id: f.id, name: f.name }))}
       stats={stats}
+      activeLink={activeLink ? { therapistName: activeLink.therapistName } : null}
+      shared={shared}
+      sharedIds={sharedIds}
+      reviewMarker={
+        reviewMarkerRow
+          ? {
+              lastReviewedMessageId: reviewMarkerRow.lastReviewedMessageId,
+              therapistName: reviewMarkerRow.therapistName,
+            }
+          : null
+      }
+      publicNotes={publicNotes.map((n) => ({
+        id: n.id,
+        body: n.body,
+        therapistName: n.therapistName,
+        createdAt: n.createdAt,
+      }))}
+      therapist={{
+        state: activeLink ? "active" : pending ? "invited" : "none",
+        therapistName: activeLink?.therapistName ?? null,
+        sharedCount: sharedIds.length,
+      }}
     />
   );
 }

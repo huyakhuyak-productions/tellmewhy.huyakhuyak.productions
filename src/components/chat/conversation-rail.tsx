@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { relativeTime } from "@/lib/relative-time";
 import { setConversationDragData, useConversationDropTarget } from "@/lib/dnd";
+import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
 
 export type RailConversation = {
   id: string;
@@ -23,14 +24,31 @@ export function ConversationRail({
   conversations,
   folders,
   currentId,
+  sharedIds = [],
+  hasActiveLink = false,
   className = "",
 }: {
   conversations: RailConversation[];
   folders: RailFolder[];
   currentId: string;
+  /** Ids currently shared with the trusted person — drives the quiet mark. */
+  sharedIds?: string[];
+  /** Whether a share/stop-share action should appear in the row menu at all. */
+  hasActiveLink?: boolean;
   className?: string;
 }) {
   const router = useRouter();
+  const sharedSet = new Set(sharedIds);
+  const [shareError, setShareError] = useState<{ id: string; message: string } | null>(null);
+
+  async function toggleShare(conversationId: string, currentlyShared: boolean) {
+    setShareError(null);
+    const ok = currentlyShared
+      ? await stopSharingConversation(conversationId)
+      : await shareConversation(conversationId);
+    if (ok) router.refresh();
+    else setShareError({ id: conversationId, message: "Couldn't update sharing — try again." });
+  }
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -161,6 +179,10 @@ export function ConversationRail({
           onRename={rename}
           renamingId={renamingId}
           renameError={renameError}
+          sharedSet={sharedSet}
+          hasActiveLink={hasActiveLink}
+          onToggleShare={toggleShare}
+          shareError={shareError}
         />
       ))}
 
@@ -181,6 +203,10 @@ export function ConversationRail({
           onRename={rename}
           renamingId={renamingId}
           renameError={renameError}
+          sharedSet={sharedSet}
+          hasActiveLink={hasActiveLink}
+          onToggleShare={toggleShare}
+          shareError={shareError}
         />
       )}
 
@@ -239,6 +265,15 @@ export function ConversationRail({
           </svg>
           Start something new
         </Link>
+        <Link
+          href="/trust"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.98]"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M8 1.8 3 4v3.5c0 3 2.1 5.2 5 6.7 2.9-1.5 5-3.7 5-6.7V4L8 1.8Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Trust &amp; sharing
+        </Link>
       </div>
     </aside>
   );
@@ -260,6 +295,10 @@ function FolderGroup({
   onRename,
   renamingId,
   renameError,
+  sharedSet,
+  hasActiveLink,
+  onToggleShare,
+  shareError,
 }: {
   label: string;
   folderId: string | null;
@@ -276,6 +315,10 @@ function FolderGroup({
   onRename: (conversationId: string, title: string) => Promise<boolean>;
   renamingId: string | null;
   renameError: { id: string; message: string } | null;
+  sharedSet: Set<string>;
+  hasActiveLink: boolean;
+  onToggleShare: (conversationId: string, currentlyShared: boolean) => void;
+  shareError: { id: string; message: string } | null;
 }) {
   const { over, dropProps } = useConversationDropTarget((id) => onDropConversation(id, folderId));
 
@@ -337,6 +380,10 @@ function FolderGroup({
                 onRename={onRename}
                 renaming={renamingId === c.id}
                 renameError={renameError?.id === c.id ? renameError.message : null}
+                shared={sharedSet.has(c.id)}
+                hasActiveLink={hasActiveLink}
+                onToggleShare={onToggleShare}
+                shareError={shareError?.id === c.id ? shareError.message : null}
               />
             ))
           )}
@@ -357,6 +404,10 @@ function ConversationRow({
   onRename,
   renaming,
   renameError,
+  shared,
+  hasActiveLink,
+  onToggleShare,
+  shareError,
 }: {
   item: RailConversation;
   selected: boolean;
@@ -368,6 +419,10 @@ function ConversationRow({
   onRename: (conversationId: string, title: string) => Promise<boolean>;
   renaming: boolean;
   renameError: string | null;
+  shared: boolean;
+  hasActiveLink: boolean;
+  onToggleShare: (conversationId: string, currentlyShared: boolean) => void;
+  shareError: string | null;
 }) {
   // The row lives inside the folder accordion's overflow-hidden clip, so the
   // menu is positioned `fixed` off the trigger's rect to escape that clip.
@@ -481,11 +536,17 @@ function ConversationRow({
             >
               {item.title}
             </span>
-            <span
-              suppressHydrationWarning
-              className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground/80"
-            >
-              {relativeTime(item.updatedAt)}
+            <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+              <span suppressHydrationWarning className="tabular-nums">
+                {relativeTime(item.updatedAt)}
+              </span>
+              {shared ? (
+                <span className="inline-flex items-center gap-1 text-accent/90">
+                  <span aria-hidden className="size-1.5 rounded-full bg-accent/80" />
+                  Shared
+                  <span className="sr-only"> with your therapist</span>
+                </span>
+              ) : null}
             </span>
           </Link>
         )}
@@ -533,6 +594,19 @@ function ConversationRow({
               >
                 Rename
               </button>
+              {hasActiveLink ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenu(null);
+                    onToggleShare(item.id, shared);
+                  }}
+                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+                >
+                  {shared ? "Stop sharing" : "Share with therapist"}
+                </button>
+              ) : null}
               <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
               <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
                 Move to…
@@ -576,6 +650,10 @@ function ConversationRow({
       ) : error ? (
         <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
           {error}
+        </p>
+      ) : shareError ? (
+        <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
+          {shareError}
         </p>
       ) : null}
     </div>

@@ -78,11 +78,18 @@ function FolderChip({
 export function FolderChips({
   folders,
   conversations,
+  sharedIds = [],
+  hasActiveLink = false,
 }: {
   folders: Folder[];
   conversations: RecentItem[];
+  /** Ids currently shared with the trusted person — drives the quiet card mark. */
+  sharedIds?: string[];
+  /** Whether a share/stop-share action should appear in the card menu at all. */
+  hasActiveLink?: boolean;
 }) {
   const router = useRouter();
+  const sharedSet = new Set(sharedIds);
   const [active, setActive] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [dropError, setDropError] = useState(false);
@@ -178,7 +185,13 @@ export function FolderChips({
               className="animate-message-rise h-full"
               style={{ animationDelay: `${Math.min(i, 6) * 55}ms` }}
             >
-              <RecentCard item={item} folders={folders} dndEnabled={dndReady} />
+              <RecentCard
+                item={item}
+                folders={folders}
+                dndEnabled={dndReady}
+                shared={sharedSet.has(item.id)}
+                hasActiveLink={hasActiveLink}
+              />
             </div>
           ))}
         </div>

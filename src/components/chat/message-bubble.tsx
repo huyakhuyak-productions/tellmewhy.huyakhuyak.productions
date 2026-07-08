@@ -11,9 +11,12 @@ function paragraphs(text: string): string[] {
 export function MessageBubble({
   role,
   text,
+  authorName,
 }: {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "therapist";
   text: string;
+  /** Present only for therapist messages — the real person's display name. */
+  authorName?: string;
 }) {
   const longForm = isLongForm(text);
 
@@ -34,6 +37,38 @@ export function MessageBubble({
     return (
       <div className="animate-message-rise ml-auto max-w-[85%] text-pretty rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[0.975rem] leading-relaxed text-accent-foreground shadow-sm">
         {text}
+      </div>
+    );
+  }
+
+  // A real person, your trusted therapist. Distinct from both the AI passage
+  // (a serif letter with a "companion" rule) and the client's accent bubble: a
+  // warm, solid human card with the person's name, left-aligned like someone
+  // speaking to you. Rendered through Streamdown because a human may write a
+  // link or a list. Long-form rules still decide bubble vs letter.
+  if (role === "therapist") {
+    const label = (
+      <div className="mb-2 flex items-baseline gap-1.5">
+        <span className="text-[0.8rem] font-semibold text-foreground">{authorName}</span>
+        <span className="text-[0.72rem] text-muted-foreground">— your therapist</span>
+      </div>
+    );
+    if (longForm) {
+      return (
+        <div className="cp-panel animate-message-rise mr-auto max-w-[66ch] rounded-[18px] rounded-bl-md border px-5 py-4 shadow-sm">
+          {label}
+          <div className="font-serif text-[1.04rem] leading-[1.75] text-pretty text-foreground [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-[0.7em] [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5">
+            <Streamdown>{text}</Streamdown>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="cp-panel animate-message-rise mr-auto max-w-[88%] rounded-[18px] rounded-bl-md border px-4 py-3 shadow-sm">
+        {label}
+        <div className="text-[0.975rem] leading-relaxed text-pretty text-foreground [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-background/60 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5">
+          <Streamdown>{text}</Streamdown>
+        </div>
       </div>
     );
   }

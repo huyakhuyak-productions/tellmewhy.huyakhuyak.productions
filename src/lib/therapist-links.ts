@@ -195,6 +195,20 @@ export async function getActiveLinkForClient(
   return { linkId: row.linkId, therapistId: row.therapistId, therapistName: row.therapistName };
 }
 
+// A client's own still-pending (invited, never accepted) link, if any. Only a
+// client-initiated invite is attributable to a client before acceptance (its
+// clientId column is set at create; a therapist-initiated invite has no
+// clientId until accept), so this reads straight off that column — the same
+// shape /api/links/me already relies on. Complements getActiveLinkForClient
+// so the Trust screen can render none → invited → active without a flash.
+export async function getPendingInviteForClient(clientId: string): Promise<{ linkId: string } | null> {
+  const [row] = await db
+    .select({ linkId: therapistLinks.id })
+    .from(therapistLinks)
+    .where(and(eq(therapistLinks.clientId, clientId), eq(therapistLinks.status, "invited")));
+  return row ?? null;
+}
+
 export async function getActiveLinksForTherapist(
   therapistId: string,
 ): Promise<{ linkId: string; clientId: string; clientName: string }[]> {

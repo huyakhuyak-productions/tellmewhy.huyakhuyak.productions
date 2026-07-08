@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
 
 export type CardFolder = { id: string; name: string };
 
@@ -17,11 +18,17 @@ export function CardMenu({
   title,
   currentFolderId,
   folders,
+  shared = false,
+  hasActiveLink = false,
 }: {
   conversationId: string;
   title: string;
   currentFolderId: string | null;
   folders: CardFolder[];
+  /** Whether this conversation is currently shared with the trusted person. */
+  shared?: boolean;
+  /** Whether a share/stop-share action should appear in the menu at all. */
+  hasActiveLink?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -87,6 +94,18 @@ export function CardMenu({
   async function move(folderId: string | null) {
     setOpen(false);
     await patch({ folderId });
+  }
+
+  async function toggleShare() {
+    setOpen(false);
+    setError(null);
+    setBusy(true);
+    const ok = shared
+      ? await stopSharingConversation(conversationId)
+      : await shareConversation(conversationId);
+    setBusy(false);
+    if (ok) router.refresh();
+    else setError("Couldn't update sharing — try again.");
   }
 
   if (renaming) {
@@ -174,6 +193,16 @@ export function CardMenu({
             >
               Rename
             </button>
+            {hasActiveLink ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={toggleShare}
+                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+              >
+                {shared ? "Stop sharing" : "Share with therapist"}
+              </button>
+            ) : null}
             <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
             <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
               Move to…

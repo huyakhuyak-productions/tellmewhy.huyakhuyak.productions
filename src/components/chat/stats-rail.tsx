@@ -1,6 +1,15 @@
+import Link from "next/link";
 import type { ChatStats } from "@/lib/chat-stats";
 
 export type { ChatStats };
+
+// Live link + sharing summary for the (formerly placeholder) trusted-person
+// panel. Computed server-side so the rail never has to fetch it.
+export type TherapistRailState = {
+  state: "none" | "invited" | "active";
+  therapistName: string | null;
+  sharedCount: number;
+};
 
 function Panel({ children }: { children: React.ReactNode }) {
   return (
@@ -25,11 +34,66 @@ function StatLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+// The trusted-person panel — real now, not a "Phase 2" placeholder. A single
+// calm summary of the connection and how much is shared, and a way through to
+// the full Trust screen. The whole card is the link, so reaching sharing
+// controls is one quiet click from the reading rail.
+function TherapistPanel({ therapist }: { therapist: TherapistRailState }) {
+  const shared =
+    therapist.sharedCount === 1 ? "1 conversation shared" : `${therapist.sharedCount} conversations shared`;
+
+  const headline =
+    therapist.state === "active"
+      ? (therapist.therapistName ?? "Your trusted person")
+      : therapist.state === "invited"
+        ? "Invitation waiting"
+        : "No trusted person yet";
+
+  const sub =
+    therapist.state === "active"
+      ? shared
+      : therapist.state === "invited"
+        ? "Waiting for them to accept"
+        : "Invite one person you trust to review what you choose.";
+
+  const cta =
+    therapist.state === "active"
+      ? "Manage sharing"
+      : therapist.state === "invited"
+        ? "View invitation"
+        : "Invite a trusted person";
+
+  return (
+    <Link
+      href="/trust"
+      aria-label="Trust and sharing"
+      className="group block rounded-2xl border border-border/75 bg-card/55 p-4 outline-none transition-[border-color,background-color] duration-150 hover:border-accent/40 hover:bg-card/80 focus-visible:ring-2 focus-visible:ring-accent/40"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`size-2 shrink-0 rounded-full ${therapist.state === "active" ? "bg-accent" : "bg-crisis-muted"}`}
+          aria-hidden
+        />
+        <span className="min-w-0 truncate text-[13px] font-semibold">{headline}</span>
+      </div>
+      <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">{sub}</p>
+      <span className="mt-2.5 inline-flex items-center gap-1 text-[11.5px] font-medium text-accent">
+        {cta}
+        <svg viewBox="0 0 16 16" fill="none" className="size-3 transition-transform duration-150 group-hover:translate-x-0.5" aria-hidden>
+          <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    </Link>
+  );
+}
+
 export function StatsRail({
   stats,
+  therapist,
   className = "",
 }: {
   stats: ChatStats;
+  therapist: TherapistRailState;
   className?: string;
 }) {
   const memberSince = stats.memberSince.toLocaleDateString(undefined, {
@@ -55,18 +119,10 @@ export function StatsRail({
         </div>
       </Panel>
 
-      {/* Everything below is honestly a placeholder — labeled, never faked. */}
-      <Panel>
-        <div className="flex items-center gap-2">
-          <span className="size-2 shrink-0 rounded-full bg-crisis-muted" aria-hidden />
-          <span className="text-[13px] font-semibold">Listener review</span>
-          <SoonPill phase="Phase 2" />
-        </div>
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
-          A licensed listener will be able to gently review a session you choose to share.
-        </p>
-      </Panel>
+      {/* Real now: the trusted-person connection and how much is shared. */}
+      <TherapistPanel therapist={therapist} />
 
+      {/* Everything below is honestly a placeholder — labeled, never faked. */}
       <Panel>
         <div className="flex items-center">
           <span className="text-[13px] font-semibold">How the weeks have felt</span>

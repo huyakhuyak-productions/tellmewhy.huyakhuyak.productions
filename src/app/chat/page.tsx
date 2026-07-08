@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { listConversations } from "@/lib/conversations";
 import { listFolders } from "@/lib/folders";
+import { listGrantsForClient } from "@/lib/sharing";
+import { getActiveLinkForClient } from "@/lib/therapist-links";
 import { HeroComposer } from "@/components/home/hero-composer";
 import { FolderChips } from "@/components/home/folder-chips";
 
@@ -10,9 +13,11 @@ export default async function HomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
-  const [conversations, folders] = await Promise.all([
+  const [conversations, folders, grantIds, activeLink] = await Promise.all([
     listConversations(session.user.id),
     listFolders(session.user.id),
+    listGrantsForClient(session.user.id),
+    getActiveLinkForClient(session.user.id),
   ]);
 
   const folderNames = new Map(folders.map((f) => [f.id, f.name]));
@@ -40,8 +45,21 @@ export default async function HomePage() {
         <FolderChips
           folders={folders.map((f) => ({ id: f.id, name: f.name }))}
           conversations={allConversations}
+          sharedIds={grantIds}
+          hasActiveLink={activeLink !== null}
         />
       )}
+
+      {/* A calm, single way through to sharing — home itself stays quiet. */}
+      <Link
+        href="/trust"
+        className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M8 1.8 3 4v3.5c0 3 2.1 5.2 5 6.7 2.9-1.5 5-3.7 5-6.7V4L8 1.8Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {activeLink ? "Trust & sharing" : "Invite a trusted person"}
+      </Link>
     </main>
   );
 }

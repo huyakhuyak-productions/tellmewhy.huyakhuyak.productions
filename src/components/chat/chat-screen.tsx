@@ -1,15 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
 import { MessageBubble } from "./message-bubble";
+import { MessageFlag } from "./message-flag";
+import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
-import { StatsRail, type ChatStats } from "./stats-rail";
+import { StatsRail, type ChatStats, type TherapistRailState } from "./stats-rail";
+import { PublicNoteCard } from "@/components/public-note-card";
+
+export type InitialMessage = {
+  id: string;
+  sender: string;
+  text: string;
+  /** Therapist messages only — the author's display name. */
+  authorName?: string | null;
+  /** Client messages only — set once the person flagged it for their therapist. */
+  flaggedAt?: Date | null;
+};
+
+export type ActiveLink = { therapistName: string };
+
+export type ReviewMarker = { lastReviewedMessageId: string; therapistName: string };
+
+export type ConversationNote = { id: string; body: string; therapistName: string; createdAt: Date };
 
 // The composer autosize lives outside the component so effects can re-measure
 // after a programmatic restore without becoming a hook dependency.
@@ -29,13 +48,37 @@ export function ChatScreen({
   conversations,
   folders,
   stats,
+  activeLink,
+  shared,
+  sharedIds,
+  reviewMarker,
+  publicNotes,
+  therapist,
 }: {
   conversationId: string;
-  initialMessages: { id: string; sender: string; text: string }[];
+  initialMessages: InitialMessage[];
   conversations: RailConversation[];
   folders: RailFolder[];
   stats: ChatStats;
+  /** The client's active trusted-person link, if any — gates every share affordance. */
+  activeLink: ActiveLink | null;
+  /** Whether THIS conversation is currently shared under that link. */
+  shared: boolean;
+  /** Ids of all conversations currently shared — the rail's quiet shared-marks. */
+  sharedIds: string[];
+  /** The therapist's review divider position, if they've reviewed here. */
+  reviewMarker: ReviewMarker | null;
+  /** Notes the therapist published under this conversation. */
+  publicNotes: ConversationNote[];
+  /** Link + shared-count summary for the stats rail's (now live) panel. */
+  therapist: TherapistRailState;
 }) {
+  // Server-loaded messages carry facts useChat's own array can't (real sender,
+  // therapist author name, flagged state). Key them by id so the render below
+  // can recover those facts even though useChat only knows user/assistant roles.
+  const metaById = new Map(initialMessages.map((m) => [m.id, m]));
+  const hasActiveLink = activeLink !== null;
+  const therapistName = activeLink?.therapistName ?? null;
   const [crisis, setCrisis] = useState(false);
   const [sendFailure, setSendFailure] = useState<SendFailure | null>(null);
   // Whether the most recent /api/chat response was the rate limiter's 429.
@@ -325,6 +368,8 @@ export function ChatScreen({
         conversations={conversations}
         folders={folders}
         currentId={conversationId}
+        sharedIds={sharedIds}
+        hasActiveLink={hasActiveLink}
         className="hidden lg:flex"
       />
 
@@ -355,18 +400,83 @@ export function ChatScreen({
             <span className="font-serif text-[0.95rem] italic text-muted-foreground">
               A quiet place to think
             </span>
+            {hasActiveLink ? (
+              <div className="ml-auto">
+                <ShareControl
+                  conversationId={conversationId}
+                  shared={shared}
+                  therapistName={therapistName!}
+                />
+              </div>
+            ) : null}
           </div>
         </header>
 
         <div className="flex flex-1 flex-col overflow-y-auto px-4 py-5 lg:px-10 lg:py-8">
           <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-3 lg:gap-[22px]">
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                role={m.role === "user" ? "user" : "assistant"}
-                text={partsToText(m.parts)}
-              />
-            ))}
+            {messages.map((m) => {
+              const meta = metaById.get(m.id);
+              // useChat only knows user/assistant; the server-loaded meta is the
+              // source of truth for whether a message is really the therapist's.
+              const sender = meta?.sender ?? (m.role === "user" ? "client" : "ai");
+              const text = partsToText(m.parts);
+              const divider =
+                reviewMarker && m.id === reviewMarker.lastReviewedMessageId ? (
+                  <ReviewDivider therapistName={reviewMarker.therapistName} />
+                ) : null;
+
+              let bubble: React.ReactNode;
+              if (sender === "therapist") {
+                bubble = (
+                  <MessageBubble
+                    role="therapist"
+                    text={text}
+                    authorName={meta?.authorName ?? "Your therapist"}
+                  />
+                );
+              } else if (sender === "client") {
+                bubble = (
+                  <div className="group/msg flex flex-col">
+                    <MessageBubble role="user" text={text} />
+                    {/* Flag only persisted messages under an active link — a
+                        just-sent message has no server id yet to flag. */}
+                    {meta && hasActiveLink ? (
+                      <MessageFlag
+                        conversationId={conversationId}
+                        messageId={m.id}
+                        initialFlagged={meta.flaggedAt != null}
+                        shared={shared}
+                        therapistName={therapistName!}
+                      />
+                    ) : null}
+                  </div>
+                );
+              } else {
+                bubble = <MessageBubble role="assistant" text={text} />;
+              }
+
+              return (
+                <Fragment key={m.id}>
+                  {bubble}
+                  {divider}
+                </Fragment>
+              );
+            })}
+            {publicNotes.length > 0 && (
+              <div className="mt-2 flex flex-col gap-3">
+                <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Notes from your therapist
+                </div>
+                {publicNotes.map((n) => (
+                  <PublicNoteCard
+                    key={n.id}
+                    therapistName={n.therapistName}
+                    body={n.body}
+                    createdAt={n.createdAt}
+                  />
+                ))}
+              </div>
+            )}
             {waiting && (
               <div
                 aria-hidden
@@ -448,7 +558,25 @@ export function ChatScreen({
         </form>
       </div>
 
-      <StatsRail stats={stats} className="hidden lg:flex" />
+      <StatsRail stats={stats} therapist={therapist} className="hidden lg:flex" />
+    </div>
+  );
+}
+
+// The therapist's review line, rendered at the marked message. A quiet accent
+// hairline with a centered label — "you've been seen up to here", not an alarm.
+function ReviewDivider({ therapistName }: { therapistName: string }) {
+  return (
+    <div
+      role="separator"
+      aria-label={`Reviewed by ${therapistName} up to here`}
+      className="my-1 flex items-center gap-3"
+    >
+      <span aria-hidden className="h-px flex-1 bg-accent/25" />
+      <span className="whitespace-nowrap text-[10.5px] font-medium uppercase tracking-[0.09em] text-accent/90">
+        Reviewed by {therapistName} up to here
+      </span>
+      <span aria-hidden className="h-px flex-1 bg-accent/25" />
     </div>
   );
 }
