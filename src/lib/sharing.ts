@@ -44,11 +44,16 @@ export async function requireGrantedConversation(
     .select({ linkId: therapistLinks.id, clientId: therapistLinks.clientId })
     .from(sharingGrants)
     .innerJoin(therapistLinks, eq(sharingGrants.linkId, therapistLinks.id))
+    .innerJoin(conversations, eq(sharingGrants.conversationId, conversations.id))
     .where(
       and(
         eq(sharingGrants.conversationId, conversationId),
         eq(therapistLinks.status, "active"),
         eq(therapistLinks.therapistId, therapistId),
+        // Defense-in-depth: the gate independently re-verifies the conversation
+        // belongs to the link's client, so a corrupted grant row cannot leak
+        // across clients.
+        eq(conversations.userId, therapistLinks.clientId),
       ),
     );
   if (!row || !row.clientId) throw new NotFoundError("Conversation not found");
@@ -125,6 +130,10 @@ export async function listGrantedConversations(
         eq(therapistLinks.therapistId, therapistId),
         eq(therapistLinks.clientId, clientId),
         eq(therapistLinks.status, "active"),
+        // Defense-in-depth: the gate independently re-verifies the conversation
+        // belongs to the link's client, so a corrupted grant row cannot leak
+        // across clients.
+        eq(conversations.userId, therapistLinks.clientId),
       ),
     )
     .orderBy(sql`${conversations.updatedAt} desc`);

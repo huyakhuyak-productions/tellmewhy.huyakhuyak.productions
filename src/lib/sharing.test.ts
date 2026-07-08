@@ -72,6 +72,28 @@ describe("sharing grants — THE gate", () => {
       await expect(requireGrantedConversation(otherTherapist, conv.id)).rejects.toThrow(NotFoundError);
     });
 
+    it("refuses a corrupt grant row — conversation owned by client A but grant tied to client B's link", async () => {
+      // Set up clientA with a conversation
+      const clientA = `test-${randomUUID()}`;
+      const convOwnedByA = await createConversation(clientA, "Owned by A");
+
+      // Set up clientB and therapist with an active link
+      const clientB = `test-${randomUUID()}`;
+      const therapistB = `test-${randomUUID()}`;
+      const { linkId: linkBId, token } = await createInvite(clientB, "client");
+      await acceptInvite(token, therapistB);
+
+      // Manually insert a corrupt grant: conversation owned by A, but grant tied to B's link
+      await db.insert(sharingGrants).values({ linkId: linkBId, conversationId: convOwnedByA.id });
+
+      // TherapistB should not be able to access A's conversation despite the grant row
+      await expect(requireGrantedConversation(therapistB, convOwnedByA.id)).rejects.toThrow(NotFoundError);
+
+      // The corrupt row should not appear in listGrantedConversations
+      const list = await listGrantedConversations(therapistB, clientB);
+      expect(list.map((c) => c.id)).not.toContain(convOwnedByA.id);
+    });
+
     it("refuses nonexistent ids", async () => {
       await expect(requireGrantedConversation(randomUUID(), randomUUID())).rejects.toThrow(NotFoundError);
     });
