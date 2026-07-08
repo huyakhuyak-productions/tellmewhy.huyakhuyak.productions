@@ -1,4 +1,15 @@
-import { boolean, index, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  boolean,
+} from "drizzle-orm/pg-core";
 
 export const senderEnum = pgEnum("sender", ["client", "ai", "therapist", "system"]);
 export const riskLevelEnum = pgEnum("risk_level", ["none", "elevated", "crisis"]);
@@ -58,5 +69,60 @@ export const messages = pgTable(
   },
   (table) => [index("messages_conversation_id_idx").on(table.conversationId)],
 );
+
+export const linkStatusEnum = pgEnum("link_status", ["invited", "active", "revoked"]);
+export const linkInitiatorEnum = pgEnum("link_initiator", ["client", "therapist"]);
+export const noteKindEnum = pgEnum("note_kind", ["private", "public", "ai_instruction"]);
+export const auditActionEnum = pgEnum("audit_action", [
+  "link_invited", "link_accepted", "link_revoked",
+  "grant_created", "grant_revoked",
+  "conversation_viewed", "review_marker_advanced",
+  "intervention_sent", "note_published",
+]);
+
+export const therapistLinks = pgTable("therapist_links", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: text("client_id"),          // null until accepted when therapist-initiated
+  therapistId: text("therapist_id"),    // null until accepted when client-initiated
+  initiatedBy: linkInitiatorEnum("initiated_by").notNull(),
+  inviteTokenHash: text("invite_token_hash").notNull().unique(),
+  status: linkStatusEnum("status").notNull().default("invited"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  acceptedAt: timestamp("accepted_at"),
+  revokedAt: timestamp("revoked_at"),
+});
+
+export const sharingGrants = pgTable("sharing_grants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("sharing_grants_link_conversation_idx").on(t.linkId, t.conversationId)]);
+
+export const reviewMarkers = pgTable("review_markers", {
+  linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  lastReviewedMessageId: uuid("last_reviewed_message_id").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.linkId, t.conversationId] })]);
+
+export const notes = pgTable("notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id"), // null = client-scoped
+  kind: noteKindEnum("kind").notNull(),
+  bodyCiphertext: text("body_ciphertext").notNull(), // therapist's DEK
+  version: integer("version").notNull().default(1),  // meaningful for ai_instruction
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: text("client_id").notNull(),
+  therapistId: text("therapist_id"),
+  conversationId: uuid("conversation_id"),
+  action: auditActionEnum("action").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("audit_events_client_idx").on(t.clientId, t.createdAt)]);
 
 export * from "./auth-schema";
