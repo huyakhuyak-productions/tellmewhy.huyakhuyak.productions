@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { auditEvents, sharingGrants, therapistLinks, user } from "@/db/schema";
 import { NotFoundError } from "./errors";
@@ -235,5 +235,73 @@ describe("therapist link lifecycle", () => {
     await acceptInvite(token, therapistUser);
     await revokeLink(linkId, clientId);
     expect(await getActiveLinkForClient(clientId)).toBeNull();
+  });
+
+  // The one-active-link-per-client rule was previously check-then-write:
+  // hasPendingOrActiveLink() reads, then a separate insert/update writes.
+  // Two concurrent requests can both pass the read before either write lands.
+  // A partial unique index on (client_id) WHERE status IN (invited, active)
+  // closes that race structurally — these tests fire genuinely concurrent
+  // requests (Promise.allSettled, no artificial ordering) and assert only
+  // one ever wins, regardless of which one the database picks.
+  it("lets only one of two truly concurrent client-initiated creates through", async () => {
+    const results = await Promise.allSettled([
+      createInvite(clientId, "client"),
+      createInvite(clientId, "client"),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(
+      /already has a pending or active therapist link/,
+    );
+
+    const rows = await db
+      .select()
+      .from(therapistLinks)
+      .where(and(eq(therapistLinks.clientId, clientId), or(eq(therapistLinks.status, "invited"), eq(therapistLinks.status, "active"))));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("lets only one of two truly concurrent therapist-initiated accepts (different tokens, same client) through", async () => {
+    const therapistA = `test-${randomUUID()}`;
+    const therapistB = `test-${randomUUID()}`;
+    const { token: tokenA } = await createInvite(therapistA, "therapist");
+    const { token: tokenB } = await createInvite(therapistB, "therapist");
+
+    const results = await Promise.allSettled([
+      acceptInvite(tokenA, clientId),
+      acceptInvite(tokenB, clientId),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(
+      /already has a pending or active therapist link|Invite not found or already used/,
+    );
+
+    const activeLinks = await db
+      .select()
+      .from(therapistLinks)
+      .where(and(eq(therapistLinks.clientId, clientId), eq(therapistLinks.status, "active")));
+    expect(activeLinks).toHaveLength(1);
+  });
+
+  it("stamps the deferred link_invited audit row (therapist-initiated) with the invite's true createdAt, not accept time", async () => {
+    const { linkId, token } = await createInvite(therapistId, "therapist");
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await db.update(therapistLinks).set({ createdAt: threeDaysAgo }).where(eq(therapistLinks.id, linkId));
+
+    await acceptInvite(token, clientId);
+
+    const [invitedEvent] = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.therapistId, therapistId), eq(auditEvents.action, "link_invited")));
+    expect(invitedEvent.createdAt.getTime()).toBe(threeDaysAgo.getTime());
   });
 });

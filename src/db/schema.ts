@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -80,17 +81,28 @@ export const auditActionEnum = pgEnum("audit_action", [
   "intervention_sent", "note_published",
 ]);
 
-export const therapistLinks = pgTable("therapist_links", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  clientId: text("client_id"),          // null until accepted when therapist-initiated
-  therapistId: text("therapist_id"),    // null until accepted when client-initiated
-  initiatedBy: linkInitiatorEnum("initiated_by").notNull(),
-  inviteTokenHash: text("invite_token_hash").notNull().unique(),
-  status: linkStatusEnum("status").notNull().default("invited"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  acceptedAt: timestamp("accepted_at"),
-  revokedAt: timestamp("revoked_at"),
-});
+export const therapistLinks = pgTable(
+  "therapist_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id"),          // null until accepted when therapist-initiated
+    therapistId: text("therapist_id"),    // null until accepted when client-initiated
+    initiatedBy: linkInitiatorEnum("initiated_by").notNull(),
+    inviteTokenHash: text("invite_token_hash").notNull().unique(),
+    status: linkStatusEnum("status").notNull().default("invited"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    acceptedAt: timestamp("accepted_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => [
+    // Structural enforcement of the one-therapist-per-client rule: Postgres
+    // treats NULLs as non-colliding, so therapist-initiated invites (clientId
+    // still NULL) are unaffected until accepted.
+    uniqueIndex("therapist_links_one_per_client_idx")
+      .on(t.clientId)
+      .where(sql`${t.clientId} IS NOT NULL AND ${t.status} IN ('invited', 'active')`),
+  ],
+);
 
 export const sharingGrants = pgTable("sharing_grants", {
   id: uuid("id").primaryKey().defaultRandom(),

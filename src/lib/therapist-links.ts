@@ -6,11 +6,35 @@ import { NotFoundError } from "./errors";
 
 const TOKEN_BYTES = 32;
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ONE_PER_CLIENT_INDEX = "therapist_links_one_per_client_idx";
+const ALREADY_LINKED_MESSAGE = "This client already has a pending or active therapist link";
 
 type LinkAuditAction = "link_invited" | "link_accepted" | "link_revoked";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+// The pre-checks (hasPendingOrActiveLink) are a fast path with a friendlier
+// error, but they're check-then-write and can't stop a concurrent create or
+// accept from slipping past between the check and the write. The partial
+// unique index on (client_id) WHERE status IN (invited, active) is the real
+// guarantee — this turns its 23505 violation into the same error the
+// pre-check throws, so callers see one consistent message either way.
+// drizzle-orm wraps driver errors in DrizzleQueryError with the original
+// postgres.js error on `.cause`, so both layers are checked.
+function isOnePerClientIndexError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  const constraintName = (error as { constraint_name?: unknown }).constraint_name;
+  return code === "23505" && constraintName === ONE_PER_CLIENT_INDEX;
+}
+
+function isOnePerClientViolation(error: unknown): boolean {
+  return (
+    isOnePerClientIndexError(error) ||
+    isOnePerClientIndexError((error as { cause?: unknown } | null)?.cause)
+  );
 }
 
 // A client may have at most one pending-or-active therapist link at a time
@@ -38,6 +62,7 @@ async function recordAudit(fields: {
   clientId: string;
   therapistId: string | null;
   action: LinkAuditAction;
+  createdAt?: Date;
 }): Promise<void> {
   await db.insert(auditEvents).values(fields);
 }
@@ -47,21 +72,30 @@ export async function createInvite(
   initiatedBy: "client" | "therapist",
 ): Promise<{ linkId: string; token: string }> {
   if (initiatedBy === "client" && (await hasPendingOrActiveLink(initiatorUserId))) {
-    throw new Error("This client already has a pending or active therapist link");
+    throw new Error(ALREADY_LINKED_MESSAGE);
   }
 
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
   const inviteTokenHash = hashToken(token);
 
-  const [row] = await db
-    .insert(therapistLinks)
-    .values({
-      clientId: initiatedBy === "client" ? initiatorUserId : null,
-      therapistId: initiatedBy === "therapist" ? initiatorUserId : null,
-      initiatedBy,
-      inviteTokenHash,
-    })
-    .returning({ id: therapistLinks.id });
+  let row: { id: string };
+  try {
+    [row] = await db
+      .insert(therapistLinks)
+      .values({
+        clientId: initiatedBy === "client" ? initiatorUserId : null,
+        therapistId: initiatedBy === "therapist" ? initiatorUserId : null,
+        initiatedBy,
+        inviteTokenHash,
+      })
+      .returning({ id: therapistLinks.id });
+  } catch (error) {
+    // The pre-check above is check-then-write and can lose a race to a
+    // concurrent createInvite for the same client — the partial unique index
+    // is what actually stops the second row from landing.
+    if (isOnePerClientViolation(error)) throw new Error(ALREADY_LINKED_MESSAGE);
+    throw error;
+  }
 
   if (initiatedBy === "client") {
     await recordAudit({ clientId: initiatorUserId, therapistId: null, action: "link_invited" });
@@ -89,19 +123,29 @@ export async function acceptInvite(token: string, acceptingUserId: string): Prom
   // link rule applies to them here, since createInvite's create-time check
   // only covers the client-initiated direction.
   if (link.initiatedBy === "therapist" && (await hasPendingOrActiveLink(acceptingUserId))) {
-    throw new Error("This client already has a pending or active therapist link");
+    throw new Error(ALREADY_LINKED_MESSAGE);
   }
 
   const clientId = link.initiatedBy === "client" ? link.clientId! : acceptingUserId;
   const therapistId = link.initiatedBy === "therapist" ? link.therapistId! : acceptingUserId;
 
   // Single-use, atomically: only the first accept to land wins the flip from
-  // "invited" — a concurrent second accept affects zero rows here.
-  const [updated] = await db
-    .update(therapistLinks)
-    .set({ clientId, therapistId, status: "active", acceptedAt: new Date() })
-    .where(and(eq(therapistLinks.id, link.id), eq(therapistLinks.status, "invited")))
-    .returning({ id: therapistLinks.id });
+  // "invited" — a concurrent second accept affects zero rows here. The
+  // pre-check above is still a race against a second acceptInvite (or a
+  // concurrent createInvite) for the same client — the partial unique index
+  // on (client_id) WHERE status IN (invited, active) is what actually stops
+  // a second active row for this client from landing.
+  let updated: { id: string } | undefined;
+  try {
+    [updated] = await db
+      .update(therapistLinks)
+      .set({ clientId, therapistId, status: "active", acceptedAt: new Date() })
+      .where(and(eq(therapistLinks.id, link.id), eq(therapistLinks.status, "invited")))
+      .returning({ id: therapistLinks.id });
+  } catch (error) {
+    if (isOnePerClientViolation(error)) throw new Error(ALREADY_LINKED_MESSAGE);
+    throw error;
+  }
   if (!updated) throw new Error("Invite not found or already used");
 
   // Role mutates server-side only, and only on a client-initiated accept
@@ -111,9 +155,12 @@ export async function acceptInvite(token: string, acceptingUserId: string): Prom
   }
 
   // A therapist-initiated invite has no client until now — audit the
-  // deferred link_invited alongside link_accepted, both ids now known.
+  // deferred link_invited alongside link_accepted, both ids now known. Its
+  // timestamp is the invite's true creation time, not "now" — the invite
+  // existed (and was auditable in spirit) from createdAt, we just couldn't
+  // write the row until the client id existed.
   if (link.initiatedBy === "therapist") {
-    await recordAudit({ clientId, therapistId, action: "link_invited" });
+    await recordAudit({ clientId, therapistId, action: "link_invited", createdAt: link.createdAt });
   }
   await recordAudit({ clientId, therapistId, action: "link_accepted" });
 

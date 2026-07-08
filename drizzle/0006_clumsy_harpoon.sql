@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "therapist_links_one_per_client_idx" ON "therapist_links" USING btree ("client_id") WHERE "therapist_links"."client_id" IS NOT NULL AND "therapist_links"."status" IN ('invited', 'active');

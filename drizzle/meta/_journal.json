@@ -43,6 +43,13 @@
       "when": 1783502013567,
       "tag": "0005_dizzy_expediter",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783545335495,
+      "tag": "0006_clumsy_harpoon",
+      "breakpoints": true
     }
   ]
 }
