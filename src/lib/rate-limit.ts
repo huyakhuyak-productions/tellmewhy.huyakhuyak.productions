@@ -67,3 +67,9 @@ export default chatRateLimiter;
 // conversations piling up from a runaway client or a scripted retry loop.
 // Kept apart from chatRateLimiter so exhausting one never throttles the other.
 export const conversationCreateRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
+
+// Separate instance, own bucket namespace, keyed by the initiating userId —
+// invite tokens are a resource (each one is a live credential that grants a
+// therapist link), so creating them gets its own small, tighter bucket
+// rather than sharing the conversation-create one.
+export const inviteCreateRateLimiter = new RateLimiter({ capacity: 5, refillWindowMs: 5 * 60 * 1000 });
