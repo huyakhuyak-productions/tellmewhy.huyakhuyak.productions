@@ -6,6 +6,13 @@
 // default destination.
 export function safeNextPath(raw: string | null | undefined): string | null {
   if (typeof raw !== "string" || raw.length === 0) return null;
+  // The WHATWG URL parser strips ASCII tab/newline/CR from the WHOLE string
+  // before parsing, so "/\t/evil.com" would sail past both prefix checks
+  // below yet still normalize to protocol-relative "//evil.com" downstream.
+  // No legitimate path carries these characters — reject the value outright
+  // rather than stripping it, so an attack string is never silently
+  // "repaired" into something followable.
+  if (/[\t\n\r]/.test(raw)) return null;
   if (!raw.startsWith("/")) return null;
   // "//host" is protocol-relative; "/\host" is the backslash variant browsers
   // normalize to "//host". Both leave this origin — reject them.

@@ -56,12 +56,16 @@ export function MessageFlag({
   }
 
   if (flagged) {
+    // Honest tense: once sharing stops, the flag still exists server-side but
+    // the therapist can no longer see it — the badge must not keep asserting
+    // present visibility. Re-sharing makes it visible again (and the label
+    // follows), no extra data needed.
     return (
       <div className="ml-auto mt-1 flex items-center gap-1.5 pr-1 text-[11px] text-accent/90">
         <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
           <path d="M4 2.5v11M4 3h7l-1.4 2.4L11 8H4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        Flagged for your therapist
+        {shared ? "Flagged for your therapist" : "Flagged — not currently shared"}
       </div>
     );
   }
