@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "notes_instruction_version_idx" ON "notes" USING btree ("link_id","version") WHERE "notes"."kind" = 'ai_instruction';

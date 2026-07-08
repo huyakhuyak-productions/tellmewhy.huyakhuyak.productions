@@ -3,6 +3,13 @@
 // data another way. Ungranted, revoked, or foreign access is indistinguishable
 // from nonexistence: NotFoundError, never a more specific error, never a
 // title or body in the message.
+//
+// PERMANENT EXCEPTION: author-owned data addressed by linkId/therapistId +
+// clientId (therapist notes, instruction reads) is exempt from this gate;
+// anything serving CLIENT data to a therapist is not. Do not route
+// note-listing through the gate — that would break the
+// publish-survives-revocation guarantee (see listPublicNotesForClient /
+// listNotesForTherapist in therapist-notes.ts).
 import { and, count, eq, inArray, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages, sharingGrants, therapistLinks } from "@/db/schema";

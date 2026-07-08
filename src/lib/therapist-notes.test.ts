@@ -73,6 +73,27 @@ describe("therapist notes — author-owned, client-boundaried", () => {
       expect([v1.version, v2.version, v3.version]).toEqual([1, 2, 3]);
     });
 
+    it("absorbs a concurrent ai_instruction version collision via retry — both creates succeed with distinct versions", async () => {
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+
+      const [resultA, resultB] = await Promise.allSettled([
+        createNote(therapistId, clientId, { kind: "ai_instruction", body: "instruction A" }),
+        createNote(therapistId, clientId, { kind: "ai_instruction", body: "instruction B" }),
+      ]);
+
+      expect(resultA.status).toBe("fulfilled");
+      expect(resultB.status).toBe("fulfilled");
+      const versionA = (resultA as PromiseFulfilledResult<{ id: string; version: number }>).value.version;
+      const versionB = (resultB as PromiseFulfilledResult<{ id: string; version: number }>).value.version;
+      expect(new Set([versionA, versionB]).size).toBe(2);
+      expect([versionA, versionB].sort()).toEqual([1, 2]);
+
+      const activeInstruction = await getActiveAiInstruction(linkId);
+      const expectedActiveBody = versionA > versionB ? "instruction A" : "instruction B";
+      expect(activeInstruction).toBe(expectedActiveBody);
+    });
+
     it("does not version private or public notes past 1", async () => {
       const { token } = await createInvite(clientId, "client");
       await acceptInvite(token, therapistId);

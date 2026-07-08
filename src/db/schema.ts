@@ -118,15 +118,28 @@ export const reviewMarkers = pgTable("review_markers", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.linkId, t.conversationId] })]);
 
-export const notes = pgTable("notes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
-  conversationId: uuid("conversation_id"), // null = client-scoped
-  kind: noteKindEnum("kind").notNull(),
-  bodyCiphertext: text("body_ciphertext").notNull(), // therapist's DEK
-  version: integer("version").notNull().default(1),  // meaningful for ai_instruction
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const notes = pgTable(
+  "notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id"), // null = client-scoped
+    kind: noteKindEnum("kind").notNull(),
+    bodyCiphertext: text("body_ciphertext").notNull(), // therapist's DEK
+    version: integer("version").notNull().default(1),  // meaningful for ai_instruction
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Structural enforcement of one version number per (link, ai_instruction)
+    // series: the max-read + insert in createNote is check-then-write and can
+    // lose a race to a concurrent create for the same link — this index is
+    // what actually stops two rows from landing at the same version. Other
+    // kinds are never versioned past 1, so they're unaffected by the filter.
+    uniqueIndex("notes_instruction_version_idx")
+      .on(t.linkId, t.version)
+      .where(sql`${t.kind} = 'ai_instruction'`),
+  ],
+);
 
 export const auditEvents = pgTable("audit_events", {
   id: uuid("id").primaryKey().defaultRandom(),

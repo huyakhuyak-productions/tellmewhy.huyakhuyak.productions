@@ -14,6 +14,26 @@ import { requireGrantedConversation } from "./sharing";
 
 export type NoteKind = "private" | "public" | "ai_instruction";
 
+const INSTRUCTION_VERSION_INDEX = "notes_instruction_version_idx";
+const MAX_VERSION_RETRIES = 3;
+
+// Mirrors isOnePerClientIndexError in therapist-links.ts: drizzle-orm wraps
+// driver errors in DrizzleQueryError with the original postgres.js error on
+// `.cause`, so both layers are checked.
+function isInstructionVersionIndexError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  const constraintName = (error as { constraint_name?: unknown }).constraint_name;
+  return code === "23505" && constraintName === INSTRUCTION_VERSION_INDEX;
+}
+
+function isInstructionVersionViolation(error: unknown): boolean {
+  return (
+    isInstructionVersionIndexError(error) ||
+    isInstructionVersionIndexError((error as { cause?: unknown } | null)?.cause)
+  );
+}
+
 // Client-scoped notes (no conversationId) need the client identified some
 // way other than the gate — SIGNATURE DECISION: createNote takes clientId
 // explicitly rather than inferring it, so the conversation-scoped and
@@ -21,6 +41,14 @@ export type NoteKind = "private" | "public" | "ai_instruction";
 // the gate's own clientId must match the passed clientId (a caller passing
 // a conversation gated to a DIFFERENT client is treated exactly like an
 // ungranted conversation: NotFoundError, no hint which check failed).
+// Implicit dependency: this select assumes at most one active link can exist
+// for a given (therapistId, clientId) pair, which it never disambiguates
+// itself — that invariant is enforced structurally by
+// therapist_links_one_per_client_idx (schema.ts), not by anything in this
+// function. If that partial unique index is ever relaxed or scoped
+// differently, this select needs explicit disambiguation (e.g. picking the
+// most recent link) or it can silently return an arbitrary row among several
+// matches.
 async function requireActiveLinkForClientScoped(therapistId: string, clientId: string): Promise<string> {
   const [row] = await db
     .select({ id: therapistLinks.id })
@@ -55,29 +83,55 @@ export async function createNote(
   }
 
   const dek = await getOrCreateUserDek(therapistId);
+  const bodyCiphertext = encryptText(dek, input.body);
 
   // ai_instruction is versioned per link — each new instruction supersedes
   // the last without deleting it, so listNotesForTherapist can still show
   // the full history. Other kinds are never versioned past 1.
-  let version = 1;
+  let row: { id: string; version: number };
   if (input.kind === "ai_instruction") {
-    const [existing] = await db
-      .select({ maxVersion: max(notes.version) })
-      .from(notes)
-      .where(and(eq(notes.linkId, linkId), eq(notes.kind, "ai_instruction")));
-    version = (existing?.maxVersion ?? 0) + 1;
+    // The max-read + insert below is check-then-write: two concurrent
+    // createNote calls for the same link can both read the same max and
+    // race to insert the same next version. notes_instruction_version_idx
+    // (schema.ts) is the real guarantee — on a collision, recompute the max
+    // (now including the row that just won the race) and retry, same
+    // pattern as isOnePerClientIndexError in therapist-links.ts.
+    let attempt = 0;
+    for (;;) {
+      attempt += 1;
+      const [existing] = await db
+        .select({ maxVersion: max(notes.version) })
+        .from(notes)
+        .where(and(eq(notes.linkId, linkId), eq(notes.kind, "ai_instruction")));
+      const version = (existing?.maxVersion ?? 0) + 1;
+      try {
+        [row] = await db
+          .insert(notes)
+          .values({
+            linkId,
+            conversationId: input.conversationId ?? null,
+            kind: input.kind,
+            bodyCiphertext,
+            version,
+          })
+          .returning({ id: notes.id, version: notes.version });
+        break;
+      } catch (error) {
+        if (!isInstructionVersionViolation(error) || attempt >= MAX_VERSION_RETRIES) throw error;
+      }
+    }
+  } else {
+    [row] = await db
+      .insert(notes)
+      .values({
+        linkId,
+        conversationId: input.conversationId ?? null,
+        kind: input.kind,
+        bodyCiphertext,
+        version: 1,
+      })
+      .returning({ id: notes.id, version: notes.version });
   }
-
-  const [row] = await db
-    .insert(notes)
-    .values({
-      linkId,
-      conversationId: input.conversationId ?? null,
-      kind: input.kind,
-      bodyCiphertext: encryptText(dek, input.body),
-      version,
-    })
-    .returning({ id: notes.id, version: notes.version });
 
   // Spec decision: only a published (public) note leaves an audit trail —
   // private notes and AI instructions are the therapist's own working
@@ -227,7 +281,10 @@ export async function getActiveAiInstruction(linkId: string): Promise<string | n
     .from(notes)
     .innerJoin(therapistLinks, eq(notes.linkId, therapistLinks.id))
     .where(and(eq(notes.linkId, linkId), eq(notes.kind, "ai_instruction")))
-    .orderBy(desc(notes.version))
+    // desc(version) alone is ambiguous against legacy duplicate-version rows
+    // (pre-index, or a synthetic test artifact) — the createdAt tiebreak
+    // makes "latest" deterministic even then.
+    .orderBy(desc(notes.version), desc(notes.createdAt))
     .limit(1);
   if (!row || !row.therapistId) return null;
   const dek = await getOrCreateUserDek(row.therapistId);
