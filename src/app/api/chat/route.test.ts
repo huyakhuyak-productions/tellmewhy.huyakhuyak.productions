@@ -310,7 +310,11 @@ describe("POST /api/chat", () => {
       expect(assistantTurns.some((m) => JSON.stringify(m.content).includes("distancing yourself"))).toBe(false);
     });
 
-    it("falls back to 'their therapist' once the link has been revoked since the intervention was sent", async () => {
+    it("keeps attributing a message to its actual author even after that therapist's link is revoked", async () => {
+      // The old bug: attribution followed the CURRENTLY active link, so
+      // revoking it (or replacing it) silently relabeled — or blanked — a
+      // past therapist's own words. Attribution now travels with the
+      // message's authorId, independent of link status.
       const clientId = `test-${randomUUID()}`;
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Link revoked later");
@@ -328,7 +332,79 @@ describe("POST /api/chat", () => {
       const therapistTurn = prompt.find(
         (m) => m.role === "user" && JSON.stringify(m.content).includes("check in on your sleep"),
       );
-      expect(JSON.stringify(therapistTurn?.content)).toContain("[The client's therapist, their therapist, wrote:]");
+      expect(JSON.stringify(therapistTurn?.content)).toContain("[The client's therapist, Dr. Chen, wrote:]");
+    });
+
+    it("attributes each therapist's messages to themselves, never to whichever therapist is currently linked", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Therapist changed mid-conversation");
+
+      const therapistA = await insertUser("Dr. A");
+      const { linkId: linkIdA, token: tokenA } = await createInvite(clientId, "client");
+      await acceptInvite(tokenA, therapistA);
+      await grantConversation(clientId, id);
+      await sendIntervention(therapistA, id, "A's note about pacing yourself.");
+      await revokeLink(linkIdA, clientId);
+
+      // A new therapist takes over — this link, not A's, is now active.
+      const therapistB = await insertUser("Dr. B");
+      const { token: tokenB } = await createInvite(clientId, "client");
+      await acceptInvite(tokenB, therapistB);
+
+      const res = await POST(chatRequest({ conversationId: id, text: "Still working on that" }));
+      await res.text();
+
+      const prompt = lastChatPrompt();
+      const aTurn = prompt.find(
+        (m) => m.role === "user" && JSON.stringify(m.content).includes("A's note about pacing"),
+      );
+      expect(JSON.stringify(aTurn?.content)).toContain("[The client's therapist, Dr. A, wrote:]");
+      expect(JSON.stringify(aTurn?.content)).not.toContain("Dr. B");
+    });
+
+    it("falls back to 'their therapist' for a legacy therapist message with no recorded author", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Predates the author column");
+      // Simulates a row written before the authorId column existed —
+      // saveMessage never sets it, so it lands null, same as an untouched
+      // legacy row would.
+      await saveMessage({ conversationId: id, userId: clientId, sender: "therapist", text: "An old note, no author on file" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "Following up" }));
+      await res.text();
+
+      const prompt = lastChatPrompt();
+      const legacyTurn = prompt.find(
+        (m) => m.role === "user" && JSON.stringify(m.content).includes("An old note, no author on file"),
+      );
+      expect(JSON.stringify(legacyTurn?.content)).toContain("[The client's therapist, their therapist, wrote:]");
+    });
+
+    it("clamps an interpolated therapist name to a single bounded line", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Wild display name");
+      const messyName = `Dr.\n\tWild   ${"Name".repeat(30)}`;
+      const therapistId = await insertUser(messyName);
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await grantConversation(clientId, id);
+      await sendIntervention(therapistId, id, "Keeping an eye on this.");
+
+      const res = await POST(chatRequest({ conversationId: id, text: "Noted" }));
+      await res.text();
+
+      const prompt = lastChatPrompt();
+      const therapistTurn = prompt.find(
+        (m) => m.role === "user" && JSON.stringify(m.content).includes("Keeping an eye on this"),
+      );
+      const content = JSON.stringify(therapistTurn?.content);
+      expect(content).not.toContain("\\n");
+      expect(content).not.toContain("\\t");
+      const match = content?.match(/The client's therapist, (.*?), wrote:/);
+      expect(match?.[1]?.length).toBeLessThanOrEqual(80);
     });
 
     it("injects the active AI instruction into the system prompt only when the conversation is currently granted", async () => {

@@ -66,6 +66,8 @@ export const messages = pgTable(
     ciphertext: text("ciphertext").notNull(),
     riskLevel: riskLevelEnum("risk_level").notNull().default("none"),
     flaggedAt: timestamp("flagged_at"), // "flag for my therapist" — used from phase 2
+    // Author of therapist-sent messages (user id); null for client/ai/system.
+    authorId: text("author_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("messages_conversation_id_idx").on(table.conversationId)],

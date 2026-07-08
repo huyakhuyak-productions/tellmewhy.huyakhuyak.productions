@@ -95,6 +95,7 @@ export async function loadMessages(conversationId: string, userId: string) {
           sender: r.sender,
           text: decryptText(dek, r.ciphertext),
           riskLevel: r.riskLevel,
+          authorId: r.authorId,
           createdAt: r.createdAt,
         },
       ];

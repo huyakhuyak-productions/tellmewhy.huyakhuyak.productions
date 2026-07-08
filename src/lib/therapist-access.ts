@@ -19,6 +19,7 @@ export type SharedMessage = {
   text: string;
   riskLevel: "none" | "elevated" | "crisis";
   flaggedAt: Date | null;
+  authorId: string | null;
   createdAt: Date;
 };
 
@@ -46,6 +47,7 @@ export async function loadSharedMessages(therapistId: string, conversationId: st
           text: decryptText(dek, r.ciphertext),
           riskLevel: r.riskLevel,
           flaggedAt: r.flaggedAt,
+          authorId: r.authorId,
           createdAt: r.createdAt,
         },
       ];

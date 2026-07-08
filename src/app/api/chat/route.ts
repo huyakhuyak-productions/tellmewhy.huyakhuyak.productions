@@ -1,6 +1,9 @@
 import { convertToModelMessages, generateText, streamText, type UIMessage } from "ai";
+import { inArray } from "drizzle-orm";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { db } from "@/db";
+import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
 import { NotFoundError } from "@/lib/errors";
@@ -17,8 +20,16 @@ import { clampTitle } from "@/lib/title";
 const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
 
 const CONTEXT_WINDOW = 30; // most recent messages sent to the model
-const FALLBACK_THERAPIST_NAME = "their therapist"; // the link was revoked since the message was sent
-const therapistMessagePrefix = (name: string) => `[The client's therapist, ${name}, wrote:] `;
+const FALLBACK_THERAPIST_NAME = "their therapist"; // authorId is null, or its user row is gone
+const MAX_INTERPOLATED_NAME_LENGTH = 80;
+
+// Display names are free text (therapist-chosen, not this app's) — clamp
+// every name interpolated into a prompt to a single bounded line so it can
+// never inject newlines or blow up the prompt's size.
+function clampInterpolatedName(name: string): string {
+  return name.replace(/\s+/g, " ").trim().slice(0, MAX_INTERPOLATED_NAME_LENGTH);
+}
+const therapistMessagePrefix = (name: string) => `[The client's therapist, ${clampInterpolatedName(name)}, wrote:] `;
 
 // This route unwraps the same user's DEK several times (see user-keys.ts) —
 // scope the request so getOrCreateUserDek can memoize within it, never across.
@@ -45,25 +56,46 @@ async function handlePost(req: Request): Promise<Response> {
     await saveMessage({ conversationId, userId, sender: "client", text, riskLevel });
 
     const history = await loadMessages(conversationId, userId);
+    const windowMessages = history.slice(-CONTEXT_WINDOW);
 
-    // One shared lookup covers two independent needs at zero extra query
-    // cost when it comes back null: whose name to attribute a therapist
-    // message to below (if this window has one), and whether the system
-    // prompt may ever consider therapist guidance further down. No active
-    // link means neither applies — nothing further is queried in that case.
+    // The active link still gates whether therapist guidance may reach the
+    // system prompt further down — it is NOT who a therapist message in the
+    // window gets attributed to. A client can move from Dr. A to Dr. B: A's
+    // past interventions carry A's authorId forever, and must keep A's name
+    // even while B's link is the active one.
     const activeLink = await getActiveLinkForClient(userId);
-    const therapistName = activeLink?.therapistName ?? FALLBACK_THERAPIST_NAME;
 
-    const uiMessages: UIMessage[] = history.slice(-CONTEXT_WINDOW).map((m) => {
+    // Resolve each author's current display name once per request, not once
+    // per message: the window can repeat the same author many times, or (after
+    // a therapist change) contain messages from two different ones. One
+    // batched lookup covers every distinct id present — skipped entirely when
+    // the window has no therapist messages at all.
+    const authorIds = [
+      ...new Set(
+        windowMessages
+          .filter((m): m is typeof m & { authorId: string } => m.sender === "therapist" && m.authorId !== null)
+          .map((m) => m.authorId),
+      ),
+    ];
+    const authorNameById = new Map<string, string>();
+    if (authorIds.length > 0) {
+      const rows = await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, authorIds));
+      for (const row of rows) authorNameById.set(row.id, row.name);
+    }
+
+    const uiMessages: UIMessage[] = windowMessages.map((m) => {
       // A therapist's words are heard as human, never as the AI's own voice:
       // USER role, with an attribution prefix, so the model reads them the
       // way the client does — a third person speaking into the
       // conversation — and never echoes them back as if it had said them.
       if (m.sender === "therapist") {
+        // Null authorId (legacy rows written before this column existed) or an
+        // author whose user row no longer resolves both fall back the same way.
+        const authorName = (m.authorId && authorNameById.get(m.authorId)) || FALLBACK_THERAPIST_NAME;
         return {
           id: m.id,
           role: "user",
-          parts: [{ type: "text", text: `${therapistMessagePrefix(therapistName)}${m.text}` }],
+          parts: [{ type: "text", text: `${therapistMessagePrefix(authorName)}${m.text}` }],
         };
       }
       // `system` has no writer yet (reserved in the sender enum for future

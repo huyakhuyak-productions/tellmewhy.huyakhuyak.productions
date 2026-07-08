@@ -21,6 +21,7 @@ import { requireGrantedConversation } from "./sharing";
 async function appendTherapistMessage(
   conversationId: string,
   clientId: string,
+  therapistId: string,
   text: string,
 ): Promise<{ id: string }> {
   const dek = await getOrCreateUserDek(clientId);
@@ -30,7 +31,7 @@ async function appendTherapistMessage(
   return db.transaction(async (tx) => {
     const [row] = await tx
       .insert(messages)
-      .values({ conversationId, sender: "therapist", ciphertext: encryptText(dek, text) })
+      .values({ conversationId, sender: "therapist", authorId: therapistId, ciphertext: encryptText(dek, text) })
       .returning({ id: messages.id });
     await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
     return row;
@@ -46,7 +47,7 @@ export async function sendIntervention(
   text: string,
 ): Promise<{ id: string }> {
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
-  const message = await appendTherapistMessage(conversationId, clientId, text);
+  const message = await appendTherapistMessage(conversationId, clientId, therapistId, text);
   await recordAudit({ clientId, therapistId, conversationId, action: "intervention_sent" });
   return message;
 }

@@ -34,6 +34,18 @@ describe("sendIntervention", () => {
     ]);
   });
 
+  it("stamps the message with the sending therapist's id as its author", async () => {
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+    const conv = await createConversation(clientId, "Shared");
+    await grantConversation(clientId, conv.id);
+
+    const { id } = await sendIntervention(therapistId, conv.id, "hi");
+
+    const [row] = await db.select().from(messages).where(eq(messages.id, id));
+    expect(row.authorId).toBe(therapistId);
+  });
+
   it("stores a v1 ciphertext blob at the row that decrypts ONLY with the client's DEK", async () => {
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
