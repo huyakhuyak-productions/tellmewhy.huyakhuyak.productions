@@ -225,5 +225,24 @@ export async function listAttentionItems(therapistId: string): Promise<Attention
     if (a.kind !== b.kind) return a.kind === "crisis" ? -1 : 1;
     return b.createdAt.getTime() - a.createdAt.getTime();
   });
+
+  // Let each affected client know their trusted person checked on their
+  // flagged/crisis messages — once per distinct client per read, deduped like
+  // conversation_viewed. Not tied to any one conversation (this queue spans
+  // many), so conversationId is null; a client who has no items here simply
+  // gets no event.
+  const distinctClientIds = new Set(items.map((item) => item.clientId));
+  await Promise.all(
+    Array.from(distinctClientIds).map((distinctClientId) =>
+      recordAuditDeduped({
+        clientId: distinctClientId,
+        therapistId,
+        conversationId: null,
+        action: "attention_viewed",
+        actorId: therapistId,
+      }),
+    ),
+  );
+
   return items;
 }

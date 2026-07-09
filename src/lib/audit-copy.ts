@@ -38,6 +38,7 @@ export function resolveAuditActor(
     case "review_marker_advanced":
     case "intervention_sent":
     case "note_published":
+    case "attention_viewed":
     case "link_accepted":
       return "therapist";
     case "link_invited":
@@ -76,6 +77,8 @@ export function describeAuditAction(
       return `${who} wrote to you`;
     case "note_published":
       return `${who} left you a note`;
+    case "attention_viewed":
+      return `${who} checked on your flagged and crisis messages`;
   }
 }
 

@@ -7,11 +7,17 @@ describe("describeAuditAction", () => {
     expect(describeAuditAction("review_marker_advanced", "Marta", "therapist")).toBe("Marta marked how far they'd read");
     expect(describeAuditAction("intervention_sent", "Marta", "therapist")).toBe("Marta wrote to you");
     expect(describeAuditAction("note_published", "Marta", "therapist")).toBe("Marta left you a note");
+    expect(describeAuditAction("attention_viewed", "Marta", "therapist")).toBe(
+      "Marta checked on your flagged and crisis messages",
+    );
     expect(describeAuditAction("link_accepted", "Marta", "therapist")).toBe("Marta is now your trusted person");
   });
 
   it("falls back to 'Your trusted person' when the name is unknown", () => {
     expect(describeAuditAction("conversation_viewed", null, "therapist")).toBe("Your trusted person read a shared conversation");
+    expect(describeAuditAction("attention_viewed", null, "therapist")).toBe(
+      "Your trusted person checked on your flagged and crisis messages",
+    );
     expect(describeAuditAction("link_accepted", null, "therapist")).toBe("Your trusted person joined");
   });
 
@@ -48,6 +54,7 @@ describe("resolveAuditActor", () => {
     expect(resolveAuditActor("review_marker_advanced", null, clientId, therapistId)).toBe("therapist");
     expect(resolveAuditActor("intervention_sent", null, clientId, therapistId)).toBe("therapist");
     expect(resolveAuditActor("note_published", null, clientId, therapistId)).toBe("therapist");
+    expect(resolveAuditActor("attention_viewed", null, clientId, therapistId)).toBe("therapist");
     expect(resolveAuditActor("link_accepted", null, clientId, therapistId)).toBe("therapist");
   });
 

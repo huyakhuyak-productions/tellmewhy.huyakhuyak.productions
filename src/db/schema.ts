@@ -81,6 +81,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "grant_created", "grant_revoked",
   "conversation_viewed", "review_marker_advanced",
   "intervention_sent", "note_published",
+  "attention_viewed",
 ]);
 
 export const therapistLinks = pgTable(

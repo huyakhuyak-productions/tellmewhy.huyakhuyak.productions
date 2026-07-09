@@ -323,5 +323,60 @@ describe("therapist access — reads, review line, attention queue", () => {
       expect(items).toEqual([]);
       consoleErrorSpy.mockRestore();
     });
+
+    it("audits attention_viewed once (deduped) when there are flagged/crisis items", async () => {
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const conv = await createConversation(clientId, "Flagged for attention");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "help", riskLevel: "crisis" });
+
+      await listAttentionItems(therapistId);
+      await listAttentionItems(therapistId);
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "attention_viewed")));
+      expect(events).toHaveLength(1);
+      expect(events[0].therapistId).toBe(therapistId);
+      expect(events[0].conversationId).toBeNull();
+      expect(events[0].actorId).toBe(therapistId);
+    });
+
+    it("does not audit attention_viewed when there is nothing to flag", async () => {
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const conv = await createConversation(clientId, "Nothing flagged");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "just chatting" });
+
+      const items = await listAttentionItems(therapistId);
+      expect(items).toEqual([]);
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "attention_viewed")));
+      expect(events).toHaveLength(0);
+    });
+
+    it("never audits attention_viewed for a client whose crisis message is structurally ungranted (adversarial)", async () => {
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const grantedConv = await createConversation(clientId, "Granted");
+      await grantConversation(clientId, grantedConv.id);
+      const otherClientId = `test-${randomUUID()}`;
+      const ungrantedConv = await createConversation(otherClientId, "Ungranted crisis, different client");
+      await saveMessage({ conversationId: ungrantedConv.id, userId: otherClientId, sender: "client", text: "hidden crisis", riskLevel: "crisis" });
+
+      await listAttentionItems(therapistId);
+
+      const otherEvents = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, otherClientId), eq(auditEvents.action, "attention_viewed")));
+      expect(otherEvents).toHaveLength(0);
+    });
   });
 });
