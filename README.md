@@ -75,7 +75,8 @@ A client can invite one trusted person — a therapist, or anyone else — to re
 - Sharing is per-conversation and opt-in. Nothing is visible to your trusted person until you share a specific conversation from its header, and revoking that share removes their access to it immediately.
 - Once you've shared a conversation, your trusted person can read it, mark how far they've read, send you a message as themselves — always labeled with their name, never mistaken for the AI — and leave standing guidance that shapes how the AI responds in conversations you've shared with them.
 - Revoke the whole link at any time from `/trust` to end the relationship entirely: your trusted person immediately loses access to every conversation, past and future.
-- `/trust` also shows a plain audit trail of what your trusted person has done — accepted your invite, read, marked their place, wrote to you, published a note — with a timestamp for each, so you always know what happened even if you weren't looking.
+- `/trust` also shows a plain audit trail of what your trusted person has done — accepted your invite, read, marked their place, wrote to you, published a note, checked on your flagged messages — with a timestamp for each, so you always know what happened even if you weren't looking.
+- Accepting an invite marks that person as a therapist going forward — including the ability to send invites of their own — even after every link they've ever had is revoked; it's your grants, not their role, that control what they can actually see.
 
 ## Privacy Model
 
@@ -86,7 +87,7 @@ Every message body and conversation title, and every folder name, are encrypted 
 Destroying a user's wrapped-key row is the designed mechanism for account deletion: it immediately and permanently renders that user's data unreadable going forward. The underlying function (`shredUserKey`) is implemented and tested but is not yet wired to a user-facing deletion flow—self-serve account deletion ships with the account-management phase. Note that a database backup taken *before* the key row is destroyed still contains the wrapped DEK and remains decryptable with `MASTER_KEK`; shredding only guarantees unreadability going forward, unless the master key is rotated or key rows are excluded from backup retention.
 
 **Plaintext exists only in memory:**
-Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored. Message timestamps and risk-level flags are not encrypted—a database breach would reveal when conversations happened and which messages were flagged as crisis-level, but never their content.
+Message bodies exist as plaintext only during request handling and during AI inference. After inference completes, the plaintext is discarded and only the ciphertext is stored. Message timestamps and risk-level flags are not encrypted—a database breach would reveal when conversations happened and which messages were flagged as crisis-level, but never their content. The same is true of a message's `flaggedAt` (when a client flagged it for their trusted person) and `authorId` (which user actually wrote it), and of the therapist-link and audit-event tables as a whole: who is linked to whom, when, and what they did (invited, accepted, revoked, viewed a conversation, wrote a note) is plaintext relationship metadata—a breach reveals the shape of who's connected to whom and what happened between them, never any message content.
 
 **OpenRouter data policies:**
 All LLM calls route through OpenRouter with strict per-request `data_collection: "deny"` headers. The OpenRouter account's global data policy must be configured to exclude logging and training providers before production use.
@@ -101,7 +102,7 @@ Sharing means our server decrypts a conversation with your key to show your trus
 Anything your trusted person writes about you — private notes, guidance for the AI, or notes they publish for you to read — is encrypted with *their* key, not yours. Deleting their account crypto-shreds their notes independently of your data; it doesn't touch anything you wrote.
 
 **The audit trail is metadata, not a transcript:**
-`/trust` logs every time your trusted person reads a shared conversation, marks their place, writes to you, or publishes a note. That log records who did what and when — never what they read or what they wrote. It cannot substitute for actually reading your shared conversations yourself.
+`/trust` logs every time your trusted person reads a shared conversation, marks their place, writes to you, publishes a note, or checks on your flagged messages. That log records who did what and when — never what they read or what they wrote. It cannot substitute for actually reading your shared conversations yourself.
 
 **Passwords:**
 User passwords are hashed with Argon2id using hardened parameters (`m=65536, t=3, p=1`).
