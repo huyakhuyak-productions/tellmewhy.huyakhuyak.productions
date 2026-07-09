@@ -136,6 +136,10 @@ async function handlePost(req: Request): Promise<Response> {
 
     const result = streamText({
       model: getChatModel(),
+      // A companion's reply is a few short paragraphs, never an essay — the
+      // system prompt says so, and this cap enforces it (it also keeps
+      // providers from reserving enormous token budgets per request).
+      maxOutputTokens: 1024,
       system,
       // Adaptation: ai@6 makes `convertToModelMessages` async (it now returns
       // `Promise<ModelMessage[]>` instead of a synchronous array) — await it.
