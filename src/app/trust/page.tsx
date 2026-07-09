@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { listAuditEventsForClient } from "@/lib/audit";
+import { resolveAuditActor } from "@/lib/audit-copy";
 import { listConversations } from "@/lib/conversations";
 import { listGrantsForClient } from "@/lib/sharing";
 import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
@@ -48,6 +49,7 @@ export default async function TrustPage() {
     id: e.id,
     action: e.action,
     therapistName: e.therapistName,
+    actor: resolveAuditActor(e.action, e.actorId, userId, e.therapistId),
     title: e.conversationId ? (titleById.get(e.conversationId) ?? null) : null,
     createdAt: e.createdAt,
   }));

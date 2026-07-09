@@ -147,6 +147,10 @@ export const auditEvents = pgTable("audit_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   clientId: text("client_id").notNull(),
   therapistId: text("therapist_id"),
+  // Who performed the action — null on rows written before this column
+  // existed. audit-copy.ts falls back to a neutral phrasing for those legacy
+  // rows rather than guessing which party did it.
+  actorId: text("actor_id"),
   conversationId: uuid("conversation_id"),
   action: auditActionEnum("action").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

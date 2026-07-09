@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AuditAction } from "@/lib/audit";
-import { describeAuditAction, isClientAction } from "@/lib/audit-copy";
+import { type AuditActor, describeAuditAction, isClientAction } from "@/lib/audit-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { stopSharingConversation } from "@/lib/sharing-client";
 import { PublicNoteCard } from "@/components/public-note-card";
@@ -19,6 +19,9 @@ export type TrustAuditRow = {
   id: string;
   action: AuditAction;
   therapistName: string | null;
+  // Resolved server-side (the client's own id never needs to leave the
+  // server just to answer "who did this") — see resolveAuditActor.
+  actor: AuditActor;
   title: string | null;
   createdAt: Date;
 };
@@ -348,12 +351,12 @@ export function TrustScreen({
                 <span
                   aria-hidden
                   className={`mt-[7px] size-1.5 shrink-0 rounded-full ${
-                    isClientAction(e.action) ? "bg-muted-foreground/50" : "bg-accent"
+                    isClientAction(e.actor) ? "bg-muted-foreground/50" : "bg-accent"
                   }`}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13.5px] leading-snug text-foreground">
-                    {describeAuditAction(e.action, e.therapistName)}
+                    {describeAuditAction(e.action, e.therapistName, e.actor)}
                     {e.title ? (
                       <span className="ml-1.5 text-muted-foreground">— {e.title}</span>
                     ) : null}

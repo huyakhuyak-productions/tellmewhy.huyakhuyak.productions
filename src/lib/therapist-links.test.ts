@@ -214,6 +214,81 @@ describe("therapist link lifecycle", () => {
     expect(events).toHaveLength(1);
   });
 
+  // Regression coverage for the misattribution the actor column fixes: a
+  // therapist-initiated revoke or invite must never render as the client's
+  // own action in their feed, and a pre-migration row with no recorded actor
+  // must stay neutral rather than guess.
+  describe("audit rows carry their real actor", () => {
+    it("stamps link_revoked with the actor who actually revoked it, whichever side", async () => {
+      const { linkId: clientRevokeLinkId, token: token1 } = await createInvite(clientId, "client");
+      await acceptInvite(token1, therapistId);
+      await revokeLink(clientRevokeLinkId, clientId);
+      const [byClient] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "link_revoked")));
+      expect(byClient.actorId).toBe(clientId);
+
+      const secondClientId = `test-${randomUUID()}`;
+      const secondTherapistId = `test-${randomUUID()}`;
+      const { linkId: therapistRevokeLinkId, token: token2 } = await createInvite(secondClientId, "client");
+      await acceptInvite(token2, secondTherapistId);
+      await revokeLink(therapistRevokeLinkId, secondTherapistId);
+      const [byTherapist] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, secondClientId), eq(auditEvents.action, "link_revoked")));
+      expect(byTherapist.actorId).toBe(secondTherapistId);
+    });
+
+    it("renders therapist-attributed copy in the client feed when the THERAPIST revoked, and client copy unchanged when the client did", async () => {
+      const { describeAuditAction, resolveAuditActor } = await import("./audit-copy");
+      const therapistUser = await insertUser({ name: "Dr. Okafor" });
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistUser);
+      await revokeLink(linkId, therapistUser);
+
+      const [event] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "link_revoked")));
+      const actor = resolveAuditActor(event.action, event.actorId, clientId, event.therapistId);
+      expect(actor).toBe("therapist");
+      expect(describeAuditAction(event.action, "Dr. Okafor", actor)).toBe("Dr. Okafor ended your connection");
+
+      const secondClientId = `test-${randomUUID()}`;
+      const { linkId: linkId2, token: token2 } = await createInvite(secondClientId, "client");
+      await acceptInvite(token2, therapistId);
+      await revokeLink(linkId2, secondClientId);
+      const [event2] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, secondClientId), eq(auditEvents.action, "link_revoked")));
+      const actor2 = resolveAuditActor(event2.action, event2.actorId, secondClientId, event2.therapistId);
+      expect(actor2).toBe("client");
+      expect(describeAuditAction(event2.action, "Dr. Okafor", actor2)).toBe("You ended your connection");
+    });
+
+    it("falls back to a neutral 'Your connection ended' for a legacy row with no recorded actor", async () => {
+      const { describeAuditAction, resolveAuditActor } = await import("./audit-copy");
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await revokeLink(linkId, clientId);
+
+      const [event] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "link_revoked")));
+      // Simulate a row written before the actor_id column existed.
+      await db.update(auditEvents).set({ actorId: null }).where(eq(auditEvents.id, event.id));
+      const [legacyEvent] = await db.select().from(auditEvents).where(eq(auditEvents.id, event.id));
+
+      const actor = resolveAuditActor(legacyEvent.action, legacyEvent.actorId, clientId, legacyEvent.therapistId);
+      expect(actor).toBe("unknown");
+      expect(describeAuditAction(legacyEvent.action, "Dr. Whoever", actor)).toBe("Your connection ended");
+    });
+  });
+
   it("returns the active link for a client with the therapist's display name, or null when none", async () => {
     expect(await getActiveLinkForClient(clientId)).toBeNull();
     const therapistUser = await insertUser({ name: "Dr. Rivera" });

@@ -57,7 +57,13 @@ export async function loadSharedMessages(therapistId: string, conversationId: st
     }
   });
 
-  await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+  await recordAuditDeduped({
+    clientId,
+    therapistId,
+    conversationId,
+    action: "conversation_viewed",
+    actorId: therapistId,
+  });
   return result;
 }
 
@@ -83,7 +89,13 @@ export async function advanceReviewMarker(therapistId: string, conversationId: s
       set: { lastReviewedMessageId: messageId, updatedAt: new Date() },
     });
 
-  await recordAudit({ clientId, therapistId, conversationId, action: "review_marker_advanced" });
+  await recordAudit({
+    clientId,
+    therapistId,
+    conversationId,
+    action: "review_marker_advanced",
+    actorId: therapistId,
+  });
 }
 
 export type ReviewMarkerForClient = {

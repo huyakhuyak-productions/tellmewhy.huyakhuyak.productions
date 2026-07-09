@@ -88,7 +88,12 @@ export async function createInvite(
   // to write yet — the create-time audit for that direction happens instead at
   // accept, once a client id exists.
   if (initiatedBy === "client") {
-    await recordAudit({ clientId: initiatorUserId, therapistId: null, action: "link_invited" });
+    await recordAudit({
+      clientId: initiatorUserId,
+      therapistId: null,
+      action: "link_invited",
+      actorId: initiatorUserId,
+    });
   }
 
   return { linkId: row.id, token };
@@ -150,9 +155,19 @@ export async function acceptInvite(token: string, acceptingUserId: string): Prom
   // existed (and was auditable in spirit) from createdAt, we just couldn't
   // write the row until the client id existed.
   if (link.initiatedBy === "therapist") {
-    await recordAudit({ clientId, therapistId, action: "link_invited", createdAt: link.createdAt });
+    await recordAudit({
+      clientId,
+      therapistId,
+      action: "link_invited",
+      createdAt: link.createdAt,
+      // The original inviter — the therapist, for this deferred (therapist-
+      // initiated) branch — not the client who just accepted.
+      actorId: therapistId,
+    });
   }
-  await recordAudit({ clientId, therapistId, action: "link_accepted" });
+  // The accept itself is always the acceptor's own action, regardless of who
+  // sent the original invite.
+  await recordAudit({ clientId, therapistId, action: "link_accepted", actorId: acceptingUserId });
 
   return { linkId: updated.id };
 }
@@ -179,7 +194,12 @@ export async function revokeLink(linkId: string, byUserId: string): Promise<void
   // A still-pending (never accepted) link has no clientId yet — nothing to
   // audit against the NOT NULL clientId column, same reasoning as createInvite.
   if (link.clientId) {
-    await recordAudit({ clientId: link.clientId, therapistId: link.therapistId, action: "link_revoked" });
+    await recordAudit({
+      clientId: link.clientId,
+      therapistId: link.therapistId,
+      action: "link_revoked",
+      actorId: byUserId,
+    });
   }
 }
 

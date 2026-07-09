@@ -82,7 +82,13 @@ export async function grantConversation(clientId: string, conversationId: string
     .returning({ id: sharingGrants.id });
 
   if (inserted.length > 0) {
-    await recordAudit({ clientId, therapistId: link.therapistId, conversationId, action: "grant_created" });
+    await recordAudit({
+      clientId,
+      therapistId: link.therapistId,
+      conversationId,
+      action: "grant_created",
+      actorId: clientId,
+    });
   }
 }
 
@@ -107,7 +113,7 @@ export async function revokeGrant(clientId: string, conversationId: string): Pro
   if (deleted.length === 0) return; // idempotent: no error when nothing to delete
 
   const therapistId = links.find((l) => l.id === deleted[0]!.linkId)?.therapistId ?? null;
-  await recordAudit({ clientId, therapistId, conversationId, action: "grant_revoked" });
+  await recordAudit({ clientId, therapistId, conversationId, action: "grant_revoked", actorId: clientId });
 }
 
 // Gate-consistent join: only conversations with a live grant under this

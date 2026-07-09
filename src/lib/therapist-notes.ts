@@ -143,6 +143,7 @@ export async function createNote(
       therapistId,
       conversationId: input.conversationId ?? null,
       action: "note_published",
+      actorId: therapistId,
     });
   }
 

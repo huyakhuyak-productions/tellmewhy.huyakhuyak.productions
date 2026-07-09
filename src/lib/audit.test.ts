@@ -32,7 +32,7 @@ describe("audit — centralized recording and the client feed", () => {
 
   describe("recordAudit", () => {
     it("inserts an event with ids and times only", async () => {
-      await recordAudit({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+      await recordAudit({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
       const rows = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
       expect(rows).toHaveLength(1);
       expect(rows[0].therapistId).toBe(therapistId);
@@ -42,7 +42,7 @@ describe("audit — centralized recording and the client feed", () => {
 
     it("accepts an explicit createdAt override", async () => {
       const backdated = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-      await recordAudit({ clientId, therapistId: null, action: "link_invited", createdAt: backdated });
+      await recordAudit({ clientId, therapistId: null, action: "link_invited", createdAt: backdated, actorId: clientId });
       const [row] = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
       expect(row.createdAt.getTime()).toBe(backdated.getTime());
     });
@@ -50,8 +50,8 @@ describe("audit — centralized recording and the client feed", () => {
 
   describe("recordAuditDeduped", () => {
     it("skips the insert when an identical event exists within the dedupe window", async () => {
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
 
       const rows = await db
         .select()
@@ -61,7 +61,7 @@ describe("audit — centralized recording and the client feed", () => {
     });
 
     it("inserts again once a prior identical event falls outside the window (backdated row)", async () => {
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
       const [existing] = await db
         .select()
         .from(auditEvents)
@@ -69,7 +69,7 @@ describe("audit — centralized recording and the client feed", () => {
       const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
       await db.update(auditEvents).set({ createdAt: twentyMinutesAgo }).where(eq(auditEvents.id, existing.id));
 
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
 
       const rows = await db
         .select()
@@ -79,19 +79,31 @@ describe("audit — centralized recording and the client feed", () => {
     });
 
     it("does not dedupe against a different conversation or a different therapist", async () => {
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
       const otherConversationId = randomUUID();
       const otherTherapistId = `test-${randomUUID()}`;
-      await recordAuditDeduped({ clientId, therapistId, conversationId: otherConversationId, action: "conversation_viewed" });
-      await recordAuditDeduped({ clientId, therapistId: otherTherapistId, conversationId, action: "conversation_viewed" });
+      await recordAuditDeduped({
+        clientId,
+        therapistId,
+        conversationId: otherConversationId,
+        action: "conversation_viewed",
+        actorId: therapistId,
+      });
+      await recordAuditDeduped({
+        clientId,
+        therapistId: otherTherapistId,
+        conversationId,
+        action: "conversation_viewed",
+        actorId: otherTherapistId,
+      });
 
       const rows = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
       expect(rows).toHaveLength(3);
     });
 
     it("does not dedupe a different action against conversation_viewed", async () => {
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed" });
-      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "review_marker_advanced" });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "review_marker_advanced", actorId: therapistId });
 
       const rows = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
       expect(rows).toHaveLength(2);
@@ -101,10 +113,16 @@ describe("audit — centralized recording and the client feed", () => {
   describe("listAuditEventsForClient", () => {
     it("returns only the given client's own events, joined with the therapist's display name", async () => {
       const therapistUser = await insertUser("Dr. Okafor");
-      await recordAudit({ clientId, therapistId: therapistUser, conversationId, action: "grant_created" });
+      await recordAudit({ clientId, therapistId: therapistUser, conversationId, action: "grant_created", actorId: clientId });
 
       const otherClientId = `test-${randomUUID()}`;
-      await recordAudit({ clientId: otherClientId, therapistId: therapistUser, conversationId, action: "grant_created" });
+      await recordAudit({
+        clientId: otherClientId,
+        therapistId: therapistUser,
+        conversationId,
+        action: "grant_created",
+        actorId: otherClientId,
+      });
 
       const events = await listAuditEventsForClient(clientId);
       expect(events).toHaveLength(1);
@@ -118,7 +136,8 @@ describe("audit — centralized recording and the client feed", () => {
     it("orders newest first and respects the limit", async () => {
       const therapistUser = await insertUser("Dr. Lin");
       for (const action of ["grant_created", "conversation_viewed", "review_marker_advanced"] as const) {
-        await recordAudit({ clientId, therapistId: therapistUser, conversationId, action });
+        const actorId = action === "grant_created" ? clientId : therapistUser;
+        await recordAudit({ clientId, therapistId: therapistUser, conversationId, action, actorId });
       }
 
       const limited = await listAuditEventsForClient(clientId, 2);
@@ -127,7 +146,7 @@ describe("audit — centralized recording and the client feed", () => {
     });
 
     it("does not blow up when the event has no therapistId (e.g. a therapist-initiated invite not yet accepted)", async () => {
-      await recordAudit({ clientId, therapistId: null, action: "link_invited" });
+      await recordAudit({ clientId, therapistId: null, action: "link_invited", actorId: clientId });
       const events = await listAuditEventsForClient(clientId);
       expect(events).toHaveLength(1);
       expect(events[0].therapistName).toBeNull();

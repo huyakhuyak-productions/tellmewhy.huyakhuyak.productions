@@ -48,6 +48,6 @@ export async function sendIntervention(
 ): Promise<{ id: string }> {
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
   const message = await appendTherapistMessage(conversationId, clientId, therapistId, text);
-  await recordAudit({ clientId, therapistId, conversationId, action: "intervention_sent" });
+  await recordAudit({ clientId, therapistId, conversationId, action: "intervention_sent", actorId: therapistId });
   return message;
 }
