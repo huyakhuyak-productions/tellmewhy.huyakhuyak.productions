@@ -207,3 +207,19 @@ Commit `✅ Walk the whole therapist journey end-to-end` + `📝 Document the th
 3. The adversarial suite is the release criterion: every path in Tasks 3-5, 7-8 test-refused for ungranted/revoked/foreign access.
 4. Manual two-account drive (user validation): the full journey above in two browser profiles.
 5. Human validation → review gate (mandatory tail).
+
+---
+
+### Task 12 (user increment, 2026-07-09): crisis message navigator
+
+**Ask (verbatim intent):** in the therapist reading view, jump from crisis message to crisis message quickly, Telegram-mobile-search style — a "message X/N" indicator with up and down arrows.
+
+**Design (locked):**
+- Renders ONLY when the conversation contains ≥1 crisis-flagged message (`riskLevel === "crisis"` — already present on the reading view's message data); zero footprint otherwise.
+- A compact sticky pill in the reading view (top area, quiet urgency consistent with the attention queue's crisis treatment — never alarm-red): `↑ ↓  2/5 crisis` shape. Buttons `aria-label="Previous crisis message"` / `"Next crisis message"`; the X/N text in an `aria-live="polite"` span.
+- Clicking jumps (smooth `scrollIntoView`, respecting prefers-reduced-motion) to the target message and gives it a brief, gentle highlight (existing token palette; ~1.5s fade). Arrows clamp at the ends (disabled state), no wrap. Position starts at 1 on first use; the current index tracks the last jumped-to message.
+- Client-side only; no new data, routes, or schema. No keyboard shortcuts in v1 (the buttons are focusable — that's the keyboard path).
+
+**Files:** `src/components/therapist/reading-view.tsx` (+ a small `crisis-navigator.tsx` beside it if cleaner). e2e: extend the therapist journey OR a focused addition — a deterministic path exists via AI_MOCK (`MOCK_CRISIS` message) in a shared conversation; assert the pill shows 1/1 and clicking scrolls (assert target visibility / `scrollIntoView` effect via bounding-box or focus). If the journey spec is the wrong home, a small third spec in therapist.spec.ts is fine.
+
+**Commit:** `✨ Jump between crisis messages from the therapist's reading view`
