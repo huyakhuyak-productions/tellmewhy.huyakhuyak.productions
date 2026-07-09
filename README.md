@@ -1,6 +1,6 @@
 # tellmewhy
 
-A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. Therapist review is planned for phase 2. On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
+A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. You can link one trusted person — a therapist, or anyone else — to read conversations you choose to share, leave you notes, and guide how the AI responds; see [Linking a trusted person](#linking-a-trusted-person). On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
 
 ## Local Setup
 
@@ -67,6 +67,16 @@ Set `AI_MOCK=1` to use deterministic mock replies and trigger the mock crisis cl
 AI_MOCK=1 bun run dev
 ```
 
+## Linking a trusted person
+
+A client can invite one trusted person — a therapist, or anyone else — to read the conversations they choose to share.
+
+- From `/trust`, generate a single-use invite link and send it to the person you trust. They sign up (or sign in) and accept it. From that point they're your one linked person; you can't have a second active link at the same time.
+- Sharing is per-conversation and opt-in. Nothing is visible to your trusted person until you share a specific conversation from its header, and revoking that share removes their access to it immediately.
+- Once you've shared a conversation, your trusted person can read it, mark how far they've read, send you a message as themselves — always labeled with their name, never mistaken for the AI — and leave standing guidance that shapes how the AI responds in conversations you've shared with them.
+- Revoke the whole link at any time from `/trust` to end the relationship entirely: your trusted person immediately loses access to every conversation, past and future.
+- `/trust` also shows a plain audit trail of what your trusted person has done — read, marked, wrote to you, published a note — with a timestamp for each, so you always know what happened even if you weren't looking.
+
 ## Privacy Model
 
 **Per-user envelope encryption at rest:**
@@ -83,6 +93,15 @@ All LLM calls route through OpenRouter with strict per-request `data_collection:
 
 **This is not end-to-end encryption:**
 We do not claim end-to-end encryption. The AI must read message bodies to reply, so plaintext exists on our servers during inference. The encryption protects against database breaches and backup leaks, not against server-side processing.
+
+**Sharing with a trusted person is not end-to-end encrypted, either:**
+Sharing means our server decrypts a conversation with your key to show your trusted person — access-controlled and audit-logged, not a private channel between the two of you. Every read and write on a shared conversation is gated by an explicit, per-conversation grant; revoking that grant (or ending the link entirely) removes their access immediately, to past and future messages alike.
+
+**Notes are owned by their author, not their subject:**
+Anything your trusted person writes about you — private notes, guidance for the AI, or notes they publish for you to read — is encrypted with *their* key, not yours. Deleting their account crypto-shreds their notes independently of your data; it doesn't touch anything you wrote.
+
+**The audit trail is metadata, not a transcript:**
+`/trust` logs every time your trusted person reads a shared conversation, marks their place, writes to you, or publishes a note. That log records who did what and when — never what they read or what they wrote. It cannot substitute for actually reading your shared conversations yourself.
 
 **Passwords:**
 User passwords are hashed with Argon2id using hardened parameters (`m=65536, t=3, p=1`).
