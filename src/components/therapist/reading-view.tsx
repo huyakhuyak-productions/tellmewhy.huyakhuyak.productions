@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ReadingMessage } from "@/lib/therapist-desk";
@@ -172,14 +173,18 @@ export function ReadingView({
         </div>
       </form>
 
-      {/* Back to the client, echoed at the foot for the long-scroll reader. */}
+      {/* Back to the client, echoed at the foot for the long-scroll reader.
+          A client-side Link, not a plain <a> — a hard navigation here forces
+          a fresh document load and hydration cycle right before the note
+          composers below become interactive, which is exactly the kind of
+          gap a fast typist (or a test) can race past. */}
       <div className="mt-6 text-center">
-        <a
+        <Link
           href={`/therapist/clients/${clientId}`}
           className="text-[12.5px] text-muted-foreground outline-none transition-colors hover:text-accent focus-visible:text-accent"
         >
           Back to their conversations
-        </a>
+        </Link>
       </div>
     </div>
   );

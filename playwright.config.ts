@@ -34,7 +34,7 @@ export default defineConfig({
     {
       name: "desktop",
       use: { ...devices["Desktop Chrome"], browserName: "chromium", viewport: { width: 1440, height: 900 } },
-      testMatch: /desktop\.spec\.ts/,
+      testMatch: [/desktop\.spec\.ts/, /therapist\.spec\.ts/],
     },
   ],
   webServer: {
