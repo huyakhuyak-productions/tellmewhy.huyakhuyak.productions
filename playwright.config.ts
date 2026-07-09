@@ -20,6 +20,10 @@ const TEST_ENV = {
 
 export default defineConfig({
   testDir: "./e2e",
+  // Two projects share one dev server; under parallel load the hero's
+  // create→navigate hop regularly outlives Playwright's 5s expect default
+  // and fails specs that pass in isolation. 15s absorbs the contention.
+  expect: { timeout: 15_000 },
   use: { baseURL: BASE_URL },
   // devices["iPhone 14"] defaults to the webkit engine; only chromium is
   // installed/pre-approved here, so pin the engine while keeping the device's
