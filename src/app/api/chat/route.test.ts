@@ -431,6 +431,32 @@ describe("POST /api/chat", () => {
       expect(systemMessage?.content).toContain("Focus on sleep hygiene, avoid problem-solving mode.");
     });
 
+    it("keeps the crisis addendum last, after any therapist guidance", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Crisis with guidance present");
+      const therapistId = await insertUser("Dr. Marsh");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await grantConversation(clientId, id);
+      await createNote(therapistId, clientId, {
+        kind: "ai_instruction",
+        body: "Focus on sleep hygiene, avoid problem-solving mode.",
+      });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I want to kill myself" }));
+      await res.text();
+
+      const prompt = lastChatPrompt();
+      const systemMessage = prompt.find((m) => m.role === "system");
+      const content = String(systemMessage?.content);
+      const guidanceIndex = content.indexOf("Guidance from the client's therapist");
+      const crisisIndex = content.indexOf("The latest message shows possible self-harm or suicidal intent");
+      expect(guidanceIndex).toBeGreaterThan(-1);
+      expect(crisisIndex).toBeGreaterThan(-1);
+      expect(crisisIndex).toBeGreaterThan(guidanceIndex);
+    });
+
     it("never injects instructions when there is no live grant, even though one exists", async () => {
       const clientId = `test-${randomUUID()}`;
       mockSession(clientId);

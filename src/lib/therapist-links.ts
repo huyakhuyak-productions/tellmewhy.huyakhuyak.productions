@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import { sharingGrants, therapistLinks, user } from "@/db/schema";
 import { recordAudit } from "./audit";
@@ -184,12 +184,25 @@ export async function revokeLink(linkId: string, byUserId: string): Promise<void
     );
   if (!link) throw new NotFoundError("Link not found");
 
+  // Revocation is single-shot: only a link still invited/active has anything
+  // left to revoke. A second revoke (or one racing a concurrent revoke)
+  // finds nothing to transition, and must neither re-stamp revokedAt nor
+  // write a second link_revoked audit row — it's the same NotFoundError path
+  // as an unknown link, not a silent no-op success.
+  //
   // Grant deletion and the status flip must land together — a link marked
   // revoked while its grants still exist would leave stale reads.
-  await db.transaction(async (tx) => {
+  const revoked = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(therapistLinks)
+      .set({ status: "revoked", revokedAt: new Date() })
+      .where(and(eq(therapistLinks.id, linkId), inArray(therapistLinks.status, ["invited", "active"])))
+      .returning({ id: therapistLinks.id });
+    if (updated.length === 0) return false;
     await tx.delete(sharingGrants).where(eq(sharingGrants.linkId, linkId));
-    await tx.update(therapistLinks).set({ status: "revoked", revokedAt: new Date() }).where(eq(therapistLinks.id, linkId));
+    return true;
   });
+  if (!revoked) throw new NotFoundError("Link already revoked");
 
   // A still-pending (never accepted) link has no clientId yet — nothing to
   // audit against the NOT NULL clientId column, same reasoning as createInvite.

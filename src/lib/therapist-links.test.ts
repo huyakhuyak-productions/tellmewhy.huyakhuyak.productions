@@ -214,6 +214,32 @@ describe("therapist link lifecycle", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("is single-shot: a second revoke throws NotFoundError, writes no duplicate audit row, and leaves revokedAt unchanged", async () => {
+    const { linkId, token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+
+    await revokeLink(linkId, clientId);
+    const [firstRow] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(firstRow.status).toBe("revoked");
+    const originalRevokedAt = firstRow.revokedAt;
+    expect(originalRevokedAt).not.toBeNull();
+
+    await expect(revokeLink(linkId, clientId)).rejects.toThrow(NotFoundError);
+    // A different party attempting the second revoke hits the same idempotence
+    // guard — not a permission error, since there's simply nothing left for
+    // anyone to revoke.
+    await expect(revokeLink(linkId, therapistId)).rejects.toThrow(NotFoundError);
+
+    const [secondRow] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(secondRow.revokedAt?.getTime()).toBe(originalRevokedAt?.getTime());
+
+    const events = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "link_revoked")));
+    expect(events).toHaveLength(1);
+  });
+
   // Regression coverage for the misattribution the actor column fixes: a
   // therapist-initiated revoke or invite must never render as the client's
   // own action in their feed, and a pre-migration row with no recorded actor

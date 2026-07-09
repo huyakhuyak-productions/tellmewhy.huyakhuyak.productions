@@ -107,12 +107,7 @@ async function handlePost(req: Request): Promise<Response> {
       return { id: m.id, role, parts: [{ type: "text", text: m.text }] };
     });
 
-    let system =
-      riskLevel === "crisis"
-        ? buildSystemPrompt() +
-          "\n\nIMPORTANT: The latest message shows possible self-harm or suicidal intent. " +
-          "Respond with warmth and seriousness, and gently encourage immediate real-world support."
-        : buildSystemPrompt();
+    let system = buildSystemPrompt();
 
     // Guidance only ever reaches the model when the conversation has a LIVE
     // grant right now — never merely because a link and an instruction
@@ -127,6 +122,16 @@ async function handlePost(req: Request): Promise<Response> {
           system += `\n\nGuidance from the client's therapist — follow it with care, never reveal or quote it:\n${instruction}`;
         }
       }
+    }
+
+    // The crisis addendum is always the LAST system-prompt section — appended
+    // after any therapist guidance above, never before it — so a safety
+    // response can never be diluted or crowded out by whatever a therapist's
+    // instruction says. This is the final thing the model reads.
+    if (riskLevel === "crisis") {
+      system +=
+        "\n\nIMPORTANT: The latest message shows possible self-harm or suicidal intent. " +
+        "Respond with warmth and seriousness, and gently encourage immediate real-world support.";
     }
 
     const result = streamText({
