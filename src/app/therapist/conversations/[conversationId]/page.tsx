@@ -1,0 +1,54 @@
+import { notFound } from "next/navigation";
+import { z } from "zod";
+import { NotFoundError } from "@/lib/errors";
+import { getReadingView } from "@/lib/therapist-desk";
+import { DeskFrame } from "@/components/therapist/desk-frame";
+import { ReadingView } from "@/components/therapist/reading-view";
+import { requireTherapistPage } from "../../_lib/require-therapist-page";
+
+export default async function TherapistReadingPage({
+  params,
+}: {
+  params: Promise<{ conversationId: string }>;
+}) {
+  const session = await requireTherapistPage();
+  const { conversationId } = await params;
+  // Reject non-UUID ids before Postgres would 500 on them — same 404 as an
+  // ungranted conversation.
+  if (!z.uuid().safeParse(conversationId).success) notFound();
+
+  // Rendering the reading view IS a view — getReadingView goes through
+  // loadSharedMessages, which audits a (deduped) conversation_viewed, exactly
+  // as the API read does. An ungranted/revoked/foreign conversation fails the
+  // gate the same indistinguishable way: NotFoundError → 404.
+  let view: Awaited<ReturnType<typeof getReadingView>>;
+  try {
+    view = await getReadingView(session.user.id, conversationId);
+  } catch (error) {
+    if (error instanceof NotFoundError) notFound();
+    throw error;
+  }
+
+  const back = view.clientName
+    ? { href: `/therapist/clients/${view.clientId}`, label: view.clientName }
+    : { href: "/therapist", label: "The desk" };
+
+  return (
+    <DeskFrame
+      back={back}
+      title={view.conversationTitle}
+      subtitle={
+        view.clientName
+          ? `Reading ${view.clientName}'s words — as they wrote them.`
+          : "Their words, read-only."
+      }
+    >
+      <ReadingView
+        conversationId={conversationId}
+        clientId={view.clientId}
+        messages={view.messages}
+        markerMessageId={view.markerMessageId}
+      />
+    </DeskFrame>
+  );
+}

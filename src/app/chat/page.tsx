@@ -60,6 +60,20 @@ export default async function HomePage() {
         </svg>
         {activeLink ? "Trust & sharing" : "Invite a trusted person"}
       </Link>
+
+      {/* Roles aren't exclusive — a therapist may also write here. A quiet way
+          across to the desk, shown only when this session actually is one. */}
+      {session.user.role === "therapist" ? (
+        <Link
+          href="/therapist"
+          className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M2.5 13V4.5A1.5 1.5 0 0 1 4 3h8a1.5 1.5 0 0 1 1.5 1.5V13M2 13h12M6.5 6.5h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Your practice
+        </Link>
+      ) : null}
     </main>
   );
 }

@@ -12,11 +12,15 @@ export function MessageBubble({
   role,
   text,
   authorName,
+  authorRelation = "your therapist",
 }: {
   role: "user" | "assistant" | "therapist";
   text: string;
   /** Present only for therapist messages — the real person's display name. */
   authorName?: string;
+  /** How the reader relates to a therapist author — "your therapist" on the
+      client's side, "you" when a therapist reads their own words. */
+  authorRelation?: string;
 }) {
   const longForm = isLongForm(text);
 
@@ -50,7 +54,7 @@ export function MessageBubble({
     const label = (
       <div className="mb-2 flex items-baseline gap-1.5">
         <span className="text-[0.8rem] font-semibold text-foreground">{authorName}</span>
-        <span className="text-[0.72rem] text-muted-foreground">— your therapist</span>
+        <span className="text-[0.72rem] text-muted-foreground">— {authorRelation}</span>
       </div>
     );
     if (longForm) {
