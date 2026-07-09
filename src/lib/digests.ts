@@ -127,8 +127,14 @@ export async function getOrRefreshDigest(
     generated = object;
   } catch (error) {
     // Never throw past the gate. Fall back to the prior digest (marked stale)
-    // or null. Log id-only — never prompt/message content.
-    console.error(`Digest generation failed for conversation ${conversationId}`, error);
+    // or null. NEVER log the raw error object here: AI SDK errors carry the
+    // request/response as enumerable own properties (APICallError's
+    // requestBodyValues embeds the whole prompt — the decrypted transcript;
+    // NoObjectGeneratedError's text embeds the raw generated digest), so a
+    // routine provider 4xx/5xx would dump client plaintext into server logs.
+    // Ids plus error name/message only.
+    const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
+    console.error(`Digest generation failed for conversation ${conversationId} (${cause})`);
     if (existing && priorBody) {
       return { ...priorBody, coversUpToMessageId: existing.coversUpToMessageId, generatedAt: existing.generatedAt, stale: true };
     }

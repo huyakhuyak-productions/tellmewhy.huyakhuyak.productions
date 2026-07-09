@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { inspect } from "node:util";
 import { eq } from "drizzle-orm";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
@@ -35,6 +36,24 @@ function throwingDigestModel(): LanguageModel {
   return new MockLanguageModelV3({
     doGenerate: async () => {
       throw new Error("model boom");
+    },
+  });
+}
+
+// AI SDK errors (APICallError, NoObjectGeneratedError) carry the request
+// body / generated text as enumerable own properties — exactly the shape a
+// real OpenRouter failure would have. The sentinel stands in for decrypted
+// client plaintext embedded in the prompt.
+function payloadCarryingFailureModel(sentinel: string): LanguageModel {
+  return new MockLanguageModelV3({
+    doGenerate: async () => {
+      const error = new Error("Bad Request");
+      Object.assign(error, {
+        requestBodyValues: { prompt: sentinel },
+        text: sentinel,
+        responseBody: sentinel,
+      });
+      throw error;
     },
   });
 }
@@ -169,6 +188,25 @@ describe("digests — get-or-refresh behind the gate", () => {
       expect(stale).not.toBeNull();
       expect(stale!.stale).toBe(true);
       expect(stale!.overview).toBe("A mock digest overview.");
+    });
+
+    it("never logs client plaintext carried on a failed generation error", async () => {
+      const convId = await grantedConversation("Leaky error");
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "private words" });
+
+      const sentinel = "SENTINEL_PLAINTEXT";
+      vi.mocked(getDigestModel).mockReturnValueOnce(payloadCarryingFailureModel(sentinel));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await getOrRefreshDigest(therapistId, convId);
+
+      // Serialize every logged argument the way console.error would render it
+      // (util.inspect, deep) — the sentinel must appear nowhere in the logs.
+      const logged = errorSpy.mock.calls
+        .map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" "))
+        .join("\n");
+      expect(errorSpy).toHaveBeenCalled();
+      expect(logged).not.toContain(sentinel);
     });
 
     it("returns null when generation fails and there is no prior digest, creating no row", async () => {

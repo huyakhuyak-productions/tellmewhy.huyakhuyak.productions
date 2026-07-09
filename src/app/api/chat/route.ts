@@ -170,8 +170,14 @@ async function handlePost(req: Request): Promise<Response> {
               if (title) await renameConversation(conversationId, userId, title, { customized: false });
             }
           } catch (error) {
-            // Fire-and-forget by design — a failed title never disturbs the chat.
-            console.error(`Failed to auto-title conversation ${conversationId}`, error);
+            // Fire-and-forget by design — a failed title never disturbs the
+            // chat. NEVER log the raw error object: AI SDK errors carry the
+            // request body as enumerable own properties (APICallError's
+            // requestBodyValues embeds the title prompt — message plaintext),
+            // so a provider 4xx/5xx would dump client content into server
+            // logs. Ids plus error name/message only.
+            const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
+            console.error(`Failed to auto-title conversation ${conversationId} (${cause})`);
           }
         }
       },

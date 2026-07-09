@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import type { MockLanguageModelV3 } from "ai/test";
+import { inspect } from "node:util";
+import { MockLanguageModelV3 } from "ai/test";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
@@ -11,7 +12,7 @@ import { acceptInvite, createInvite, getActiveLinkForClient, revokeLink } from "
 import { getGrantStateForClient, grantConversation, revokeGrant } from "@/lib/sharing";
 import { createNote, getActiveAiInstruction } from "@/lib/therapist-notes";
 import { sendIntervention } from "@/lib/interventions";
-import { getChatModel } from "@/lib/ai/models";
+import { getChatModel, getTitleModel } from "@/lib/ai/models";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -238,6 +239,35 @@ describe("POST /api/chat", () => {
     const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
     expect(conversation?.title).toBe("July 6");
     expect(await isTitleCustomized(id, userId)).toBe(false);
+  });
+
+  it("never logs message plaintext carried on a failed auto-title error", async () => {
+    const { id } = await createConversation(userId, "Untitled");
+
+    // AI SDK errors carry the request body (the title prompt — message
+    // plaintext) as enumerable own properties; the sentinel stands in for it.
+    const sentinel = "SENTINEL_PLAINTEXT";
+    vi.mocked(getTitleModel).mockReturnValueOnce(
+      new MockLanguageModelV3({
+        doGenerate: async () => {
+          const error = new Error("Bad Request");
+          Object.assign(error, { requestBodyValues: { prompt: sentinel }, responseBody: sentinel });
+          throw error;
+        },
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+    await res.text(); // drain the stream so onFinish (and the failing title call) runs
+
+    await vi.waitFor(() => {
+      expect(errorSpy.mock.calls.some((args) => String(args[0]).includes("Failed to auto-title"))).toBe(true);
+    });
+    const logged = errorSpy.mock.calls
+      .map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" "))
+      .join("\n");
+    expect(logged).not.toContain(sentinel);
   });
 
   it("never overwrites a title the user already customized", async () => {
