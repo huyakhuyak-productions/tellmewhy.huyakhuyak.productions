@@ -75,7 +75,7 @@ A client can invite one trusted person — a therapist, or anyone else — to re
 - Sharing is per-conversation and opt-in. Nothing is visible to your trusted person until you share a specific conversation from its header, and revoking that share removes their access to it immediately.
 - Once you've shared a conversation, your trusted person can read it, mark how far they've read, send you a message as themselves — always labeled with their name, never mistaken for the AI — and leave standing guidance that shapes how the AI responds in conversations you've shared with them.
 - Revoke the whole link at any time from `/trust` to end the relationship entirely: your trusted person immediately loses access to every conversation, past and future.
-- `/trust` also shows a plain audit trail of what your trusted person has done — read, marked, wrote to you, published a note — with a timestamp for each, so you always know what happened even if you weren't looking.
+- `/trust` also shows a plain audit trail of what your trusted person has done — accepted your invite, read, marked their place, wrote to you, published a note — with a timestamp for each, so you always know what happened even if you weren't looking.
 
 ## Privacy Model
 
