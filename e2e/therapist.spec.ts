@@ -260,8 +260,8 @@ test("the reading view frames crisis messages and offers a crisis navigator", as
     // only the pill — whose text is exactly "Crisis" — should be caught here.
     await expect(crisisMessage.getByText("Crisis", { exact: true })).toBeVisible();
 
-    // --- The navigator shows "1 crisis messages" before landing and clamps at both ends. ---
-    await expect(therapist.getByText("1 crisis messages")).toBeVisible();
+    // --- The navigator shows "1 crisis message" before landing and clamps at both ends. ---
+    await expect(therapist.getByText("1 crisis message")).toBeVisible();
     const prev = therapist.getByRole("button", { name: "Previous crisis message" });
     const next = therapist.getByRole("button", { name: "Next crisis message" });
     // Nothing sits before position 1, so Previous is disabled from the start.

@@ -30,7 +30,7 @@ export function CrisisNavigator({
         <StepButton label="Next crisis message" ariaDisabled={nextDisabled} onClick={onNext} direction="down" />
         <p className="flex items-baseline gap-1 px-1.5 pr-2.5 text-[12px] font-medium">
           <span aria-live="polite" className="tabular-nums">
-            {landed ? `${index + 1}/${total}` : `${total} crisis messages`}
+            {landed ? `${index + 1}/${total}` : `${total} crisis ${total === 1 ? "message" : "messages"}`}
           </span>
         </p>
       </div>
