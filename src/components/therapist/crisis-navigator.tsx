@@ -26,13 +26,12 @@ export function CrisisNavigator({
   return (
     <div className="sticky top-4 z-20 -mt-1 flex justify-center">
       <div className="inline-flex items-center gap-1 rounded-full border border-crisis-border bg-crisis/95 px-1.5 py-1 text-crisis-foreground shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_14px_-6px_var(--crisis-glow)] backdrop-blur-sm">
-        <StepButton label="Previous crisis message" disabled={prevDisabled} onClick={onPrev} direction="up" />
-        <StepButton label="Next crisis message" disabled={nextDisabled} onClick={onNext} direction="down" />
+        <StepButton label="Previous crisis message" ariaDisabled={prevDisabled} onClick={onPrev} direction="up" />
+        <StepButton label="Next crisis message" ariaDisabled={nextDisabled} onClick={onNext} direction="down" />
         <p className="flex items-baseline gap-1 px-1.5 pr-2.5 text-[12px] font-medium">
           <span aria-live="polite" className="tabular-nums">
-            {index + 1}/{total}
+            {landed ? `${index + 1}/${total}` : `${total} crisis messages`}
           </span>
-          <span className="text-crisis-muted">crisis</span>
         </p>
       </div>
     </div>
@@ -42,21 +41,27 @@ export function CrisisNavigator({
 function StepButton({
   label,
   direction,
-  disabled,
+  ariaDisabled,
   onClick,
 }: {
   label: string;
   direction: "up" | "down";
-  disabled: boolean;
+  ariaDisabled: boolean;
   onClick: () => void;
 }) {
+  const handleClick = () => {
+    if (!ariaDisabled) {
+      onClick();
+    }
+  };
+
   return (
     <button
       type="button"
       aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="grid size-9 place-items-center rounded-full text-crisis-muted outline-none transition-[color,background-color,scale] duration-150 hover:bg-crisis-muted/15 hover:text-crisis-foreground focus-visible:ring-2 focus-visible:ring-crisis-muted/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-35"
+      aria-disabled={ariaDisabled}
+      onClick={handleClick}
+      className="grid size-9 place-items-center rounded-full text-crisis-muted outline-none transition-[color,background-color,scale] duration-150 hover:bg-crisis-muted/15 hover:text-crisis-foreground focus-visible:ring-2 focus-visible:ring-crisis-muted/50 active:scale-[0.96] [&[aria-disabled='true']]:pointer-events-none [&[aria-disabled='true']]:opacity-35"
     >
       <svg viewBox="0 0 16 16" fill="none" aria-hidden className="size-4">
         {direction === "up" ? (

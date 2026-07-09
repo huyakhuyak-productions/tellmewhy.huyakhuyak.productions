@@ -260,19 +260,19 @@ test("the reading view frames crisis messages and offers a crisis navigator", as
     // only the pill — whose text is exactly "Crisis" — should be caught here.
     await expect(crisisMessage.getByText("Crisis", { exact: true })).toBeVisible();
 
-    // --- The navigator shows 1/1 and clamps at both ends. ---
-    await expect(therapist.getByText("1/1")).toBeVisible();
+    // --- The navigator shows "1 crisis messages" before landing and clamps at both ends. ---
+    await expect(therapist.getByText("1 crisis messages")).toBeVisible();
     const prev = therapist.getByRole("button", { name: "Previous crisis message" });
     const next = therapist.getByRole("button", { name: "Next crisis message" });
     // Nothing sits before position 1, so Previous is disabled from the start.
-    await expect(prev).toBeDisabled();
-    // Stepping lands on the only crisis, scrolls it into view, and — being both
-    // first and last — disables both arrows without ever wrapping.
+    await expect(prev).toHaveAttribute("aria-disabled", "true");
+    // Stepping lands on the only crisis, scrolls it into view, announces "1/1",
+    // and — being both first and last — disables both arrows without ever wrapping.
     await next.click();
     await expect(crisisMessage).toBeInViewport();
     await expect(therapist.getByText("1/1")).toBeVisible();
-    await expect(next).toBeDisabled();
-    await expect(prev).toBeDisabled();
+    await expect(next).toHaveAttribute("aria-disabled", "true");
+    await expect(prev).toHaveAttribute("aria-disabled", "true");
   } finally {
     await clientCtx.close();
     await therapistCtx.close();
