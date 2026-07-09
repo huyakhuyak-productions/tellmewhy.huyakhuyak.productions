@@ -209,6 +209,76 @@ test("the whole therapist journey: link, share, read, intervene, and revoke", as
   }
 });
 
+// The crisis navigator + visibility treatment: a shared conversation carrying a
+// crisis-flagged message shows the therapist an unmistakable amber frame and a
+// Telegram-style X/N navigator to jump to it. AI_MOCK flags any message whose
+// text contains MOCK_CRISIS, so this is fully deterministic.
+test("the reading view frames crisis messages and offers a crisis navigator", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+
+  const clientCtx = await browser.newContext();
+  const therapistCtx = await browser.newContext();
+  const client = await clientCtx.newPage();
+  const therapist = await therapistCtx.newPage();
+
+  try {
+    // --- Link a client and therapist. ---
+    await signUp(client, "Vera Client");
+    const invitePath = await createInvitePath(client);
+    await followInviteAndSignUp(therapist, invitePath, "Ola Therapist");
+
+    // --- The client writes something heavy; AI_MOCK flags it as a crisis. ---
+    await client.goto("/chat");
+    await client.getByLabel("Start a conversation").fill("MOCK_CRISIS I don't want to be here anymore");
+    await client.keyboard.press("Enter");
+    await expect(client).toHaveURL(/\/chat\/.+/);
+    // The crisis breaks the frame into the docked support card — proof the
+    // message landed and was classified as a crisis.
+    await expect(client.getByRole("alertdialog", { name: /support resources/i })).toBeVisible();
+
+    // --- The client shares that conversation with their therapist. ---
+    const shareLanded = client.waitForResponse(
+      (res) => res.request().method() === "POST" && res.url().includes("/share"),
+    );
+    await client.getByRole("button", { name: /^Share with/ }).click();
+    await shareLanded;
+
+    // --- The therapist opens the shared conversation. ---
+    await therapist.goto("/therapist");
+    await therapist.getByRole("link", { name: "Open Vera Client" }).click();
+    await therapist.getByRole("link", { name: /^Read /}).click();
+    await expect(therapist).toHaveURL(/\/therapist\/conversations\/.+/);
+
+    // --- The crisis message wears the visible amber treatment. ---
+    const crisisMessage = therapist.locator('[data-crisis="true"]');
+    await expect(crisisMessage).toHaveCount(1);
+    await expect(crisisMessage).toContainText("I don't want to be here anymore");
+    // The Crisis pill rides in the message's own header, not floating below.
+    // Exact match: the message body itself contains the word "MOCK_CRISIS", so
+    // only the pill — whose text is exactly "Crisis" — should be caught here.
+    await expect(crisisMessage.getByText("Crisis", { exact: true })).toBeVisible();
+
+    // --- The navigator shows 1/1 and clamps at both ends. ---
+    await expect(therapist.getByText("1/1")).toBeVisible();
+    const prev = therapist.getByRole("button", { name: "Previous crisis message" });
+    const next = therapist.getByRole("button", { name: "Next crisis message" });
+    // Nothing sits before position 1, so Previous is disabled from the start.
+    await expect(prev).toBeDisabled();
+    // Stepping lands on the only crisis, scrolls it into view, and — being both
+    // first and last — disables both arrows without ever wrapping.
+    await next.click();
+    await expect(crisisMessage).toBeInViewport();
+    await expect(therapist.getByText("1/1")).toBeVisible();
+    await expect(next).toBeDisabled();
+    await expect(prev).toBeDisabled();
+  } finally {
+    await clientCtx.close();
+    await therapistCtx.close();
+  }
+});
+
 // Every path a hostile or merely mistaken party might try, refused the same
 // calm way the rest of the therapist layer refuses: 404 or an unremarkable
 // error, never a hint at what's actually being protected.

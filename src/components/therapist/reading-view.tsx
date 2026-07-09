@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ReadingMessage } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
+import { CrisisNavigator } from "./crisis-navigator";
 
 // The therapist reads a client's shared conversation. Read-only — the same
 // bubbles/passages the client sees — with two deliberate acts layered on: a
@@ -30,6 +31,45 @@ export function ReadingView({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  // The crisis navigator: the ordered ids of every crisis-flagged message, the
+  // live DOM nodes to scroll to, and where the reader currently stands. `landed`
+  // gates the very first step — before it, there's nothing behind position 1.
+  const crisisIds = useMemo(
+    () => messages.filter((m) => m.riskLevel === "crisis").map((m) => m.id),
+    [messages],
+  );
+  const crisisRefs = useRef(new Map<string, HTMLDivElement>());
+  const registerCrisis = useCallback(
+    (id: string) => (el: HTMLDivElement | null) => {
+      if (el) crisisRefs.current.set(id, el);
+      else crisisRefs.current.delete(id);
+    },
+    [],
+  );
+  const [activeCrisis, setActiveCrisis] = useState(0);
+  const [landed, setLanded] = useState(false);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+
+  const jumpToCrisis = useCallback(
+    (next: number) => {
+      const id = crisisIds[next];
+      const el = id ? crisisRefs.current.get(id) : null;
+      if (!id || !el) return;
+      setActiveCrisis(next);
+      setLanded(true);
+      const reduced =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+      setFlashId(id);
+      clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlashId(null), 1500);
+    },
+    [crisisIds],
+  );
 
   async function markReadTo(messageId: string) {
     if (markingId) return;
@@ -84,6 +124,15 @@ export function ReadingView({
 
   return (
     <div className="flex flex-col">
+      {crisisIds.length > 0 ? (
+        <CrisisNavigator
+          index={activeCrisis}
+          total={crisisIds.length}
+          landed={landed}
+          onPrev={() => jumpToCrisis(landed ? activeCrisis - 1 : 0)}
+          onNext={() => jumpToCrisis(landed ? activeCrisis + 1 : 0)}
+        />
+      ) : null}
       <div className="flex flex-col gap-[22px]">
         {messages.length === 0 ? (
           <p className="text-pretty font-serif text-[1.05rem] italic leading-relaxed text-muted-foreground">
@@ -101,33 +150,52 @@ export function ReadingView({
             const role = m.sender === "client" ? "user" : m.sender === "therapist" ? "therapist" : "assistant";
             const alignEnd = m.sender === "client";
             const isMarked = m.id === markerMessageId;
+            const isCrisis = m.riskLevel === "crisis";
+
+            // A crisis message reads as crisis at a glance: the Crisis pill rides
+            // in a header line above the words (not floating below), the whole
+            // unit sits in a warm amber frame, and the navigator can scroll it
+            // into view with a gentle flash.
+            const unit = (
+              <div className="group/msg flex flex-col gap-1.5">
+                {isCrisis ? (
+                  <div className="flex">
+                    <AttentionBadge kind="crisis" />
+                  </div>
+                ) : null}
+                <MessageBubble
+                  role={role}
+                  text={m.text}
+                  authorName={m.sender === "therapist" ? (m.authorName ?? "You") : undefined}
+                  authorRelation="you"
+                />
+                <div className={`flex items-center gap-2 ${alignEnd ? "justify-end" : "justify-start"}`}>
+                  {m.flagged ? <AttentionBadge kind="flag" /> : null}
+                  <button
+                    type="button"
+                    onClick={() => markReadTo(m.id)}
+                    disabled={markingId !== null}
+                    aria-label="Mark read to here"
+                    className="rounded-full px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground opacity-0 outline-none transition-[opacity,color,background-color] duration-150 hover:bg-accent/10 hover:text-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 group-hover/msg:opacity-100 disabled:opacity-40 [@media(pointer:coarse)]:opacity-100"
+                  >
+                    {isMarked ? "Reviewed to here" : "Mark read to here"}
+                  </button>
+                </div>
+              </div>
+            );
             return (
               <Fragment key={m.id}>
-                <div className="group/msg flex flex-col gap-1.5">
-                  <MessageBubble
-                    role={role}
-                    text={m.text}
-                    authorName={m.sender === "therapist" ? (m.authorName ?? "You") : undefined}
-                    authorRelation="you"
-                  />
-                  <div className={`flex items-center gap-2 ${alignEnd ? "justify-end" : "justify-start"}`}>
-                    {(m.riskLevel === "crisis" || m.flagged) && (
-                      <span className="flex gap-1.5">
-                        {m.riskLevel === "crisis" ? <AttentionBadge kind="crisis" /> : null}
-                        {m.flagged ? <AttentionBadge kind="flag" /> : null}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => markReadTo(m.id)}
-                      disabled={markingId !== null}
-                      aria-label="Mark read to here"
-                      className="rounded-full px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground opacity-0 outline-none transition-[opacity,color,background-color] duration-150 hover:bg-accent/10 hover:text-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 group-hover/msg:opacity-100 disabled:opacity-40 [@media(pointer:coarse)]:opacity-100"
-                    >
-                      {isMarked ? "Reviewed to here" : "Mark read to here"}
-                    </button>
+                {isCrisis ? (
+                  <div
+                    data-crisis="true"
+                    ref={registerCrisis(m.id)}
+                    className={`cp-crisis scroll-mt-24 rounded-2xl rounded-l-md border border-l-[3px] px-4 py-3.5 ${flashId === m.id ? "animate-crisis-flash" : ""}`}
+                  >
+                    {unit}
                   </div>
-                </div>
+                ) : (
+                  unit
+                )}
                 {isMarked ? <ReviewDivider /> : null}
               </Fragment>
             );
