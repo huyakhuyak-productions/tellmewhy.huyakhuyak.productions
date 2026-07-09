@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateText, generateObject } from "ai";
-import { getChatModel, getClassifierModel, getTitleModel } from "./models";
+import { z } from "zod";
+import { getChatModel, getClassifierModel, getDigestModel, getTitleModel } from "./models";
 import { riskSchema } from "@/test/ai-fixtures";
 
 describe("AI_MOCK production guard", () => {
@@ -43,6 +44,23 @@ describe("mock classifier model (AI_MOCK=1 in test setup)", () => {
       prompt: "an ordinary day",
     });
     expect(object.risk).toBe("none");
+  });
+});
+
+describe("mock digest model (AI_MOCK=1 in test setup)", () => {
+  it("returns a deterministic digest object without network access", async () => {
+    const { object } = await generateObject({
+      model: getDigestModel(),
+      schema: z.object({
+        overview: z.string(),
+        themes: z.array(z.string()),
+        anchors: z.array(z.object({ messageId: z.string(), label: z.string(), kind: z.enum(["moment", "risk"]) })),
+      }),
+      prompt: "summarize this",
+    });
+    expect(object.overview).toBe("A mock digest overview.");
+    expect(object.themes).toEqual(["mock theme"]);
+    expect(object.anchors).toEqual([]);
   });
 });
 
