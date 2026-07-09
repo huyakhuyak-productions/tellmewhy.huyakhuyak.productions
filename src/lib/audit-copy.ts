@@ -33,6 +33,7 @@ export function resolveAuditActor(
   switch (action) {
     case "grant_created":
     case "grant_revoked":
+    case "entry_shared":
       return "client";
     case "conversation_viewed":
     case "review_marker_advanced":
@@ -40,6 +41,9 @@ export function resolveAuditActor(
     case "note_published":
     case "attention_viewed":
     case "link_accepted":
+    case "exercise_assigned":
+    case "entry_viewed":
+    case "mood_trend_viewed":
       return "therapist";
     case "link_invited":
       if (actorId !== null) return actorId === clientId ? "client" : "therapist";
@@ -79,6 +83,14 @@ export function describeAuditAction(
       return `${who} left you a note`;
     case "attention_viewed":
       return `${who} checked on your flagged and crisis messages`;
+    case "exercise_assigned":
+      return `${who} gave you an exercise`;
+    case "entry_shared":
+      return "You shared an exercise entry";
+    case "entry_viewed":
+      return `${who} read an exercise entry`;
+    case "mood_trend_viewed":
+      return `${who} checked your mood history`;
   }
 }
 
