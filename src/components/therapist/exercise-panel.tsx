@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { relativeTime } from "@/lib/relative-time";
 import { entryCountLabel } from "@/lib/exercise-engagement";
@@ -29,8 +29,10 @@ export function ExercisePanel({
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  // Optimistic close: the id flips to "Closed" the instant it's tapped, and
-  // reverts only if the request fails — the server truth lands on refresh.
+  // Close is pending-then-settled, not optimistic: the button stays mounted
+  // reading "Closing…" until the request resolves, so there's never a dead
+  // instant where it vanished but nothing confirmed. Only a confirmed success
+  // flips the card to "Closed" (the server truth then lands on refresh).
   const [closedOverride, setClosedOverride] = useState<Set<string>>(new Set());
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function ExercisePanel({
       }
       setAssignError(
         res.status === 429
-          ? "A gentle pace — give it a moment, then try again. Your work is saved as you go."
+          ? "A gentle pace — give it a moment, then try again. Your words are still here."
           : "That didn't send. Your words are still here — try again.",
       );
     } catch {
@@ -64,12 +66,13 @@ export function ExercisePanel({
     }
   }
 
-  async function close(exerciseId: string) {
-    if (closingId) return;
+  // Resolves true only on a confirmed close, so the card can hand focus off
+  // before its close button unmounts. Failure leaves the card untouched (the
+  // flip never happened, so there's nothing to revert) and states the error.
+  async function close(exerciseId: string): Promise<boolean> {
+    if (closingId) return false;
     setCloseError(null);
     setClosingId(exerciseId);
-    // Optimistic flip.
-    setClosedOverride((prev) => new Set(prev).add(exerciseId));
     try {
       const res = await fetch(`/api/therapist/exercises/${exerciseId}`, {
         method: "PATCH",
@@ -77,27 +80,19 @@ export function ExercisePanel({
         body: JSON.stringify({ status: "closed" }),
       });
       if (res.ok) {
+        setClosedOverride((prev) => new Set(prev).add(exerciseId));
         router.refresh();
-        return;
+        return true;
       }
-      // Revert on failure.
-      setClosedOverride((prev) => {
-        const next = new Set(prev);
-        next.delete(exerciseId);
-        return next;
-      });
       setCloseError(
         res.status === 429
           ? "A gentle pace — give it a moment, then try again."
           : "Couldn't close that just now — try again.",
       );
+      return false;
     } catch {
-      setClosedOverride((prev) => {
-        const next = new Set(prev);
-        next.delete(exerciseId);
-        return next;
-      });
       setCloseError("Couldn't close that just now — try again.");
+      return false;
     } finally {
       setClosingId(null);
     }
@@ -193,11 +188,24 @@ function AssignmentCard({
   assignment: TherapistAssignment;
   closed: boolean;
   closing: boolean;
-  onClose: () => void;
+  /** Resolves true when the close was confirmed by the server. */
+  onClose: () => Promise<boolean>;
 }) {
   const { instruction, entryCount, lastEntryAt, sharedEntryIds } = assignment;
+  // A confirmed close unmounts the close button, so focus is handed to the
+  // card itself first (tabIndex={-1}) — it never drops to the document body,
+  // and a screen reader lands on the card now carrying its "Closed" chip.
+  const cardRef = useRef<HTMLLIElement>(null);
+  async function handleClose() {
+    const confirmed = await onClose();
+    if (confirmed) cardRef.current?.focus();
+  }
   return (
-    <li className="flex flex-col gap-2.5 rounded-2xl border border-border/75 bg-card/55 px-4 py-3.5">
+    <li
+      ref={cardRef}
+      tabIndex={-1}
+      className="flex flex-col gap-2.5 rounded-2xl border border-border/75 bg-card/55 px-4 py-3.5 outline-none"
+    >
       <div className="flex items-start justify-between gap-3">
         <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-accent/90">
           Thought record
@@ -218,7 +226,11 @@ function AssignmentCard({
         {entryCount > 0 && lastEntryAt ? (
           <>
             <span aria-hidden>·</span>
-            <time suppressHydrationWarning className="tabular-nums">
+            <time
+              suppressHydrationWarning
+              dateTime={lastEntryAt.toISOString()}
+              className="tabular-nums"
+            >
               last {relativeTime(lastEntryAt)}
             </time>
           </>
@@ -244,7 +256,7 @@ function AssignmentCard({
         <div className="flex justify-end">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleClose()}
             disabled={closing}
             aria-label="Close this assignment"
             className="rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium text-muted-foreground outline-none transition-[color,background-color] duration-150 hover:bg-accent/10 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
