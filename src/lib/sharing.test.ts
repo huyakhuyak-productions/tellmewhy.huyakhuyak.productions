@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, messages, sharingGrants } from "@/db/schema";
 import { createConversation, saveMessage } from "./conversations";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 import {
   getGrantStateForClient,
   grantConversation,
@@ -109,7 +109,7 @@ describe("sharing grants — THE gate", () => {
 
     it("refuses a grant with no active link, distinctly from NotFoundError", async () => {
       const conv = await createConversation(clientId, "Owned, no link yet");
-      await expect(grantConversation(clientId, conv.id)).rejects.toThrow(Error);
+      await expect(grantConversation(clientId, conv.id)).rejects.toThrow(ValidationError);
       await expect(grantConversation(clientId, conv.id)).rejects.not.toThrow(NotFoundError);
     });
 

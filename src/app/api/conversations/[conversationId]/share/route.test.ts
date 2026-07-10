@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation } from "@/lib/conversations";
-import { getGrantStateForClient } from "@/lib/sharing";
+import { getGrantStateForClient, grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
@@ -12,6 +12,9 @@ vi.mock("@/lib/auth", () => ({
   auth: { api: { getSession: vi.fn(async () => session) } },
 }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// Spied so a single failure test can make grantConversation throw an
+// infrastructure-shaped error; every other test hits the real implementation.
+vi.mock("@/lib/sharing", { spy: true });
 
 import { DELETE, POST } from "./route";
 
@@ -74,6 +77,14 @@ describe("POST/DELETE /api/conversations/[conversationId]/share", () => {
   it("returns 400 for a malformed conversationId", async () => {
     const res = await shareRequest("POST", "not-a-uuid");
     expect(res.status).toBe(400);
+  });
+
+  it("rethrows a non-validation failure instead of echoing it as a 400", async () => {
+    // An infrastructure-shaped error (DB, crypto) must never surface its
+    // internal message in a 4xx body — the route rethrows and Next answers 500.
+    vi.mocked(grantConversation).mockRejectedValueOnce(new Error("connection terminated"));
+
+    await expect(shareRequest("POST", randomUUID())).rejects.toThrow("connection terminated");
   });
 
   it("returns 400 with the module's message when the caller has no active therapist link", async () => {

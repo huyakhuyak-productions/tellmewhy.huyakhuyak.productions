@@ -16,7 +16,7 @@ import { conversations, messages, sharingGrants, therapistLinks } from "@/db/sch
 import { recordAudit } from "./audit";
 import { decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 
 const NO_ACTIVE_LINK_MESSAGE = "No active therapist link";
 
@@ -70,7 +70,9 @@ export async function grantConversation(clientId: string, conversationId: string
     .select({ id: therapistLinks.id, therapistId: therapistLinks.therapistId })
     .from(therapistLinks)
     .where(and(eq(therapistLinks.clientId, clientId), eq(therapistLinks.status, "active")));
-  if (!link) throw new Error(NO_ACTIVE_LINK_MESSAGE);
+  // ValidationError, not plain Error: this static message is the only one the
+  // share route may echo into a 400 body (see errors.ts).
+  if (!link) throw new ValidationError(NO_ACTIVE_LINK_MESSAGE);
 
   // Idempotent: a second grant for the same (link, conversation) pair is a
   // silent no-op, not an error — the unique index is the real guarantee.

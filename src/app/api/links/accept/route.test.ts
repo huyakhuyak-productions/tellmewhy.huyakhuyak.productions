@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createInvite } from "@/lib/therapist-links";
+import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -10,6 +10,9 @@ vi.mock("@/lib/auth", () => ({
   auth: { api: { getSession: vi.fn(async () => session) } },
 }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// Spied so a single failure test can make acceptInvite throw an
+// infrastructure-shaped error; every other test hits the real implementation.
+vi.mock("@/lib/therapist-links", { spy: true });
 
 import { POST } from "./route";
 
@@ -69,6 +72,14 @@ describe("POST /api/links/accept", () => {
     const body = await res.json();
     expect(body.error).toMatch(/Invite not found or already used/);
     expect(JSON.stringify(body)).not.toContain(bogusToken);
+  });
+
+  it("rethrows a non-validation failure instead of echoing it as a 400", async () => {
+    // An infrastructure-shaped error (DB, crypto) must never surface its
+    // internal message in a 4xx body — the route rethrows and Next answers 500.
+    vi.mocked(acceptInvite).mockRejectedValueOnce(new Error("connection terminated"));
+
+    await expect(acceptRequest({ token: "c".repeat(43) })).rejects.toThrow("connection terminated");
   });
 
   it("maps self-acceptance to 400", async () => {

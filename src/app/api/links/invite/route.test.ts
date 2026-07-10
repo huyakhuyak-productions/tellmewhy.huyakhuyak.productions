@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { therapistLinks } from "@/db/schema";
 import chatRateLimiter, { conversationCreateRateLimiter, inviteCreateRateLimiter } from "@/lib/rate-limit";
+import { createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
@@ -13,6 +14,9 @@ vi.mock("@/lib/auth", () => ({
   auth: { api: { getSession: vi.fn(async () => session) } },
 }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+// Spied so a single failure test can make createInvite throw an
+// infrastructure-shaped error; every other test hits the real implementation.
+vi.mock("@/lib/therapist-links", { spy: true });
 
 import { POST } from "./route";
 
@@ -63,6 +67,17 @@ describe("POST /api/links/invite", () => {
     expect(second.status).toBe(400);
     const body = await second.json();
     expect(body.error).toMatch(/already has a pending or active therapist link/);
+  });
+
+  it("rethrows a non-validation failure instead of echoing it as a 400", async () => {
+    // A dedicated session id so this doesn't nibble the shared userId's
+    // invite bucket. An infrastructure-shaped error (DB, crypto) must never
+    // surface its internal message in a 4xx body — the route rethrows and
+    // Next answers 500.
+    session = { user: { id: `test-${randomUUID()}`, role: "client" } };
+    vi.mocked(createInvite).mockRejectedValueOnce(new Error("connection terminated"));
+
+    await expect(POST()).rejects.toThrow("connection terminated");
   });
 
   it("never logs the raw invite token", async () => {

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { auditEvents, sharingGrants, therapistLinks, user } from "@/db/schema";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 import { acceptInvite, createInvite, getActiveLinkForClient, getActiveLinksForTherapist, getPendingInviteForClient, revokeLink } from "./therapist-links";
 
 async function insertUser(overrides: { name?: string; role?: string } = {}): Promise<string> {
@@ -53,14 +53,14 @@ describe("therapist link lifecycle", () => {
     const { linkId, token } = await createInvite(clientId, "client");
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     await db.update(therapistLinks).set({ createdAt: eightDaysAgo }).where(eq(therapistLinks.id, linkId));
-    await expect(acceptInvite(token, therapistId)).rejects.toThrow();
+    await expect(acceptInvite(token, therapistId)).rejects.toThrow(ValidationError);
   });
 
   it("keeps an expired invite in 'invited' status after rejection", async () => {
     const { linkId, token } = await createInvite(clientId, "client");
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     await db.update(therapistLinks).set({ createdAt: eightDaysAgo }).where(eq(therapistLinks.id, linkId));
-    await expect(acceptInvite(token, therapistId)).rejects.toThrow();
+    await expect(acceptInvite(token, therapistId)).rejects.toThrow(ValidationError);
 
     const [row] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
     expect(row.status).toBe("invited");
@@ -70,23 +70,23 @@ describe("therapist link lifecycle", () => {
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
     const anotherUser = `test-${randomUUID()}`;
-    await expect(acceptInvite(token, anotherUser)).rejects.toThrow();
+    await expect(acceptInvite(token, anotherUser)).rejects.toThrow(ValidationError);
   });
 
   it("rejects self-acceptance", async () => {
     const { token } = await createInvite(clientId, "client");
-    await expect(acceptInvite(token, clientId)).rejects.toThrow();
+    await expect(acceptInvite(token, clientId)).rejects.toThrow(ValidationError);
   });
 
   it("rejects a second client-initiated invite while one is already pending", async () => {
     await createInvite(clientId, "client");
-    await expect(createInvite(clientId, "client")).rejects.toThrow();
+    await expect(createInvite(clientId, "client")).rejects.toThrow(ValidationError);
   });
 
   it("rejects a new client-initiated invite while the client already has an active link", async () => {
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
-    await expect(createInvite(clientId, "client")).rejects.toThrow();
+    await expect(createInvite(clientId, "client")).rejects.toThrow(ValidationError);
   });
 
   it("rejects accepting a therapist-initiated invite when the client already has an active link (one-active-link rule at accept)", async () => {
@@ -96,7 +96,7 @@ describe("therapist link lifecycle", () => {
 
     const secondTherapist = `test-${randomUUID()}`;
     const { linkId: secondLinkId, token: secondToken } = await createInvite(secondTherapist, "therapist");
-    await expect(acceptInvite(secondToken, clientId)).rejects.toThrow();
+    await expect(acceptInvite(secondToken, clientId)).rejects.toThrow(ValidationError);
 
     // Nothing flipped on the rejected link.
     const [secondRow] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, secondLinkId));

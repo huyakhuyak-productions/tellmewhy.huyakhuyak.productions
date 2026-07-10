@@ -3,7 +3,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import { sharingGrants, therapistLinks, user } from "@/db/schema";
 import { recordAudit } from "./audit";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 
 const TOKEN_BYTES = 32;
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -58,7 +58,7 @@ export async function createInvite(
   initiatedBy: "client" | "therapist",
 ): Promise<{ linkId: string; token: string }> {
   if (initiatedBy === "client" && (await hasPendingOrActiveLink(initiatorUserId))) {
-    throw new Error(ALREADY_LINKED_MESSAGE);
+    throw new ValidationError(ALREADY_LINKED_MESSAGE);
   }
 
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -79,7 +79,7 @@ export async function createInvite(
     // The pre-check above is check-then-write and can lose a race to a
     // concurrent createInvite for the same client — the partial unique index
     // is what actually stops the second row from landing.
-    if (isOnePerClientViolation(error)) throw new Error(ALREADY_LINKED_MESSAGE);
+    if (isOnePerClientViolation(error)) throw new ValidationError(ALREADY_LINKED_MESSAGE);
     throw error;
   }
 
@@ -106,19 +106,19 @@ export async function acceptInvite(token: string, acceptingUserId: string): Prom
     .select()
     .from(therapistLinks)
     .where(and(eq(therapistLinks.inviteTokenHash, inviteTokenHash), eq(therapistLinks.status, "invited")));
-  if (!link) throw new Error("Invite not found or already used");
+  if (!link) throw new ValidationError("Invite not found or already used");
 
   const expiresAt = link.createdAt.getTime() + INVITE_EXPIRY_MS;
-  if (Date.now() > expiresAt) throw new Error("Invite has expired");
+  if (Date.now() > expiresAt) throw new ValidationError("Invite has expired");
 
   const existingPartyId = link.initiatedBy === "client" ? link.clientId : link.therapistId;
-  if (existingPartyId === acceptingUserId) throw new Error("Cannot accept your own invite");
+  if (existingPartyId === acceptingUserId) throw new ValidationError("Cannot accept your own invite");
 
   // Therapist-initiated: the acceptor becomes the client — the one-active-
   // link rule applies to them here, since createInvite's create-time check
   // only covers the client-initiated direction.
   if (link.initiatedBy === "therapist" && (await hasPendingOrActiveLink(acceptingUserId))) {
-    throw new Error(ALREADY_LINKED_MESSAGE);
+    throw new ValidationError(ALREADY_LINKED_MESSAGE);
   }
 
   const clientId = link.initiatedBy === "client" ? link.clientId! : acceptingUserId;
@@ -138,10 +138,10 @@ export async function acceptInvite(token: string, acceptingUserId: string): Prom
       .where(and(eq(therapistLinks.id, link.id), eq(therapistLinks.status, "invited")))
       .returning({ id: therapistLinks.id });
   } catch (error) {
-    if (isOnePerClientViolation(error)) throw new Error(ALREADY_LINKED_MESSAGE);
+    if (isOnePerClientViolation(error)) throw new ValidationError(ALREADY_LINKED_MESSAGE);
     throw error;
   }
-  if (!updated) throw new Error("Invite not found or already used");
+  if (!updated) throw new ValidationError("Invite not found or already used");
 
   // Role mutates server-side only, and only on a client-initiated accept
   // (the acceptor stepping in as the therapist).

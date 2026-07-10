@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { ValidationError } from "@/lib/errors";
 import { inviteCreateRateLimiter } from "@/lib/rate-limit";
 import { createInvite } from "@/lib/therapist-links";
 
@@ -24,7 +25,11 @@ export async function POST(): Promise<Response> {
     // logged, never persisted anywhere but its hash (see therapist-links.ts).
     return Response.json({ linkId, token, path: `/link/${token}` }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error) return Response.json({ error: error.message }, { status: 400 });
+    // Only createInvite's own business rule (already linked — a static,
+    // client-safe ValidationError, see errors.ts) maps to 400 with its
+    // message. Anything else is an infrastructure failure and rethrows into a
+    // 500, so its internal message never reaches a response body.
+    if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }
 }
