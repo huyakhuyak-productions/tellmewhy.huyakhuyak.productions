@@ -9,7 +9,9 @@ import { isTitleCustomized, loadMessages, renameConversation, saveMessage } from
 import { NotFoundError } from "@/lib/errors";
 import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
-import { buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
+import { buildHomeworkSection, buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
+import { listExercisesForClient } from "@/lib/exercises";
+import { buildMoodContextLine, listMoodCheckins } from "@/lib/mood";
 import chatRateLimiter from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
 import { getGrantStateForClient } from "@/lib/sharing";
@@ -20,6 +22,7 @@ import { clampTitle } from "@/lib/title";
 const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
 
 const CONTEXT_WINDOW = 30; // most recent messages sent to the model
+const MOOD_CONTEXT_DAYS = 14; // how far back the mood context line looks
 const FALLBACK_THERAPIST_NAME = "their therapist"; // authorId is null, or its user row is gone
 const MAX_INTERPOLATED_NAME_LENGTH = 80;
 
@@ -108,6 +111,24 @@ async function handlePost(req: Request): Promise<Response> {
     });
 
     let system = buildSystemPrompt();
+
+    // The client's own recent mood, read straight back into their own AI — the
+    // first context section after the base prompt (their week colors how the
+    // companion reads everything below). Their data, their DEK; no grant check.
+    // Placed BEFORE any therapist guidance, so the crisis addendum still lands
+    // last no matter what.
+    const moodLine = buildMoodContextLine(await listMoodCheckins(userId, MOOD_CONTEXT_DAYS));
+    if (moodLine) system += `\n\n${moodLine}`;
+
+    // Active homework the client can already see (listExercisesForClient is
+    // client-visible data — deliberately no grant check, per spec). Added after
+    // mood, still before therapist guidance and the crisis addendum.
+    const homeworkSection = buildHomeworkSection(
+      (await listExercisesForClient(userId))
+        .filter((e) => e.status === "active")
+        .map((e) => ({ type: e.type, instruction: e.instruction })),
+    );
+    if (homeworkSection) system += `\n\n${homeworkSection}`;
 
     // Guidance only ever reaches the model when the conversation has a LIVE
     // grant right now — never merely because a link and an instruction

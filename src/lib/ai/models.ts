@@ -108,3 +108,32 @@ export function getDigestModel(): LanguageModel {
   if (process.env.AI_MOCK === "1") return mockDigestModel();
   return openrouter()(process.env.OPENROUTER_DIGEST_MODEL ?? "anthropic/claude-sonnet-4.5", NO_LOGGING);
 }
+
+// Deterministic thought-record for offline tests. Like the digest mock,
+// `generateObject` drives this through `doGenerate` and parses the single text
+// part as JSON, so the mock returns the whole payload as one stringified part.
+const MOCK_THOUGHT_RECORD_JSON = JSON.stringify({
+  situation: "Mock situation",
+  thoughts: "Mock thoughts",
+  emotions: "Mock emotions",
+  behavior: "Mock behavior",
+});
+
+function mockExtractorModel(): LanguageModel {
+  return new MockLanguageModelV3({
+    doGenerate: async () => ({
+      finishReason: MOCK_FINISH_REASON,
+      usage: MOCK_USAGE,
+      content: [{ type: "text", text: MOCK_THOUGHT_RECORD_JSON }],
+      warnings: [],
+    }),
+  });
+}
+
+// Structured extraction of a draft thought record from a conversation — the
+// classifier default is plenty for pulling four short fields out of a
+// transcript, and keeps this off the pricier chat/digest models.
+export function getExtractorModel(): LanguageModel {
+  if (process.env.AI_MOCK === "1") return mockExtractorModel();
+  return openrouter()(process.env.OPENROUTER_CLASSIFIER_MODEL ?? "google/gemini-2.5-flash-lite", NO_LOGGING);
+}

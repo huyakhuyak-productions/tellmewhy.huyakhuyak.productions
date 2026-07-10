@@ -19,6 +19,38 @@ export function buildSystemPrompt(): string {
   ].join("\n");
 }
 
+const HOMEWORK_INSTRUCTION_CLAMP = 300; // per exercise, so one long instruction can't dominate the prompt
+const HOMEWORK_MAX_EXERCISES = 3; // newest few only — the caller passes them newest-first
+
+// A gentle, non-coercive briefing so the companion KNOWS what homework the
+// client already has and can help with it when it fits — never nag, never
+// force. Returns null when the client has no active exercises (nothing to add
+// to the prompt). Instructions are clamped per item and capped at the newest
+// few so this section can never balloon the system prompt. This is CLIENT-
+// visible data (see listExercisesForClient) — deliberately no grant check.
+export function buildHomeworkSection(exercises: { type: string; instruction: string }[]): string | null {
+  if (exercises.length === 0) return null;
+
+  const items = exercises
+    .slice(0, HOMEWORK_MAX_EXERCISES)
+    .map((e) => {
+      const instruction =
+        e.instruction.length > HOMEWORK_INSTRUCTION_CLAMP
+          ? e.instruction.slice(0, HOMEWORK_INSTRUCTION_CLAMP)
+          : e.instruction;
+      return `- ${instruction}`;
+    })
+    .join("\n");
+
+  return [
+    "The client has active homework from their therapist — thought records to work through.",
+    "You may gently weave it in when the moment fits, but never force it, never nag, and never make it feel like a checklist.",
+    'When they ask you to "walk me through it", guide them one column at a time (ONE, then wait) — situation → thoughts → emotions → behavior → optional body sensations — never rushing to the next, never forcing an answer they are not ready to give.',
+    "Active exercises:",
+    items,
+  ].join("\n");
+}
+
 // The digest is read by the client's OWN therapist before a session — an
 // orientation, never a diagnosis. Anchors must reference only the real
 // [message <uuid>] markers in the transcript; the caller drops any id the

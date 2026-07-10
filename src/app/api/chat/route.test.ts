@@ -12,6 +12,8 @@ import { acceptInvite, createInvite, getActiveLinkForClient, revokeLink } from "
 import { getGrantStateForClient, grantConversation, revokeGrant } from "@/lib/sharing";
 import { createNote, getActiveAiInstruction } from "@/lib/therapist-notes";
 import { sendIntervention } from "@/lib/interventions";
+import { assignExercise, closeExercise } from "@/lib/exercises";
+import { checkInMood } from "@/lib/mood";
 import { getChatModel, getTitleModel } from "@/lib/ai/models";
 
 // Auth is mocked at the module boundary; everything below it is real
@@ -575,6 +577,117 @@ describe("POST /api/chat", () => {
       expect(linkSpy).toHaveBeenCalledTimes(1);
       expect(grantSpy).not.toHaveBeenCalled();
       expect(instructionSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("mood and homework in the AI's context", () => {
+    // Each test gets its own client id (one-active-link-per-client rule), and
+    // its session is overridden per POST so `userId`'s rate-limit bucket stays
+    // pristine for the final drain test — same discipline as the block above.
+    function mockSession(clientId: string) {
+      vi.mocked(auth.api.getSession).mockResolvedValueOnce({
+        user: { id: clientId },
+      } as Awaited<ReturnType<typeof auth.api.getSession>>);
+    }
+
+    function systemContent(): string {
+      return String(lastChatPrompt().find((m) => m.role === "system")?.content);
+    }
+
+    it("weaves recent mood check-ins into the system prompt when they exist", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Mood-aware chat");
+      await checkInMood(clientId, { score: 2, note: "rough week at work" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      const content = systemContent();
+      expect(content).toContain("Recent mood check-ins");
+      expect(content).toContain("rough week at work");
+    });
+
+    it("omits the mood line entirely when there are no check-ins", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "No mood data");
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      expect(systemContent()).not.toContain("Recent mood check-ins");
+    });
+
+    it("keeps the crisis addendum after the mood line, never before it", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Crisis with mood present");
+      await checkInMood(clientId, { score: 1, note: "very low" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "MOCK_CRISIS I want to hurt myself" }));
+      await res.text();
+
+      const content = systemContent();
+      const moodIndex = content.indexOf("Recent mood check-ins");
+      const crisisIndex = content.indexOf("The latest message shows possible self-harm or suicidal intent");
+      expect(moodIndex).toBeGreaterThan(-1);
+      expect(crisisIndex).toBeGreaterThan(-1);
+      expect(crisisIndex).toBeGreaterThan(moodIndex);
+    });
+
+    it("surfaces active homework in the system prompt but drops closed assignments", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Homework-aware chat");
+      const therapistId = await insertUser("Dr. Homework");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "ACTIVE_HOMEWORK track a tense moment" });
+      const { id: closedId } = await assignExercise(therapistId, clientId, {
+        type: "thought_record",
+        instruction: "CLOSED_HOMEWORK already finished",
+      });
+      await closeExercise(therapistId, closedId);
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      const content = systemContent();
+      expect(content).toContain("The client has active homework");
+      expect(content).toContain("ACTIVE_HOMEWORK track a tense moment");
+      expect(content).not.toContain("CLOSED_HOMEWORK already finished");
+    });
+
+    it("orders the system prompt base < mood < homework < guidance < crisis", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Everything at once");
+      const therapistId = await insertUser("Dr. Everything");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await grantConversation(clientId, id);
+      await createNote(therapistId, clientId, { kind: "ai_instruction", body: "Focus on sleep hygiene." });
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "Notice one worry each night." });
+      await checkInMood(clientId, { score: 2, note: "tired" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I want to kill myself" }));
+      await res.text();
+
+      const content = systemContent();
+      const baseIndex = content.indexOf("You are a warm, attentive emotional-support companion");
+      const moodIndex = content.indexOf("Recent mood check-ins");
+      const homeworkIndex = content.indexOf("The client has active homework");
+      const guidanceIndex = content.indexOf("Guidance from the client's therapist");
+      const crisisIndex = content.indexOf("The latest message shows possible self-harm or suicidal intent");
+
+      for (const index of [baseIndex, moodIndex, homeworkIndex, guidanceIndex, crisisIndex]) {
+        expect(index).toBeGreaterThan(-1);
+      }
+      expect(baseIndex).toBeLessThan(moodIndex);
+      expect(moodIndex).toBeLessThan(homeworkIndex);
+      expect(homeworkIndex).toBeLessThan(guidanceIndex);
+      expect(guidanceIndex).toBeLessThan(crisisIndex);
     });
   });
 

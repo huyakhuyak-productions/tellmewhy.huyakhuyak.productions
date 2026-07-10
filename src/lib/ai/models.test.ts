@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
-import { getChatModel, getClassifierModel, getDigestModel, getTitleModel } from "./models";
+import { getChatModel, getClassifierModel, getDigestModel, getExtractorModel, getTitleModel } from "./models";
+import { thoughtRecordSchema } from "@/lib/exercises";
 import { riskSchema } from "@/test/ai-fixtures";
 
 describe("AI_MOCK production guard", () => {
@@ -61,6 +62,22 @@ describe("mock digest model (AI_MOCK=1 in test setup)", () => {
     expect(object.overview).toBe("A mock digest overview.");
     expect(object.themes).toEqual(["mock theme"]);
     expect(object.anchors).toEqual([]);
+  });
+});
+
+describe("mock extractor model (AI_MOCK=1 in test setup)", () => {
+  it("returns a deterministic thought-record object without network access", async () => {
+    const { object } = await generateObject({
+      model: getExtractorModel(),
+      schema: thoughtRecordSchema,
+      prompt: "extract a thought record",
+    });
+    expect(object).toEqual({
+      situation: "Mock situation",
+      thoughts: "Mock thoughts",
+      emotions: "Mock emotions",
+      behavior: "Mock behavior",
+    });
   });
 });
 
