@@ -7,6 +7,7 @@ import { MessageBubble } from "@/components/chat/message-bubble";
 import type { ReadingMessage } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
 import { CrisisNavigator } from "./crisis-navigator";
+import { DigestPanel } from "./digest-panel";
 
 // The therapist reads a client's shared conversation. Read-only — the same
 // bubbles/passages the client sees — with two deliberate acts layered on: a
@@ -32,18 +33,25 @@ export function ReadingView({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
-  // The crisis navigator: the ordered ids of every crisis-flagged message, the
-  // live DOM nodes to scroll to, and where the reader currently stands. `landed`
-  // gates the very first step — before it, there's nothing behind position 1.
+  // Every message id in render order — the digest's stale-coverage math needs
+  // the full sequence, and the crisis navigator reads its own subset from it.
+  const orderedMessageIds = useMemo(() => messages.map((m) => m.id), [messages]);
+
+  // The crisis navigator: the ordered ids of every crisis-flagged message, plus
+  // where the reader currently stands. `landed` gates the very first step —
+  // before it, there's nothing behind position 1.
   const crisisIds = useMemo(
     () => messages.filter((m) => m.riskLevel === "crisis").map((m) => m.id),
     [messages],
   );
-  const crisisRefs = useRef(new Map<string, HTMLDivElement>());
-  const registerCrisis = useCallback(
-    (id: string) => (el: HTMLDivElement | null) => {
-      if (el) crisisRefs.current.set(id, el);
-      else crisisRefs.current.delete(id);
+
+  // One ref map over ALL messages (not just crisis ones), so both the crisis
+  // navigator and the digest's anchor links can land on any message by id.
+  const messageRefs = useRef(new Map<string, HTMLElement>());
+  const registerMessage = useCallback(
+    (id: string) => (el: HTMLElement | null) => {
+      if (el) messageRefs.current.set(id, el);
+      else messageRefs.current.delete(id);
     },
     [],
   );
@@ -53,22 +61,29 @@ export function ReadingView({
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 
+  // The shared landing: scroll a message to center and give it a gentle amber
+  // flash — the crisis-navigator mechanic, reused verbatim for digest anchors.
+  const landOn = useCallback((id: string) => {
+    const el = messageRefs.current.get(id);
+    if (!el) return;
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    setFlashId(id);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashId(null), 1500);
+  }, []);
+
   const jumpToCrisis = useCallback(
     (next: number) => {
       const id = crisisIds[next];
-      const el = id ? crisisRefs.current.get(id) : null;
-      if (!id || !el) return;
+      if (!id || !messageRefs.current.has(id)) return;
       setActiveCrisis(next);
       setLanded(true);
-      const reduced =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
-      setFlashId(id);
-      clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlashId(null), 1500);
+      landOn(id);
     },
-    [crisisIds],
+    [crisisIds, landOn],
   );
 
   async function markReadTo(messageId: string) {
@@ -124,6 +139,13 @@ export function ReadingView({
 
   return (
     <div className="flex flex-col">
+      {messages.length > 0 ? (
+        <DigestPanel
+          conversationId={conversationId}
+          orderedMessageIds={orderedMessageIds}
+          onJumpToMessage={landOn}
+        />
+      ) : null}
       {crisisIds.length > 0 ? (
         <CrisisNavigator
           index={activeCrisis}
@@ -142,7 +164,11 @@ export function ReadingView({
           messages.map((m) => {
             if (m.sender === "system") {
               return (
-                <p key={m.id} className="text-center text-[12px] italic text-muted-foreground/70">
+                <p
+                  key={m.id}
+                  ref={registerMessage(m.id)}
+                  className={`scroll-mt-24 text-center text-[12px] italic text-muted-foreground/70 ${flashId === m.id ? "animate-crisis-flash rounded-2xl" : ""}`}
+                >
                   {m.text}
                 </p>
               );
@@ -188,13 +214,20 @@ export function ReadingView({
                 {isCrisis ? (
                   <div
                     data-crisis="true"
-                    ref={registerCrisis(m.id)}
+                    ref={registerMessage(m.id)}
                     className={`cp-crisis scroll-mt-24 rounded-2xl rounded-l-md border border-l-[3px] px-4 py-3.5 ${flashId === m.id ? "animate-crisis-flash" : ""}`}
                   >
                     {unit}
                   </div>
                 ) : (
-                  unit
+                  // A plain wrapper carrying the scroll target + flash for
+                  // ordinary messages, so a digest anchor can land here too.
+                  <div
+                    ref={registerMessage(m.id)}
+                    className={`scroll-mt-24 ${flashId === m.id ? "animate-crisis-flash rounded-2xl" : ""}`}
+                  >
+                    {unit}
+                  </div>
                 )}
                 {isMarked ? <ReviewDivider /> : null}
               </Fragment>

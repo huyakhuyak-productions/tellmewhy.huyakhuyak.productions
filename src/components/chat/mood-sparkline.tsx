@@ -9,13 +9,17 @@ const WINDOW_DAYS = 56; // ~8 weeks
 // accent line threads them in date order, and the most recent one carries a
 // soft halo, so the eye lands on where the weeks stand now. When there's
 // nothing yet it keeps the panel's honest placeholder copy rather than drawing
-// an empty axis.
+// an empty axis. `emptyLine` lets the therapist's shared-trend panel speak in
+// the third person ("No check-ins in this window yet.") while the client's own
+// rail keeps its first-person default — the geometry and dots are shared.
 export function MoodSparkline({
   checkins,
   today,
+  emptyLine = "A mood trend will take shape here as you check in over time.",
 }: {
   checkins: { day: string; score: number }[];
   today: string;
+  emptyLine?: string;
 }) {
   const { points, path, count } = buildMoodSparkline(checkins, {
     today,
@@ -28,9 +32,7 @@ export function MoodSparkline({
     return (
       <>
         <div aria-hidden className="mt-3 h-11 rounded-lg border border-dashed border-border/70" />
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
-          A mood trend will take shape here as you check in over time.
-        </p>
+        <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">{emptyLine}</p>
       </>
     );
   }
