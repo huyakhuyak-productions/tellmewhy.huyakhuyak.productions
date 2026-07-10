@@ -6,8 +6,26 @@ import { auditEvents, exerciseEntries, exercises, user } from "@/db/schema";
 import { CryptoError, decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
-import { assignExercise, closeExercise, listExercisesForClient } from "./exercises";
+import {
+  assignExercise,
+  closeExercise,
+  getSharedEntryForTherapist,
+  listAssignmentsForTherapist,
+  listEntriesForClient,
+  listExercisesForClient,
+  saveEntry,
+  shareEntry,
+  type ThoughtRecordPayload,
+  thoughtRecordSchema,
+} from "./exercises";
 import { acceptInvite, createInvite, revokeLink } from "./therapist-links";
+
+const SAMPLE: ThoughtRecordPayload = {
+  situation: "Team standup this morning",
+  thoughts: "Everyone can tell I'm falling behind",
+  emotions: "anxiety, shame",
+  behavior: "stayed silent and avoided eye contact",
+};
 
 async function insertUser(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -187,6 +205,251 @@ describe("exercises — assignment through the therapist link", () => {
       const otherClient = `test-${randomUUID()}`;
 
       expect(await listExercisesForClient(otherClient)).toEqual([]);
+    });
+  });
+});
+
+describe("exercise entries — private until each is shared", () => {
+  describe("thoughtRecordSchema", () => {
+    it("accepts a full valid payload including optional fields", () => {
+      const parsed = thoughtRecordSchema.parse({
+        ...SAMPLE,
+        bodySensations: "tight chest",
+        occurredAt: "2026-07-09T09:00",
+      });
+      expect(parsed.situation).toBe(SAMPLE.situation);
+      expect(parsed.bodySensations).toBe("tight chest");
+    });
+
+    it("rejects a missing required field", () => {
+      expect(() => thoughtRecordSchema.parse({ ...SAMPLE, situation: "" })).toThrow();
+      // A required field entirely absent (thoughts) must also be rejected.
+      expect(() =>
+        thoughtRecordSchema.parse({
+          situation: SAMPLE.situation,
+          emotions: SAMPLE.emotions,
+          behavior: SAMPLE.behavior,
+        }),
+      ).toThrow();
+    });
+
+    it("enforces a max length on each field", () => {
+      expect(() => thoughtRecordSchema.parse({ ...SAMPLE, situation: "x".repeat(2001) })).toThrow();
+    });
+  });
+
+  describe("saveEntry", () => {
+    it("saves a self-guided entry (null exerciseId), unshared, encrypted with the CLIENT's DEK", async () => {
+      const clientId = `test-${randomUUID()}`;
+
+      const { id } = await saveEntry(clientId, { payload: SAMPLE });
+
+      const [row] = await db.select().from(exerciseEntries).where(eq(exerciseEntries.id, id));
+      expect(row.exerciseId).toBeNull();
+      expect(row.sharedAt).toBeNull();
+      expect(row.payloadCiphertext).toMatch(/^v1\./);
+
+      const clientDek = await getOrCreateUserDek(clientId);
+      expect(JSON.parse(decryptText(clientDek, row.payloadCiphertext))).toMatchObject(SAMPLE);
+      // Cross-key proof: another user's DEK must not decrypt it.
+      const strangerDek = await getOrCreateUserDek(`test-${randomUUID()}`);
+      expect(() => decryptText(strangerDek, row.payloadCiphertext)).toThrow(CryptoError);
+    });
+
+    it("saves an entry against the client's own exercise", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+
+      const [row] = await db.select().from(exerciseEntries).where(eq(exerciseEntries.id, id));
+      expect(row.exerciseId).toBe(exercise.id);
+      expect(row.userId).toBe(clientId);
+    });
+
+    it("refuses saving against another client's exercise → NotFoundError", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const stranger = `test-${randomUUID()}`;
+
+      await expect(saveEntry(stranger, { exerciseId: exercise.id, payload: SAMPLE })).rejects.toThrow(NotFoundError);
+      const rows = await db.select().from(exerciseEntries).where(eq(exerciseEntries.userId, stranger));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("refuses an invalid payload", async () => {
+      const clientId = `test-${randomUUID()}`;
+      await expect(saveEntry(clientId, { payload: { ...SAMPLE, situation: "" } })).rejects.toThrow();
+    });
+  });
+
+  describe("shareEntry", () => {
+    it("shares an entry, stamps sharedAt, audits entry_shared (actor = client), and is idempotent", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+
+      await shareEntry(clientId, id);
+      const [afterFirst] = await db.select().from(exerciseEntries).where(eq(exerciseEntries.id, id));
+      expect(afterFirst.sharedAt).not.toBeNull();
+      const firstStamp = afterFirst.sharedAt;
+
+      // Idempotent: a second share neither errors, re-stamps, nor re-audits.
+      await shareEntry(clientId, id);
+      const [afterSecond] = await db.select().from(exerciseEntries).where(eq(exerciseEntries.id, id));
+      expect(afterSecond.sharedAt).toEqual(firstStamp);
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_shared")));
+      expect(events).toHaveLength(1);
+      expect(events[0].actorId).toBe(clientId);
+      expect(events[0].therapistId).toBe(therapistId);
+      expect(JSON.stringify(events)).not.toContain("standup");
+    });
+
+    it("refuses to share a self-guided entry (null exerciseId) → NotFoundError", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await saveEntry(clientId, { payload: SAMPLE });
+
+      await expect(shareEntry(clientId, id)).rejects.toThrow(NotFoundError);
+      const [row] = await db.select().from(exerciseEntries).where(eq(exerciseEntries.id, id));
+      expect(row.sharedAt).toBeNull();
+    });
+
+    it("refuses to share another user's entry → NotFoundError", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      const stranger = `test-${randomUUID()}`;
+
+      await expect(shareEntry(stranger, id)).rejects.toThrow(NotFoundError);
+    });
+
+    it("refuses to share once the link is revoked → NotFoundError", async () => {
+      const { clientId, therapistId, linkId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      await revokeLink(linkId, clientId);
+
+      await expect(shareEntry(clientId, id)).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("listEntriesForClient", () => {
+    it("lists all the client's entries newest first, decrypted, including unshared", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const older = await saveEntry(clientId, { exerciseId: exercise.id, payload: { ...SAMPLE, situation: "older" } });
+      const newer = await saveEntry(clientId, { payload: { ...SAMPLE, situation: "newer self-guided" } });
+      await shareEntry(clientId, older.id);
+
+      const list = await listEntriesForClient(clientId);
+      expect(list.map((e) => e.id)).toEqual([newer.id, older.id]);
+      expect(list.map((e) => e.payload.situation)).toEqual(["newer self-guided", "older"]);
+      // The unshared self-guided entry is present (this is the client's own view).
+      expect(list.find((e) => e.id === newer.id)!.sharedAt).toBeNull();
+      expect(list.find((e) => e.id === older.id)!.sharedAt).not.toBeNull();
+      expect(list.find((e) => e.id === newer.id)!.exerciseId).toBeNull();
+    });
+  });
+
+  describe("listAssignmentsForTherapist", () => {
+    it("counts ALL entries (shared and unshared) and lists sharedEntryIds — never entry content", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const sharedEntry = await saveEntry(clientId, { exerciseId: exercise.id, payload: { ...SAMPLE, situation: "SHARED situation" } });
+      await saveEntry(clientId, { exerciseId: exercise.id, payload: { ...SAMPLE, situation: "PRIVATE situation" } });
+      await shareEntry(clientId, sharedEntry.id);
+
+      const assignments = await listAssignmentsForTherapist(therapistId, clientId);
+      expect(assignments).toHaveLength(1);
+      const a = assignments[0]!;
+      expect(a.id).toBe(exercise.id);
+      expect(a.instruction).toBe("record it");
+      // Engagement counts BOTH entries; only the shared one is listed by id.
+      expect(a.entryCount).toBe(2);
+      expect(a.sharedEntryIds).toEqual([sharedEntry.id]);
+      expect(a.lastEntryAt).not.toBeNull();
+      // No payload content — not the shared one, and certainly not the private one.
+      const serialized = JSON.stringify(assignments);
+      expect(serialized).not.toContain("SHARED situation");
+      expect(serialized).not.toContain("PRIVATE situation");
+      expect(serialized).not.toContain("anxiety, shame");
+    });
+
+    it("requires an active link owned by the caller — foreign therapist → NotFoundError", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "x" });
+      const foreignTherapist = await insertUser("Dr. Foreign");
+
+      await expect(listAssignmentsForTherapist(foreignTherapist, clientId)).rejects.toThrow(NotFoundError);
+    });
+
+    it("refuses once the link is revoked → NotFoundError", async () => {
+      const { clientId, therapistId, linkId } = await linkedPair();
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "x" });
+      await revokeLink(linkId, clientId);
+
+      await expect(listAssignmentsForTherapist(therapistId, clientId)).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("getSharedEntryForTherapist", () => {
+    it("returns a shared entry's payload to the assigning therapist and audits entry_viewed (deduped)", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      await shareEntry(clientId, id);
+
+      const view = await getSharedEntryForTherapist(therapistId, id);
+      expect(view.payload).toMatchObject(SAMPLE);
+      expect(view.createdAt).toBeInstanceOf(Date);
+
+      // A rapid re-view within the window does not flood the audit feed.
+      await getSharedEntryForTherapist(therapistId, id);
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_viewed")));
+      expect(events).toHaveLength(1);
+      expect(events[0].actorId).toBe(therapistId);
+      expect(events[0].therapistId).toBe(therapistId);
+    });
+
+    it("hides an UNSHARED entry (NotFoundError) even though its engagement is still counted", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+
+      // Half one: the content is invisible.
+      await expect(getSharedEntryForTherapist(therapistId, id)).rejects.toThrow(NotFoundError);
+      // Half two: the engagement count still includes it.
+      const [assignment] = await listAssignmentsForTherapist(therapistId, clientId);
+      expect(assignment.entryCount).toBe(1);
+      expect(assignment.sharedEntryIds).toEqual([]);
+    });
+
+    it("refuses a shared entry once the link is revoked → NotFoundError", async () => {
+      const { clientId, therapistId, linkId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      await shareEntry(clientId, id);
+
+      await revokeLink(linkId, clientId);
+
+      await expect(getSharedEntryForTherapist(therapistId, id)).rejects.toThrow(NotFoundError);
+    });
+
+    it("refuses a foreign therapist even for a shared entry → NotFoundError", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      await shareEntry(clientId, id);
+      const foreignTherapist = await insertUser("Dr. Foreign");
+
+      await expect(getSharedEntryForTherapist(foreignTherapist, id)).rejects.toThrow(NotFoundError);
     });
   });
 });
