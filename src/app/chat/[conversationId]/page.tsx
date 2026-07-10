@@ -6,6 +6,8 @@ import { NotFoundError, listConversations, loadMessages } from "@/lib/conversati
 import { listFolders } from "@/lib/folders";
 import { deriveChatStats } from "@/lib/chat-stats";
 import { getGrantStateForClient, listGrantsForClient } from "@/lib/sharing";
+import { listMoodCheckins } from "@/lib/mood";
+import { moodTodayUTC } from "@/lib/mood-sparkline";
 import { getReviewMarkerForClient } from "@/lib/therapist-access";
 import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
 import { listPublicNotesForClient } from "@/lib/therapist-notes";
@@ -36,16 +38,26 @@ export default async function ConversationPage({
     throw error;
   }
 
-  const [conversationList, folderList, activeLink, shared, sharedIds, reviewMarkerRow, publicNotes] =
-    await Promise.all([
-      listConversations(userId),
-      listFolders(userId),
-      getActiveLinkForClient(userId),
-      getGrantStateForClient(userId, conversationId),
-      listGrantsForClient(userId),
-      getReviewMarkerForClient(userId, conversationId),
-      listPublicNotesForClient(userId, conversationId),
-    ]);
+  const [
+    conversationList,
+    folderList,
+    activeLink,
+    shared,
+    sharedIds,
+    reviewMarkerRow,
+    publicNotes,
+    moodCheckins,
+  ] = await Promise.all([
+    listConversations(userId),
+    listFolders(userId),
+    getActiveLinkForClient(userId),
+    getGrantStateForClient(userId, conversationId),
+    listGrantsForClient(userId),
+    getReviewMarkerForClient(userId, conversationId),
+    listPublicNotesForClient(userId, conversationId),
+    // ~8 weeks of the client's own check-ins for the rail's trend sparkline.
+    listMoodCheckins(userId, 56),
+  ]);
 
   // Link state for the (now live) stats-rail panel — invited only matters when
   // there's no active link, matching the one-therapist rule.
@@ -106,6 +118,10 @@ export default async function ConversationPage({
         state: activeLink ? "active" : pending ? "invited" : "none",
         therapistName: activeLink?.therapistName ?? null,
         sharedCount: sharedIds.length,
+      }}
+      mood={{
+        checkins: moodCheckins.map((c) => ({ day: c.day, score: c.score })),
+        today: moodTodayUTC(),
       }}
     />
   );

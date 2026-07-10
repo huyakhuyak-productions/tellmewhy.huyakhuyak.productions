@@ -58,11 +58,14 @@ export function TrustScreen({
   shared,
   audit,
   notes,
+  moodShared,
 }: {
   link: TrustLinkState;
   shared: SharedConversation[];
   audit: TrustAuditRow[];
   notes: TrustNote[];
+  /** Whether the mood trend is currently shared on the active link. */
+  moodShared: boolean;
 }) {
   const router = useRouter();
 
@@ -78,6 +81,9 @@ export function TrustScreen({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [unsharing, setUnsharing] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [moodOn, setMoodOn] = useState(moodShared);
+  const [moodBusy, setMoodBusy] = useState(false);
+  const [moodError, setMoodError] = useState<string | null>(null);
 
   const inviteUrl =
     invitePath && typeof window !== "undefined" ? `${window.location.origin}${invitePath}` : invitePath;
@@ -131,6 +137,32 @@ export function TrustScreen({
       setLinkError("Couldn't do that just now — try again.");
     } finally {
       setBusyLink(false);
+    }
+  }
+
+  async function toggleMoodSharing() {
+    if (moodBusy) return;
+    const next = !moodOn;
+    setMoodError(null);
+    setMoodOn(next); // optimistic
+    setMoodBusy(true);
+    try {
+      const res = await fetch("/api/mood/sharing", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) {
+        setMoodOn(!next); // revert
+        setMoodError("Couldn't change that just now — try again.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setMoodOn(!next); // revert
+      setMoodError("Couldn't change that just now — try again.");
+    } finally {
+      setMoodBusy(false);
     }
   }
 
@@ -298,6 +330,42 @@ export function TrustScreen({
       {/* Zone 2 — the boundary: exactly which conversations are shared. */}
       {link.kind === "active" ? (
         <Zone label="Conversations you're sharing" delay={90}>
+          {/* A separate, quieter opt-in: the mood trend rides its own switch,
+              off until chosen, and carries only scores and dates. */}
+          <div className="flex items-center justify-between gap-4 rounded-xl border bg-card/60 px-4 py-3.5">
+            <div className="min-w-0">
+              <p className="text-[0.9rem] font-medium text-foreground">Share my mood trend</p>
+              <p className="mt-0.5 text-pretty text-[12px] leading-relaxed text-muted-foreground">
+                Scores and dates only — never your notes.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={moodOn}
+              aria-label="Share my mood trend"
+              onClick={toggleMoodSharing}
+              disabled={moodBusy}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${
+                moodOn ? "bg-accent" : "bg-muted"
+              }`}
+            >
+              <span
+                aria-hidden
+                className={`inline-block size-4 rounded-full shadow-sm transition-[transform,background-color] duration-200 motion-reduce:transition-none ${
+                  moodOn
+                    ? "translate-x-[22px] bg-accent-foreground"
+                    : "translate-x-1 bg-muted-foreground"
+                }`}
+              />
+            </button>
+          </div>
+          {moodError ? (
+            <p role="alert" className="font-serif text-[12.5px] italic text-accent">
+              {moodError}
+            </p>
+          ) : null}
+
           {shared.length === 0 ? (
             <p className="text-pretty font-serif text-[0.95rem] italic leading-relaxed text-muted-foreground">
               You&apos;re not sharing any conversations yet. Open any conversation

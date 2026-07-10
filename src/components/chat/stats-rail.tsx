@@ -1,7 +1,12 @@
 import Link from "next/link";
 import type { ChatStats } from "@/lib/chat-stats";
+import { MoodSparkline } from "./mood-sparkline";
 
 export type { ChatStats };
+
+// The mood trend feeding the "How the weeks have felt" panel — computed
+// server-side (listMoodCheckins) so the rail never has to client-fetch it.
+export type MoodTrend = { checkins: { day: string; score: number }[]; today: string };
 
 // Live link + sharing summary for the (formerly placeholder) trusted-person
 // panel. Computed server-side so the rail never has to fetch it.
@@ -90,10 +95,12 @@ function TherapistPanel({ therapist }: { therapist: TherapistRailState }) {
 export function StatsRail({
   stats,
   therapist,
+  mood,
   className = "",
 }: {
   stats: ChatStats;
   therapist: TherapistRailState;
+  mood: MoodTrend;
   className?: string;
 }) {
   const memberSince = stats.memberSince.toLocaleDateString(undefined, {
@@ -122,21 +129,13 @@ export function StatsRail({
       {/* Real now: the trusted-person connection and how much is shared. */}
       <TherapistPanel therapist={therapist} />
 
-      {/* Everything below is honestly a placeholder — labeled, never faked. */}
+      {/* Live now: the mood trend, drawn from the client's own check-ins. */}
       <Panel>
-        <div className="flex items-center">
-          <span className="text-[13px] font-semibold">How the weeks have felt</span>
-          <SoonPill phase="Phase 2" />
-        </div>
-        <div
-          aria-hidden
-          className="mt-3 h-11 rounded-lg border border-dashed border-border/70"
-        />
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
-          A mood trend will take shape here as you check in over time.
-        </p>
+        <div className="text-[13px] font-semibold">How the weeks have felt</div>
+        <MoodSparkline checkins={mood.checkins} today={mood.today} />
       </Panel>
 
+      {/* Below is honestly a placeholder — labeled, never faked. */}
       <Panel>
         <div className="flex items-center">
           <span className="text-[13px] font-semibold">Notes to your future self</span>

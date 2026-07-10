@@ -5,20 +5,28 @@ import { auth } from "@/lib/auth";
 import { listConversations } from "@/lib/conversations";
 import { listFolders } from "@/lib/folders";
 import { listGrantsForClient } from "@/lib/sharing";
+import { listMoodCheckins } from "@/lib/mood";
+import { moodTodayUTC } from "@/lib/mood-sparkline";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
 import { HeroComposer } from "@/components/home/hero-composer";
+import { MoodCheckin } from "@/components/chat/mood-checkin";
 import { FolderChips } from "@/components/home/folder-chips";
 
 export default async function HomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
-  const [conversations, folders, grantIds, activeLink] = await Promise.all([
+  const [conversations, folders, grantIds, activeLink, recentMood] = await Promise.all([
     listConversations(session.user.id),
     listFolders(session.user.id),
     listGrantsForClient(session.user.id),
     getActiveLinkForClient(session.user.id),
+    // Just enough to know today's check-in (if any) so the row opens pre-set.
+    listMoodCheckins(session.user.id, 1),
   ]);
+
+  const today = moodTodayUTC();
+  const todayCheckin = recentMood.find((c) => c.day === today) ?? null;
 
   const folderNames = new Map(folders.map((f) => [f.id, f.name]));
   // The full history, not just a slice — mobile has no rail, so these chips
@@ -36,6 +44,11 @@ export default async function HomePage() {
       <div aria-hidden className="ambient-room" />
 
       <HeroComposer />
+
+      <MoodCheckin
+        initialScore={todayCheckin?.score ?? null}
+        initialNote={todayCheckin?.note ?? null}
+      />
 
       {allConversations.length === 0 ? (
         <p className="text-pretty font-serif text-lg italic text-muted-foreground">

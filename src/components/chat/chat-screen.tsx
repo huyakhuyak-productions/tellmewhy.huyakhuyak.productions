@@ -11,7 +11,7 @@ import { MessageFlag } from "./message-flag";
 import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
-import { StatsRail, type ChatStats, type TherapistRailState } from "./stats-rail";
+import { StatsRail, type ChatStats, type MoodTrend, type TherapistRailState } from "./stats-rail";
 import { PublicNoteCard } from "@/components/public-note-card";
 
 export type InitialMessage = {
@@ -54,6 +54,7 @@ export function ChatScreen({
   reviewMarker,
   publicNotes,
   therapist,
+  mood,
 }: {
   conversationId: string;
   initialMessages: InitialMessage[];
@@ -72,6 +73,8 @@ export function ChatScreen({
   publicNotes: ConversationNote[];
   /** Link + shared-count summary for the stats rail's (now live) panel. */
   therapist: TherapistRailState;
+  /** The client's own recent mood check-ins for the rail's trend sparkline. */
+  mood: MoodTrend;
 }) {
   // Server-loaded messages carry facts useChat's own array can't (real sender,
   // therapist author name, flagged state). Key them by id so the render below
@@ -558,7 +561,7 @@ export function ChatScreen({
         </form>
       </div>
 
-      <StatsRail stats={stats} therapist={therapist} className="hidden lg:flex" />
+      <StatsRail stats={stats} therapist={therapist} mood={mood} className="hidden lg:flex" />
     </div>
   );
 }
