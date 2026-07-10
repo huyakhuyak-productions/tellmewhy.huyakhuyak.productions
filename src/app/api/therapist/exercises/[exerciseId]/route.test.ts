@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise } from "@/lib/exercises";
+import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
@@ -76,5 +77,19 @@ describe("PATCH /api/therapist/exercises/[exerciseId]", () => {
     session = { user: { id: therapistId, role: "therapist" } };
     const res = await PATCH(jsonRequest({ status: "closed" }), ctxFor(exerciseId));
     expect(res.status).toBe(204);
+  });
+
+  // The drained bucket belongs to a fresh per-test therapist id, so no other
+  // test in this file can observe the exhaustion. Draining via the limiter's
+  // own API (rather than 20 route calls) keeps the test fast; see
+  // src/lib/rate-limit.test.ts for the limiter's own consume/refill coverage.
+  it("returns 429 once the per-therapist write bucket is exhausted", async () => {
+    const therapistId = `test-${randomUUID()}`;
+    for (let i = 0; i < 20; i++) therapistWriteRateLimiter.consume(therapistId);
+
+    session = { user: { id: therapistId, role: "therapist" } };
+    const res = await PATCH(jsonRequest({ status: "closed" }), ctxFor(randomUUID()));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "A gentle pace — your work is saved as you go" });
   });
 });

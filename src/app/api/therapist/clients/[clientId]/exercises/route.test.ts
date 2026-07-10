@@ -117,12 +117,15 @@ describe("POST /api/therapist/clients/[clientId]/exercises", () => {
     session = { user: { id: therapistId, role: "therapist" } };
     const res = await POST(jsonRequest({ type: "thought_record", instruction: "Notice one thought" }), ctxFor(clientId));
     expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.id).toEqual(expect.any(String));
+    // Exact shape: an id and nothing else — an extra field appearing here must
+    // be a deliberate, tested contract change, never a silent leak.
+    expect(await res.json()).toEqual({ id: expect.any(String) });
   });
 
-  // Runs last: drains the shared in-memory bucket for `therapistId`, which
-  // would make an earlier test see a 429 if it ran after this one.
+  // The drained bucket belongs to a fresh per-test therapist id, so no other
+  // test in this file can observe the exhaustion. Draining via the limiter's
+  // own API (rather than 20 route calls) keeps the test fast; see
+  // src/lib/rate-limit.test.ts for the limiter's own consume/refill coverage.
   it("returns 429 once the per-therapist write bucket is exhausted", async () => {
     const therapistId = `test-${randomUUID()}`;
     for (let i = 0; i < 20; i++) therapistWriteRateLimiter.consume(therapistId);
@@ -130,5 +133,6 @@ describe("POST /api/therapist/clients/[clientId]/exercises", () => {
     session = { user: { id: therapistId, role: "therapist" } };
     const res = await POST(jsonRequest({ type: "thought_record", instruction: "hi" }), ctxFor(`test-${randomUUID()}`));
     expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "A gentle pace — your work is saved as you go" });
   });
 });
