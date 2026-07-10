@@ -346,16 +346,20 @@ export function TrustScreen({
               aria-label="Share my mood trend"
               onClick={toggleMoodSharing}
               disabled={moodBusy}
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${
+              className={`relative h-6 w-11 shrink-0 rounded-full outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${
                 moodOn ? "bg-accent" : "bg-muted"
               }`}
             >
+              {/* Positioned via `left`, never `translate`: the global
+                  reduced-motion guard strips hover/active translate to hold
+                  elements still, and a knob whose position rode on translate
+                  would snap to the wrong side on hover — misreporting the
+                  sharing state. With `left`, reduced motion only makes the
+                  move instant; the position stays truthful. */}
               <span
                 aria-hidden
-                className={`inline-block size-4 rounded-full shadow-sm transition-[transform,background-color] duration-200 motion-reduce:transition-none ${
-                  moodOn
-                    ? "translate-x-[22px] bg-accent-foreground"
-                    : "translate-x-1 bg-muted-foreground"
+                className={`absolute top-1 size-4 rounded-full shadow-sm transition-[left,background-color] duration-200 motion-reduce:transition-none ${
+                  moodOn ? "left-[22px] bg-accent-foreground" : "left-1 bg-muted-foreground"
                 }`}
               />
             </button>

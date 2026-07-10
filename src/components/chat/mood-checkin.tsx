@@ -30,7 +30,12 @@ export function MoodCheckin({
 }) {
   const router = useRouter();
   const [score, setScore] = useState<number | null>(initialScore);
-  const [note, setNote] = useState(initialNote ?? "");
+  // The note lives in two layers: what the server holds (savedNote — sent
+  // along with every glyph re-tap so the upsert preserves it) and what's
+  // being typed (draft). Only "Save a word" promotes a draft to saved; a
+  // glyph tap must never quietly commit half-typed words.
+  const [savedNote, setSavedNote] = useState(initialNote ?? "");
+  const [draft, setDraft] = useState(initialNote ?? "");
   const [noteOpen, setNoteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
@@ -61,7 +66,9 @@ export function MoodCheckin({
     setError(null);
     setScore(next); // optimistic
     setSaving(true);
-    const ok = await post(next, note);
+    // Send the last SAVED note (the upsert replaces the whole payload, so
+    // omitting it would erase it server-side) — never the live draft.
+    const ok = await post(next, savedNote);
     setSaving(false);
     if (!ok) {
       setScore(previous); // revert
@@ -75,12 +82,13 @@ export function MoodCheckin({
     if (score === null || saving) return;
     setError(null);
     setSaving(true);
-    const ok = await post(score, note);
+    const ok = await post(score, draft);
     setSaving(false);
     if (!ok) {
       setError("Couldn't save that just now — try again.");
       return;
     }
+    setSavedNote(draft); // the draft is now what the server holds
     setNoteSaved(true);
     setTimeout(() => setNoteSaved(false), 1800);
     router.refresh();
@@ -133,8 +141,8 @@ export function MoodCheckin({
         noteOpen ? (
           <div className="animate-message-rise flex w-full flex-col items-stretch gap-2">
             <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
               maxLength={NOTE_MAX}
               rows={2}
               aria-label="A word about how you feel"
@@ -165,7 +173,7 @@ export function MoodCheckin({
             onClick={() => setNoteOpen(true)}
             className="rounded-full px-2 py-1 text-[12px] text-accent outline-none transition-opacity duration-150 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-accent/40"
           >
-            {note.trim() ? "Edit your note" : "add a word about it"}
+            {savedNote.trim() ? "Edit your note" : "add a word about it"}
           </button>
         )
       ) : null}

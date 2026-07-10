@@ -65,7 +65,9 @@ export function MoodSparkline({
         {/* Where the weeks stand now — a quiet halo on the most recent point. */}
         <circle cx={latest.x} cy={latest.y} r={4.5} fill="var(--accent)" opacity={0.18} />
       </svg>
-      <figcaption className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
+      {/* Visual-only: the SVG's aria-label already announces the count, so
+          keep this out of the accessibility tree rather than saying it twice. */}
+      <figcaption aria-hidden className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
         <span className="tabular-nums">{count}</span>{" "}
         {count === 1 ? "check-in" : "check-ins"} over the last 8 weeks.
       </figcaption>
