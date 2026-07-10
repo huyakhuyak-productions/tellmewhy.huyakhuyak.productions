@@ -36,12 +36,21 @@ export function EntryList({ entries }: { entries: PastEntry[] }) {
             <p className="min-w-0 flex-1 text-pretty font-serif text-[0.98rem] leading-snug text-foreground">
               {entry.payload.situation}
             </p>
-            <time
-              suppressHydrationWarning
-              className="shrink-0 pt-px text-[11.5px] tabular-nums text-muted-foreground/80"
-            >
-              {entry.payload.occurredAt?.trim() || relativeTime(entry.createdAt)}
-            </time>
+            {/* occurredAt is the person's own free-text "when" ("after the
+                meeting") — prose, not a datetime, so it renders in a plain
+                span; <time> is reserved for the real timestamp fallback. */}
+            {entry.payload.occurredAt?.trim() ? (
+              <span className="shrink-0 pt-px text-[11.5px] text-muted-foreground/80">
+                {entry.payload.occurredAt.trim()}
+              </span>
+            ) : (
+              <time
+                suppressHydrationWarning
+                className="shrink-0 pt-px text-[11.5px] tabular-nums text-muted-foreground/80"
+              >
+                {relativeTime(entry.createdAt)}
+              </time>
+            )}
           </div>
           {entry.payload.emotions.trim() ? (
             <p className="text-pretty text-[12.5px] leading-relaxed text-muted-foreground">

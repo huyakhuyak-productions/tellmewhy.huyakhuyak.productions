@@ -40,6 +40,17 @@ export function ExercisesScreen({
   // The list ↔ worksheet hand-offs (draft from chat, start-from-home) must run
   // exactly once on mount, never re-fire when props change under a refresh.
   const opened = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // The list ↔ worksheet swap unmounts whatever was focused (the clicked card,
+  // the form's buttons), which would drop focus to <body> and leave a screen
+  // reader silent about the change. The page heading is shared by both views
+  // and re-reads with the new view's title, so landing focus there both anchors
+  // the keyboard user and announces the swap — the same calm move-not-trap
+  // pattern SharePrompt uses. rAF so the focus lands after React commits.
+  function focusHeading() {
+    requestAnimationFrame(() => headingRef.current?.focus());
+  }
 
   // A one-shot, mount-only hand-off: reads client-only sessionStorage and the
   // start-id prop exactly once (the ref latches, guarding against re-runs under
@@ -84,18 +95,22 @@ export function ExercisesScreen({
       initialDraft: EMPTY_DRAFT,
       prefilled: false,
     });
+    focusHeading();
   }
 
   function openSelfGuided() {
     setWorksheet({ exercise: null, initialDraft: EMPTY_DRAFT, prefilled: false });
+    focusHeading();
   }
 
   function closeWorksheet() {
     setWorksheet(null);
+    focusHeading();
   }
 
   function afterSaved() {
     setWorksheet(null);
+    focusHeading();
     // The saved entry lives on the server; re-fetch so it appears in the list.
     router.refresh();
   }
@@ -117,7 +132,14 @@ export function ExercisesScreen({
         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Thought records
         </span>
-        <h1 className="text-balance font-serif text-[1.9rem] font-medium leading-[1.2] tracking-[-0.01em]">
+        {/* tabIndex={-1}: a programmatic focus target only (see focusHeading) —
+            never in the tab order, and no ring for a landing the person didn't
+            steer to by keyboard. */}
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-balance font-serif text-[1.9rem] font-medium leading-[1.2] tracking-[-0.01em] outline-none"
+        >
           {worksheet ? "One moment, one record" : "Untangle a difficult moment"}
         </h1>
         {!worksheet ? (

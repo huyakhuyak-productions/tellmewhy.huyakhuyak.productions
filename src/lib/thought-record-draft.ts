@@ -100,7 +100,9 @@ export function serializeDraft(draft: Partial<ThoughtRecordDraft>): string {
 
 // Which required columns are still blank — drives the form's gentle "add a few
 // words here" prompt and decides whether a save may proceed. Whitespace-only
-// counts as blank, matching the server's min(1) after its own trim.
+// counts as blank: the server schema is min(1) with no trim of its own, but
+// draftToPayload trims before sending, so a spaces-only field would arrive
+// empty and be rejected — this check catches it before the round trip.
 export function missingRequiredFields(draft: Pick<ThoughtRecordDraft, RequiredField>): RequiredField[] {
   return REQUIRED_FIELDS.filter((field) => draft[field].trim().length === 0);
 }

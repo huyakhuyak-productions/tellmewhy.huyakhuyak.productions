@@ -365,16 +365,21 @@ export function ChatScreen({
   }
 
   // Drop a fixed line into the composer (the thought-record walk-through) and
-  // hand focus back with the caret at the end. A programmatic value set bypasses
-  // the textarea's onChange autosize, so re-measure on the next frame.
+  // hand focus back with the caret at the end. Words already in the composer
+  // are never clobbered — the line is appended beneath them instead (the kinder
+  // option: the half-typed thought stays, and the request rides along with it).
+  // A programmatic value set bypasses the textarea's onChange autosize, so
+  // re-measure on the next frame.
   function seedComposer(text: string) {
-    setDraft(text);
+    const existing = draft.trimEnd();
+    const next = existing ? `${existing}\n\n${text}` : text;
+    setDraft(next);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
       resizeComposer(el);
       el.focus();
-      el.setSelectionRange(text.length, text.length);
+      el.setSelectionRange(next.length, next.length);
     });
   }
 
