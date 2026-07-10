@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { user } from "@/db/schema";
 import { createConversation } from "@/lib/conversations";
+import { setMoodSharing } from "@/lib/mood";
 import { grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
@@ -41,7 +42,7 @@ describe("GET /api/trust", () => {
     session = { user: { id: soloId } };
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ link: null, grants: [], audit: [] });
+    expect(await res.json()).toEqual({ link: null, grants: [], audit: [], moodShared: false });
   });
 
   it("returns link state, granted conversation ids, and the audit feed in one payload", async () => {
@@ -62,6 +63,29 @@ describe("GET /api/trust", () => {
     expect(body.audit.map((e: { action: string }) => e.action)).toEqual(
       expect.arrayContaining(["link_invited", "link_accepted", "grant_created"]),
     );
+  });
+
+  it("reports moodShared: false for a client who has not opted in", async () => {
+    const clientId = `test-${randomUUID()}`;
+    session = { user: { id: clientId } };
+    const therapistId = await insertTherapist("Dr. Off");
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+
+    const body = await (await GET()).json();
+    expect(body.moodShared).toBe(false);
+  });
+
+  it("reports moodShared: true once the client opts in", async () => {
+    const clientId = `test-${randomUUID()}`;
+    session = { user: { id: clientId } };
+    const therapistId = await insertTherapist("Dr. On");
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+    await setMoodSharing(clientId, true);
+
+    const body = await (await GET()).json();
+    expect(body.moodShared).toBe(true);
   });
 
   it("returns 401 when there is no session", async () => {

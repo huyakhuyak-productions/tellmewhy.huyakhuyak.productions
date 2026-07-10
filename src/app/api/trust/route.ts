@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { listAuditEventsForClient } from "@/lib/audit";
+import { getMoodSharingState } from "@/lib/mood";
 import { listGrantsForClient } from "@/lib/sharing";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
 
@@ -13,11 +14,12 @@ export async function GET(): Promise<Response> {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
 
-  const [link, grants, audit] = await Promise.all([
+  const [link, grants, audit, moodShared] = await Promise.all([
     getActiveLinkForClient(userId),
     listGrantsForClient(userId),
     listAuditEventsForClient(userId),
+    getMoodSharingState(userId),
   ]);
 
-  return Response.json({ link, grants, audit });
+  return Response.json({ link, grants, audit, moodShared });
 }

@@ -76,3 +76,15 @@ export const inviteCreateRateLimiter = new RateLimiter({ capacity: 5, refillWind
 
 // Therapist interventions and notes reach the client's chat directly; keyed by therapistId.
 export const therapistWriteRateLimiter = new RateLimiter({ capacity: 20, refillWindowMs: 5 * 60 * 1000 });
+
+// Mood check-ins, keyed by the client's userId. A repeat check-in on the same
+// day just overwrites (see checkInMood), so this bucket exists to blunt a
+// runaway client or scripted loop, not to cap legitimate use — hence a
+// generous ceiling on its own namespace, isolated from the other limiters.
+export const moodRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
+
+// Thought-record entry saves, keyed by the client's userId. Each save writes a
+// new encrypted row, so unlike mood these accumulate — its own small bucket
+// stops a runaway client from flooding entries, kept apart from moodRateLimiter
+// so draining one never throttles the other.
+export const entryRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
