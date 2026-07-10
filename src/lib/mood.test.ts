@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { auditEvents, moodCheckins, therapistLinks, user } from "@/db/schema";
 import { CryptoError, decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 import {
   buildMoodContextLine,
   checkInMood,
@@ -90,13 +90,13 @@ describe("mood — client-owned check-ins, shared on the client's terms", () => 
     });
 
     it.each([0, 6, 2.5])("rejects a score of %s, writing nothing", async (score) => {
-      await expect(checkInMood(userId, { score }, "2026-01-13")).rejects.toThrow();
+      await expect(checkInMood(userId, { score }, "2026-01-13")).rejects.toThrow(ValidationError);
       const rows = await db.select().from(moodCheckins).where(eq(moodCheckins.userId, userId));
       expect(rows).toHaveLength(0);
     });
 
     it("rejects a note longer than 500 characters, writing nothing", async () => {
-      await expect(checkInMood(userId, { score: 3, note: "x".repeat(501) }, "2026-01-14")).rejects.toThrow();
+      await expect(checkInMood(userId, { score: 3, note: "x".repeat(501) }, "2026-01-14")).rejects.toThrow(ValidationError);
       const rows = await db.select().from(moodCheckins).where(eq(moodCheckins.userId, userId));
       expect(rows).toHaveLength(0);
     });

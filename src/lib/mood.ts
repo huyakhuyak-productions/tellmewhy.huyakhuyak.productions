@@ -10,7 +10,7 @@ import { moodCheckins, therapistLinks } from "@/db/schema";
 import { recordAuditDeduped } from "./audit";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { NotFoundError, ValidationError } from "./errors";
 import { getActiveLinkForClient, getActiveLinksForTherapist } from "./therapist-links";
 
 const MIN_SCORE = 1;
@@ -41,11 +41,13 @@ export async function checkInMood(
   input: { score: number; note?: string },
   day: string = todayString(),
 ): Promise<void> {
+  // ValidationError, not plain Error: these static messages are the only ones
+  // the API route may echo into a 400 body (see errors.ts).
   if (!Number.isInteger(input.score) || input.score < MIN_SCORE || input.score > MAX_SCORE) {
-    throw new Error("Mood score must be a whole number from 1 to 5");
+    throw new ValidationError("Mood score must be a whole number from 1 to 5");
   }
   if (input.note !== undefined && input.note.length > MAX_NOTE_LENGTH) {
-    throw new Error(`Mood note must be ${MAX_NOTE_LENGTH} characters or fewer`);
+    throw new ValidationError(`Mood note must be ${MAX_NOTE_LENGTH} characters or fewer`);
   }
 
   const dek = await getOrCreateUserDek(userId);
