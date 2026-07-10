@@ -279,6 +279,162 @@ test("the reading view frames crisis messages and offers a crisis navigator", as
   }
 });
 
+// The Phase 3 enrichments end-to-end across the two sides: a therapist assigns
+// a thought record, the client completes and shares it, the therapist reads the
+// engagement and the entry, opens the shared conversation for its AI digest, and
+// the client shares (then unshares) their mood trend. The adversarial tail then
+// proves a link revoke tears down all three new surfaces at once. Fully
+// deterministic under AI_MOCK (fixed digest overview/theme, no anchors).
+test("the enrichment journey: assign, complete, share, read, digest, and mood trend", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+
+  const clientCtx = await browser.newContext();
+  const therapistCtx = await browser.newContext();
+  const client = await clientCtx.newPage();
+  const therapist = await therapistCtx.newPage();
+
+  try {
+    // --- Link a client and therapist. ---
+    await signUp(client, "Mia Client");
+    const invitePath = await createInvitePath(client);
+    await followInviteAndSignUp(therapist, invitePath, "Ken Therapist");
+
+    // --- The client starts and shares a conversation (the digest reads it). ---
+    await client.goto("/chat");
+    await client.getByLabel("Start a conversation").fill("I froze in the team meeting again");
+    await client.keyboard.press("Enter");
+    await expect(client).toHaveURL(/\/chat\/.+/);
+    await expect(client.getByText("mock reply")).toBeVisible();
+    const shareLanded = client.waitForResponse(
+      (res) => res.request().method() === "POST" && res.url().includes("/share"),
+    );
+    await client.getByRole("button", { name: /^Share with/ }).click();
+    await shareLanded;
+
+    // --- The therapist opens the client and assigns a thought record. ---
+    await therapist.goto("/therapist");
+    await therapist.getByRole("link", { name: "Open Mia Client" }).click();
+    await expect(therapist).toHaveURL(/\/therapist\/clients\/.+/);
+    const clientDeskUrl = therapist.url();
+
+    const instruction = "Walk back through the moment you froze, a step at a time.";
+    const assignLanded = therapist.waitForResponse(
+      (res) => res.request().method() === "POST" && res.url().includes("/exercises"),
+    );
+    await therapist.getByLabel("Thought record instruction").fill(instruction);
+    await therapist.getByRole("button", { name: "Assign thought record" }).click();
+    await assignLanded;
+    // The fresh assignment shows with an honest, content-free engagement line.
+    await expect(therapist.getByText(instruction)).toBeVisible();
+    await expect(therapist.getByText("No entries yet")).toBeVisible();
+
+    // --- The client sees the assignment and completes its worksheet. ---
+    await client.goto("/exercises");
+    await client.getByRole("button", { name: `Open assignment: ${instruction}` }).click();
+    await expect(client.getByRole("form", { name: "Thought record" })).toBeVisible();
+    await client.getByLabel("The situation").fill("The room went quiet and everyone looked at me");
+    await client.getByLabel("Your thoughts").fill("I have nothing worth saying");
+    await client.getByLabel("What you felt").fill("panic, shame");
+    await client.getByLabel("What you did").fill("looked at my notes and said nothing");
+    const entrySaved = client.waitForResponse(
+      (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/entries",
+    );
+    await client.getByRole("button", { name: "Save this record" }).click();
+    await entrySaved;
+
+    // --- The one non-coercive share prompt follows; the client shares it. ---
+    const entryShared = client.waitForResponse(
+      (res) => res.request().method() === "POST" && /\/api\/entries\/.+\/share/.test(res.url()),
+    );
+    await client.getByRole("button", { name: "Share this entry" }).click();
+    await entryShared;
+
+    // --- The therapist now sees engagement AND can read the shared entry. ---
+    await therapist.goto(clientDeskUrl);
+    await expect(therapist.getByText("1 entry")).toBeVisible();
+    await therapist.getByRole("button", { name: "Read shared record" }).click();
+    await expect(
+      therapist.getByText("The room went quiet and everyone looked at me"),
+    ).toBeVisible();
+
+    // --- The therapist opens the shared conversation; the AI digest renders. ---
+    await therapist.getByRole("link", { name: /^Read /}).click();
+    await expect(therapist).toHaveURL(/\/therapist\/conversations\/.+/);
+    const readingUrl = therapist.url();
+    const digest = therapist.locator('section[aria-label="Session digest"]');
+    // The panel fetches on mount; the disclosure button is disabled until the
+    // digest lands, so waiting for it to enable is the "ready" signal.
+    const digestToggle = digest.getByRole("button").first();
+    await expect(digestToggle).toBeEnabled();
+    await expect(digest.getByText("Session digest")).toBeVisible();
+    await digestToggle.click();
+    // Mock content: the overview prose and the single theme chip. Anchors are []
+    // in the mock, so there is deliberately nothing to jump to.
+    await expect(digest.getByText("A mock digest overview.")).toBeVisible();
+    await expect(digest.getByText("mock theme")).toBeVisible();
+    await expect(digest.getByText("Jump to", { exact: true })).toHaveCount(0);
+
+    // --- The client checks in a mood, then shares the trend. ---
+    await client.goto("/chat");
+    const moodSaved = client.waitForResponse(
+      (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/mood",
+    );
+    await client.getByRole("button", { name: "Good — 4 of 5" }).click();
+    await moodSaved;
+
+    await client.goto("/trust");
+    const moodShareOn = client.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" && new URL(res.url()).pathname === "/api/mood/sharing",
+    );
+    await client.getByRole("switch", { name: "Share my mood trend" }).click();
+    await moodShareOn;
+
+    // --- The therapist's client view now shows the shared trend and its dot. ---
+    await therapist.goto(clientDeskUrl);
+    const moodPanel = therapist.locator('section[aria-labelledby="mood-heading"]');
+    await expect(moodPanel).toBeVisible();
+    await expect(moodPanel.getByText("Mia Client")).toBeVisible();
+    await expect(moodPanel.getByRole("img", { name: /Mood over the last 8 weeks/ })).toBeVisible();
+
+    // --- Toggling it off makes the panel vanish — indistinguishable from no data. ---
+    await client.goto("/trust");
+    const moodShareOff = client.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" && new URL(res.url()).pathname === "/api/mood/sharing",
+    );
+    await client.getByRole("switch", { name: "Share my mood trend" }).click();
+    await moodShareOff;
+    await therapist.goto(clientDeskUrl);
+    await expect(therapist.locator('section[aria-labelledby="mood-heading"]')).toHaveCount(0);
+
+    // --- Adversarial: revoking the link tears down all three new surfaces. ---
+    await client.goto("/trust");
+    await client.getByRole("button", { name: "End connection" }).click();
+    const linkRevoked = client.waitForResponse(
+      (res) => res.request().method() === "DELETE" && res.url().includes("/api/links/"),
+    );
+    await client.getByRole("button", { name: "Yes, end it" }).click();
+    await linkRevoked;
+
+    // The digest request 404s — no grant survives the revoke.
+    const conversationId = readingUrl.split("/").pop();
+    const digestAfter = await therapist.request.get(
+      `/api/therapist/conversations/${conversationId}/digest`,
+    );
+    expect(digestAfter.status()).toBe(404);
+
+    // And the client desk itself is gone: no mood or exercise panels remain.
+    const deskAfter = await therapist.goto(clientDeskUrl);
+    expect(deskAfter?.status()).toBe(404);
+  } finally {
+    await clientCtx.close();
+    await therapistCtx.close();
+  }
+});
+
 // Every path a hostile or merely mistaken party might try, refused the same
 // calm way the rest of the therapist layer refuses: 404 or an unremarkable
 // error, never a hint at what's actually being protected.

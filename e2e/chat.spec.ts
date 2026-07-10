@@ -150,6 +150,32 @@ test("the hero's rate-limited create shows the server error and allows recovery"
   await expect(page.getByText("mock reply")).toBeVisible();
 });
 
+test("a self-guided thought record is saved and listed under records", async ({ page }) => {
+  await signUp(page);
+
+  await page.goto("/exercises");
+  await page.getByRole("button", { name: "Start a thought record" }).click();
+
+  // The worksheet opens in place; fill the four required reflections.
+  await expect(page.getByRole("form", { name: "Thought record" })).toBeVisible();
+  await page.getByLabel("The situation").fill("A long silence after I spoke up in the meeting");
+  await page.getByLabel("Your thoughts").fill("They think I'm not up to this");
+  await page.getByLabel("What you felt").fill("anxious and small");
+  await page.getByLabel("What you did").fill("stayed quiet the rest of the call");
+
+  const saved = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/entries",
+  );
+  await page.getByRole("button", { name: "Save this record" }).click();
+  await saved;
+
+  // Self-guided under no assignment: no share prompt — the save simply returns
+  // to the list, where the new record waits under "Your records", led by its
+  // situation.
+  await expect(page.getByRole("heading", { name: "Untangle a difficult moment" })).toBeVisible();
+  await expect(page.getByText("A long silence after I spoke up in the meeting")).toBeVisible();
+});
+
 test("rename a conversation from the home card menu", async ({ page }) => {
   await signUp(page);
 

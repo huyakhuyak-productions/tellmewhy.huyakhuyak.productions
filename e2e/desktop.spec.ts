@@ -11,6 +11,34 @@ async function signUp(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/chat/);
 }
 
+test("a mood check-in lights up the rail sparkline", async ({ page }) => {
+  await signUp(page);
+
+  // The check-in row rides near the hero on both viewports; tap "Good".
+  const good = page.getByRole("button", { name: "Good — 4 of 5" });
+  const saved = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/mood",
+  );
+  await good.click();
+  await saved;
+  // Optimistic then confirmed: the tapped glyph reads pressed and the live
+  // region says today's check-in landed.
+  await expect(good).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Checked in — change it any time.")).toBeVisible();
+
+  // The sparkline lives on the desktop rail inside a conversation — start one
+  // from the hero, and the freshly saved check-in draws its first point of light.
+  await page.getByLabel("Start a conversation").fill("A quiet evening in");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+
+  const sparkline = page.getByRole("img", { name: /Mood over the last 8 weeks/ });
+  await expect(sparkline).toBeVisible();
+  // One check-in now, and a real dot rather than the empty dashed axis.
+  await expect(sparkline).toHaveAttribute("aria-label", /1 check-in/);
+  await expect(sparkline.locator("circle")).not.toHaveCount(0);
+});
+
 test("hero starts a conversation and the reply streams in the three-zone frame", async ({
   page,
 }) => {
