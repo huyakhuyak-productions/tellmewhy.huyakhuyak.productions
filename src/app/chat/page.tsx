@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { listConversations } from "@/lib/conversations";
+import { listExercisesForClient } from "@/lib/exercises";
 import { listFolders } from "@/lib/folders";
 import { listGrantsForClient } from "@/lib/sharing";
 import { listMoodCheckins } from "@/lib/mood";
@@ -10,23 +11,30 @@ import { moodTodayUTC } from "@/lib/mood-sparkline";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
 import { HeroComposer } from "@/components/home/hero-composer";
 import { MoodCheckin } from "@/components/chat/mood-checkin";
+import { AssignmentCards } from "@/components/home/assignment-cards";
 import { FolderChips } from "@/components/home/folder-chips";
 
 export default async function HomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
-  const [conversations, folders, grantIds, activeLink, recentMood] = await Promise.all([
+  const [conversations, folders, grantIds, activeLink, recentMood, exercises] = await Promise.all([
     listConversations(session.user.id),
     listFolders(session.user.id),
     listGrantsForClient(session.user.id),
     getActiveLinkForClient(session.user.id),
     // Just enough to know today's check-in (if any) so the row opens pre-set.
     listMoodCheckins(session.user.id, 1),
+    listExercisesForClient(session.user.id),
   ]);
 
   const today = moodTodayUTC();
   const todayCheckin = recentMood.find((c) => c.day === today) ?? null;
+
+  // Active assignments only — the actionable homework waiting on the person.
+  const assignments = exercises
+    .filter((e) => e.status === "active")
+    .map((e) => ({ id: e.id, instruction: e.instruction, therapistName: e.therapistName }));
 
   const folderNames = new Map(folders.map((f) => [f.id, f.name]));
   // The full history, not just a slice — mobile has no rail, so these chips
@@ -50,6 +58,8 @@ export default async function HomePage() {
         initialNote={todayCheckin?.note ?? null}
       />
 
+      {assignments.length > 0 ? <AssignmentCards assignments={assignments} /> : null}
+
       {allConversations.length === 0 ? (
         <p className="text-pretty font-serif text-lg italic text-muted-foreground">
           This space is yours. Start whenever you&apos;re ready.
@@ -62,6 +72,17 @@ export default async function HomePage() {
           hasActiveLink={activeLink !== null}
         />
       )}
+
+      {/* Always reachable, assignment or not — the standalone thought record. */}
+      <Link
+        href="/exercises"
+        className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3 12.5V4a1 1 0 0 1 1-1h6.5M10.5 3l2.5 2.5M13 5.5V12a1 1 0 0 1-1 1H5.5M4 12l7.5-7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Thought records
+      </Link>
 
       {/* A calm, single way through to sharing — home itself stays quiet. */}
       <Link

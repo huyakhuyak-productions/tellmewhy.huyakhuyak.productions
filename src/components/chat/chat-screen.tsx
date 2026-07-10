@@ -12,6 +12,7 @@ import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
 import { StatsRail, type ChatStats, type MoodTrend, type TherapistRailState } from "./stats-rail";
+import { ThoughtRecordAffordance } from "./thought-record-affordance";
 import { PublicNoteCard } from "@/components/public-note-card";
 
 export type InitialMessage = {
@@ -363,6 +364,20 @@ export function ChatScreen({
     submit();
   }
 
+  // Drop a fixed line into the composer (the thought-record walk-through) and
+  // hand focus back with the caret at the end. A programmatic value set bypasses
+  // the textarea's onChange autosize, so re-measure on the next frame.
+  function seedComposer(text: string) {
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      resizeComposer(el);
+      el.focus();
+      el.setSelectionRange(text.length, text.length);
+    });
+  }
+
   const waiting = status === "submitted";
 
   return (
@@ -523,6 +538,11 @@ export function ChatScreen({
               )}
             </div>
           )}
+          <ThoughtRecordAffordance
+            conversationId={conversationId}
+            canExtract={messages.length >= 2}
+            onSeed={seedComposer}
+          />
           <div className="mx-auto flex w-full max-w-[760px] items-end gap-2">
             <textarea
               ref={textareaRef}
