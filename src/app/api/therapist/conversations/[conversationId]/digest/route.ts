@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getOrRefreshDigest } from "@/lib/digests";
 import { NotFoundError } from "@/lib/errors";
+import { digestReadRateLimiter } from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
 import { requireTherapist } from "../../../_lib/require-therapist";
 
@@ -17,6 +18,13 @@ type Ctx = { params: Promise<{ conversationId: string }> };
 export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
   const authResult = await requireTherapist();
   if (!authResult.ok) return authResult.response;
+
+  // A generation can ride on any miss, so pace the endpoint per therapist —
+  // generous for reading, protective against hammering. Same calm 429 copy as
+  // the rest of the layer.
+  if (!digestReadRateLimiter.consume(authResult.therapistId)) {
+    return Response.json({ error: "A gentle pace — the digest is a moment away" }, { status: 429 });
+  }
 
   const params = paramsSchema.safeParse(await ctx.params);
   if (!params.success) return Response.json({ error: "Invalid input" }, { status: 400 });

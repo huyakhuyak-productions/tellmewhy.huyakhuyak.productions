@@ -88,3 +88,10 @@ export const moodRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5
 // stops a runaway client from flooding entries, kept apart from moodRateLimiter
 // so draining one never throttles the other.
 export const entryRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
+
+// Session-digest reads, keyed by the therapistId. Reading a client's digest is
+// cheap and a therapist may reopen a desk often, so the ceiling is generous —
+// this only blunts a script hammering the endpoint (each miss can trigger an AI
+// regeneration), never normal review. Its own namespace, isolated from the
+// therapist-write bucket so reading never eats into interventions or notes.
+export const digestReadRateLimiter = new RateLimiter({ capacity: 30, refillWindowMs: 5 * 60 * 1000 });

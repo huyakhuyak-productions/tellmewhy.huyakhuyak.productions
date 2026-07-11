@@ -8,7 +8,7 @@
 // their therapist), never the therapist's. Failures past the gate are
 // swallowed to a stale/null result — never rethrown — and logged id-only:
 // never message plaintext, never digest content.
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { db } from "@/db";
@@ -59,22 +59,27 @@ export async function getOrRefreshDigest(
   // THE GATE — first line, before touching any digest or message data.
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
 
-  const all = await db
-    .select({ id: messages.id, sender: messages.sender, ciphertext: messages.ciphertext })
+  // Staleness and anchor-validity need only ids: fetch id + createdAt for the
+  // whole conversation, but NO ciphertext. On a cache hit this is all we ever
+  // read of the messages — the ciphertext is fetched later, only when we
+  // actually regenerate, and only for the windowed slice we summarize.
+  const idRows = await db
+    .select({ id: messages.id, createdAt: messages.createdAt })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt), asc(messages.id));
 
   // Nothing to digest: never create a row for an empty conversation.
-  if (all.length === 0) return null;
+  if (idRows.length === 0) return null;
 
-  const newestMessageId = all[all.length - 1].id;
-  const validMessageIds = new Set(all.map((m) => m.id));
+  const newestMessageId = idRows[idRows.length - 1].id;
+  const validMessageIds = new Set(idRows.map((m) => m.id));
 
   const [existing] = await db.select().from(digests).where(eq(digests.conversationId, conversationId));
   const dek = await getOrCreateUserDek(clientId);
 
   // Cached and current: the stored digest already covers the newest message.
+  // Returned WITHOUT ever fetching a single message ciphertext.
   if (existing && existing.coversUpToMessageId === newestMessageId) {
     const cached = tryDecryptBody(dek, existing.bodyCiphertext, conversationId);
     if (cached) {
@@ -87,27 +92,42 @@ export async function getOrRefreshDigest(
   // messages after the ones it already covered, seeding the model with the
   // prior body. Otherwise summarize from the start.
   const priorBody = existing ? tryDecryptBody(dek, existing.bodyCiphertext, conversationId) : null;
-  let toDigest = all;
+  let toDigestIds = idRows;
   if (existing) {
-    const coveredIdx = all.findIndex((m) => m.id === existing.coversUpToMessageId);
-    if (coveredIdx >= 0) toDigest = all.slice(coveredIdx + 1);
+    const coveredIdx = idRows.findIndex((m) => m.id === existing.coversUpToMessageId);
+    if (coveredIdx >= 0) toDigestIds = idRows.slice(coveredIdx + 1);
   }
   // The covered message was the newest (a corrupt-cache fall-through) or was
   // deleted — nothing "after" it. Re-summarize the whole history instead of
   // sending an empty transcript.
-  if (toDigest.length === 0) toDigest = all;
+  if (toDigestIds.length === 0) toDigestIds = idRows;
 
-  const windowed = toDigest.slice(-TRANSCRIPT_WINDOW);
-  const transcript = windowed
-    .flatMap((m) => {
+  const windowedIds = toDigestIds.slice(-TRANSCRIPT_WINDOW).map((m) => m.id);
+
+  // Ciphertext fetched ONLY now, ONLY for the windowed messages we will actually
+  // summarize. inArray gives no order guarantee, so re-order via a lookup by the
+  // windowedIds sequence (already chronological from idRows).
+  const bodyRows = await db
+    .select({ id: messages.id, sender: messages.sender, ciphertext: messages.ciphertext })
+    .from(messages)
+    .where(inArray(messages.id, windowedIds));
+  const bodyById = new Map(bodyRows.map((r) => [r.id, r]));
+
+  const transcript = windowedIds
+    .flatMap((id) => {
+      const row = bodyById.get(id);
+      // Deleted between the ids read and this fetch — nothing to include.
+      if (!row) return [];
       // Corrupt-row isolation, same as loadMessages: one undecryptable message
       // never aborts the digest; its line is simply omitted (never a leak).
       try {
-        const text = decryptText(dek, m.ciphertext);
+        const text = decryptText(dek, row.ciphertext);
         const clamped = text.length > MESSAGE_CLAMP ? text.slice(0, MESSAGE_CLAMP) : text;
-        return [`[message ${m.id}] ${m.sender}: ${clamped}`];
+        return [`[message ${row.id}] ${row.sender}: ${clamped}`];
       } catch (error) {
-        console.error(`Skipping undecryptable message ${m.id} in digest for conversation ${conversationId}`, error);
+        // Ids + error name/message only — never the message plaintext.
+        const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
+        console.error(`Skipping undecryptable message ${id} in digest for conversation ${conversationId} (${cause})`);
         return [];
       }
     })
