@@ -263,13 +263,17 @@ describe("digests — get-or-refresh behind the gate", () => {
   describe("happy path", () => {
     it("generates a fresh digest covering the newest message", async () => {
       const convId = await grantedConversation("Fresh");
-      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "one" });
+      const first = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "one" });
       const newest = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "two" });
 
       const digest = await getOrRefreshDigest(therapistId, convId);
       expect(digest).not.toBeNull();
       expect(digest!.overview).toBe("A mock digest overview.");
       expect(digest!.themes).toEqual(["mock theme"]);
+      // The AI_MOCK digest echoes the first transcript message id as an
+      // anchor; being a real message of this conversation, it passes the
+      // hallucination filter and reaches the therapist intact.
+      expect(digest!.anchors).toEqual([{ messageId: first.id, label: "A mock anchor", kind: "moment" }]);
       expect(digest!.coversUpToMessageId).toBe(newest.id);
       expect(digest!.stale).toBe(false);
     });

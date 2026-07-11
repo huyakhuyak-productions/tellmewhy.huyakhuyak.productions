@@ -169,10 +169,11 @@ test("a self-guided thought record is saved and listed under records", async ({ 
   await page.getByRole("button", { name: "Save this record" }).click();
   await saved;
 
-  // Self-guided under no assignment: no share prompt — the save simply returns
-  // to the list, where the new record waits under "Your records", led by its
-  // situation.
+  // Self-guided under no assignment: the save returns straight to the list —
+  // the share prompt must never appear for a record with no assignment.
   await expect(page.getByRole("heading", { name: "Untangle a difficult moment" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Share this entry" })).toHaveCount(0);
+  // The new record waits under "Your records", led by its situation.
   await expect(page.getByText("A long silence after I spoke up in the meeting")).toBeVisible();
 });
 

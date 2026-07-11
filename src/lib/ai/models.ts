@@ -91,16 +91,35 @@ export function getTitleModel(): LanguageModel {
 // Deterministic digest object for offline tests. `generateObject` drives the
 // model through `doGenerate` and parses the single text part as JSON, so the
 // mock returns the whole digest body as one stringified content part.
-const MOCK_DIGEST_JSON = JSON.stringify({ overview: "A mock digest overview.", themes: ["mock theme"], anchors: [] });
+//
+// Anchors: the digest transcript reaches the model as "[message <uuid>] …"
+// lines (see digests.ts), and the domain drops any anchor whose messageId
+// doesn't belong to the conversation — a static fake id would never survive to
+// the therapist. Echoing the FIRST marker id from the prompt keeps the mock
+// deterministic AND produces an anchor the hallucination filter accepts, so
+// e2e can exercise the anchor-jump landing offline. A prompt with no marker
+// (unit tests calling the model directly) gets no anchors, as before.
+const MESSAGE_MARKER = /\[message ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/i;
 
 function mockDigestModel(): LanguageModel {
   return new MockLanguageModelV3({
-    doGenerate: async () => ({
-      finishReason: MOCK_FINISH_REASON,
-      usage: MOCK_USAGE,
-      content: [{ type: "text", text: MOCK_DIGEST_JSON }],
-      warnings: [],
-    }),
+    doGenerate: async ({ prompt }) => {
+      const marker = JSON.stringify(prompt).match(MESSAGE_MARKER);
+      const anchors = marker
+        ? [{ messageId: marker[1], label: "A mock anchor", kind: "moment" }]
+        : [];
+      return {
+        finishReason: MOCK_FINISH_REASON,
+        usage: MOCK_USAGE,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ overview: "A mock digest overview.", themes: ["mock theme"], anchors }),
+          },
+        ],
+        warnings: [],
+      };
+    },
   });
 }
 

@@ -49,19 +49,38 @@ describe("mock classifier model (AI_MOCK=1 in test setup)", () => {
 });
 
 describe("mock digest model (AI_MOCK=1 in test setup)", () => {
+  const digestSchema = z.object({
+    overview: z.string(),
+    themes: z.array(z.string()),
+    anchors: z.array(z.object({ messageId: z.string(), label: z.string(), kind: z.enum(["moment", "risk"]) })),
+  });
+
   it("returns a deterministic digest object without network access", async () => {
     const { object } = await generateObject({
       model: getDigestModel(),
-      schema: z.object({
-        overview: z.string(),
-        themes: z.array(z.string()),
-        anchors: z.array(z.object({ messageId: z.string(), label: z.string(), kind: z.enum(["moment", "risk"]) })),
-      }),
+      schema: digestSchema,
       prompt: "summarize this",
     });
     expect(object.overview).toBe("A mock digest overview.");
     expect(object.themes).toEqual(["mock theme"]);
+    // No "[message <uuid>]" transcript marker in the prompt → no anchors.
     expect(object.anchors).toEqual([]);
+  });
+
+  it("echoes the first transcript message id back as a moment anchor", async () => {
+    // The echoed id is real (it came from the transcript), so — unlike a
+    // fabricated one — it survives the domain's hallucination filter, and an
+    // offline e2e can click the anchor and land on the message.
+    const first = "11111111-2222-3333-4444-555555555555";
+    const { object } = await generateObject({
+      model: getDigestModel(),
+      schema: digestSchema,
+      prompt: [
+        `[message ${first}] client: I froze in the meeting`,
+        "[message 99999999-8888-7777-6666-555555555555] assistant: a reply",
+      ].join("\n"),
+    });
+    expect(object.anchors).toEqual([{ messageId: first, label: "A mock anchor", kind: "moment" }]);
   });
 });
 

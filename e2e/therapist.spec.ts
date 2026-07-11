@@ -308,7 +308,9 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     await expect(client).toHaveURL(/\/chat\/.+/);
     await expect(client.getByText("mock reply")).toBeVisible();
     const shareLanded = client.waitForResponse(
-      (res) => res.request().method() === "POST" && res.url().includes("/share"),
+      (res) =>
+        res.request().method() === "POST" &&
+        /^\/api\/conversations\/[^/]+\/share$/.test(new URL(res.url()).pathname),
     );
     await client.getByRole("button", { name: /^Share with/ }).click();
     await shareLanded;
@@ -346,7 +348,9 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
 
     // --- The one non-coercive share prompt follows; the client shares it. ---
     const entryShared = client.waitForResponse(
-      (res) => res.request().method() === "POST" && /\/api\/entries\/.+\/share/.test(res.url()),
+      (res) =>
+        res.request().method() === "POST" &&
+        /^\/api\/entries\/[^/]+\/share$/.test(new URL(res.url()).pathname),
     );
     await client.getByRole("button", { name: "Share this entry" }).click();
     await entryShared;
@@ -370,11 +374,17 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     await expect(digestToggle).toBeEnabled();
     await expect(digest.getByText("Session digest")).toBeVisible();
     await digestToggle.click();
-    // Mock content: the overview prose and the single theme chip. Anchors are []
-    // in the mock, so there is deliberately nothing to jump to.
+    // Mock content: the overview prose, the single theme chip, and one anchor —
+    // the mock echoes the first transcript message id, which survives the
+    // domain's hallucination filter because it's a real message of this
+    // conversation.
     await expect(digest.getByText("A mock digest overview.")).toBeVisible();
     await expect(digest.getByText("mock theme")).toBeVisible();
-    await expect(digest.getByText("Jump to", { exact: true })).toHaveCount(0);
+
+    // Clicking the anchor lands on that first message — the same scroll-into-
+    // view landing the crisis navigator uses (reading-view's shared landOn).
+    await digest.getByRole("button", { name: "Jump to a moment: A mock anchor" }).click();
+    await expect(therapist.getByText("I froze in the team meeting again")).toBeInViewport();
 
     // --- The client checks in a mood, then shares the trend. ---
     await client.goto("/chat");
