@@ -122,10 +122,13 @@ async function handlePost(req: Request): Promise<Response> {
 
     // Active homework the client can already see (listExercisesForClient is
     // client-visible data — deliberately no grant check, per spec). Added after
-    // mood, still before therapist guidance and the crisis addendum.
+    // mood, still before therapist guidance and the crisis addendum. Only a
+    // BOTH-active assignment steers the AI: status active AND its link still
+    // live — therapist steering dies with the relationship, so a revoked-link
+    // assignment (still the client's data on /exercises) never reaches here.
     const homeworkSection = buildHomeworkSection(
       (await listExercisesForClient(userId))
-        .filter((e) => e.status === "active")
+        .filter((e) => e.status === "active" && e.linkActive)
         .map((e) => ({ type: e.type, instruction: e.instruction })),
     );
     if (homeworkSection) system += `\n\n${homeworkSection}`;

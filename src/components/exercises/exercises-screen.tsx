@@ -15,6 +15,11 @@ import { WorksheetForm, type WorksheetExercise } from "./worksheet-form";
 
 export type Assignment = { id: string; instruction: string; therapistName: string | null; createdAt: Date };
 
+// An assignment whose therapist link has since been revoked: kept as the
+// person's own data but no longer an open ask, so it carries no therapist name
+// and never opens a worksheet.
+export type PastAssignment = { id: string; instruction: string; createdAt: Date };
+
 // One open worksheet: which assignment it answers (null = self-guided), and what
 // it opened prefilled with (empty for a fresh record). `prefilled` drives the
 // honest "drawn from your conversation" note.
@@ -22,12 +27,15 @@ type Worksheet = { exercise: WorksheetExercise | null; initialDraft: ThoughtReco
 
 export function ExercisesScreen({
   assignments,
+  pastAssignments = [],
   entries,
   activeLink,
   startExerciseId,
 }: {
   /** Active assignments from the trusted person — the actionable homework. */
   assignments: Assignment[];
+  /** Assignments from an ended connection — quiet history, never actionable. */
+  pastAssignments?: PastAssignment[];
   /** Every record the person has written, most recent first. */
   entries: PastEntry[];
   /** The live link, if any — gates the post-save share prompt. */
@@ -215,7 +223,40 @@ export function ExercisesScreen({
             </section>
           ) : null}
 
-          <section className="animate-message-rise flex flex-col gap-3" style={{ animationDelay: "140ms" }}>
+          {pastAssignments.length > 0 ? (
+            <section className="animate-message-rise flex flex-col gap-3" style={{ animationDelay: "140ms" }}>
+              <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                From an ended connection
+              </h2>
+              {/* Inert by design: the link that carried these is gone, so they
+                  are read-only history, never an open ask. No button, no name. */}
+              <ul className="flex flex-col gap-2.5">
+                {pastAssignments.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex flex-col gap-1.5 rounded-2xl border border-dashed bg-card/30 p-4 opacity-70"
+                  >
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                        No longer active
+                      </span>
+                      <time
+                        suppressHydrationWarning
+                        className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground/60"
+                      >
+                        {relativeTime(a.createdAt)}
+                      </time>
+                    </span>
+                    <span className="text-pretty font-serif text-[1.02rem] italic leading-relaxed text-muted-foreground">
+                      {a.instruction}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <section className="animate-message-rise flex flex-col gap-3" style={{ animationDelay: "190ms" }}>
             <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               Your records
             </h2>

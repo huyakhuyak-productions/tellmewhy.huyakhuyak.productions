@@ -31,9 +31,11 @@ export default async function HomePage() {
   const today = moodTodayUTC();
   const todayCheckin = recentMood.find((c) => c.day === today) ?? null;
 
-  // Active assignments only — the actionable homework waiting on the person.
+  // Actionable homework waiting on the person: status active AND its link still
+  // live. Therapist steering dies with the relationship, so a revoked-link
+  // assignment drops off the home band (it stays on /exercises as their data).
   const assignments = exercises
-    .filter((e) => e.status === "active")
+    .filter((e) => e.status === "active" && e.linkActive)
     .map((e) => ({ id: e.id, instruction: e.instruction, therapistName: e.therapistName }));
 
   const folderNames = new Map(folders.map((f) => [f.id, f.name]));

@@ -30,16 +30,24 @@ export default async function ExercisesPage({
     getActiveLinkForClient(userId),
   ]);
 
-  // Only active assignments are actionable homework; closed ones stop inviting
-  // new work (past entries against them still appear in the records list below).
+  // Actionable homework = status active AND its link still live. Therapist
+  // steering dies with the relationship, so once the link is revoked the ask
+  // stops inviting new work (closed ones stop the same way).
   const assignments = exercises
-    .filter((e) => e.status === "active")
+    .filter((e) => e.status === "active" && e.linkActive)
     .map((e) => ({
       id: e.id,
       instruction: e.instruction,
       therapistName: e.therapistName,
       createdAt: e.createdAt,
     }));
+
+  // Assignments whose link has since been revoked: still the client's own data
+  // (spec law — they never vanish), but no longer an open ask. Shown as quiet,
+  // inert history rather than an actionable card.
+  const pastAssignments = exercises
+    .filter((e) => e.status === "active" && !e.linkActive)
+    .map((e) => ({ id: e.id, instruction: e.instruction, createdAt: e.createdAt }));
 
   const entryRows = entries.map((e) => ({
     id: e.id,
@@ -52,6 +60,7 @@ export default async function ExercisesPage({
   return (
     <ExercisesScreen
       assignments={assignments}
+      pastAssignments={pastAssignments}
       entries={entryRows}
       activeLink={activeLink ? { therapistName: activeLink.therapistName } : null}
       startExerciseId={start ?? null}

@@ -659,6 +659,29 @@ describe("POST /api/chat", () => {
       expect(content).not.toContain("CLOSED_HOMEWORK already finished");
     });
 
+    it("drops homework once its therapist link is revoked — steering dies with the relationship", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Homework after revoke");
+      const therapistId = await insertUser("Dr. Gone");
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await assignExercise(therapistId, clientId, {
+        type: "thought_record",
+        instruction: "REVOKED_HOMEWORK steer me",
+      });
+      await revokeLink(linkId, clientId);
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      const content = systemContent();
+      // The assignment survives as client data (still on /exercises) but must no
+      // longer reach the AI as an active ask.
+      expect(content).not.toContain("REVOKED_HOMEWORK steer me");
+      expect(content).not.toContain("The client has active homework");
+    });
+
     it("orders the system prompt base < mood < homework < guidance < crisis", async () => {
       const clientId = `test-${randomUUID()}`;
       mockSession(clientId);

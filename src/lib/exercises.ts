@@ -115,15 +115,23 @@ export type ClientExercise = {
   instruction: string;
   status: "active" | "closed";
   therapistName: string | null;
+  // Whether the assignment's link is active RIGHT NOW. Therapist steering (the
+  // AI's homework briefing, the actionable cards) dies with the relationship —
+  // like AI guidance already does — so a revoked-link assignment is no longer an
+  // active ask even while its own status is still "active". Derived from the
+  // link join itself, NOT from therapistName: a name can be null under a live
+  // link too (the therapist's user row is gone), so the two signals differ.
+  linkActive: boolean;
   createdAt: Date;
 };
 
 // The client's own view of the homework assigned to them. This is CLIENT data,
 // so it survives revocation — the assignment stays visible after the link ends,
-// with only the therapist's name dropping to null. The name join is gated on
-// status = 'active' precisely so a revoked link yields no name (a left join, so
-// the exercise row itself always survives). Instructions decrypt with the
-// client's own DEK; one bad ciphertext never takes the rest of the list down.
+// with only the therapist's name dropping to null and linkActive to false. The
+// link join is gated on status = 'active' precisely so a revoked link yields no
+// name and no live link (a left join, so the exercise row itself always
+// survives). Instructions decrypt with the client's own DEK; one bad ciphertext
+// never takes the rest of the list down.
 export async function listExercisesForClient(userId: string): Promise<ClientExercise[]> {
   const rows = await db
     .select({
@@ -132,6 +140,10 @@ export async function listExercisesForClient(userId: string): Promise<ClientExer
       instructionCiphertext: exercises.instructionCiphertext,
       status: exercises.status,
       createdAt: exercises.createdAt,
+      // The active link's own id: present only when the join matched an active
+      // link, so its nullness IS the linkActive signal — independent of whether
+      // the therapist's user row still resolves for the name below.
+      linkId: therapistLinks.id,
       therapistName: user.name,
     })
     .from(exercises)
@@ -150,6 +162,7 @@ export async function listExercisesForClient(userId: string): Promise<ClientExer
           instruction: decryptText(dek, r.instructionCiphertext),
           status: r.status,
           therapistName: r.therapistName ?? null,
+          linkActive: r.linkId !== null,
           createdAt: r.createdAt,
         },
       ];

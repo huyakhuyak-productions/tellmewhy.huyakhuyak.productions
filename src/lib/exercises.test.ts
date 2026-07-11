@@ -199,6 +199,21 @@ describe("exercises — assignment through the therapist link", () => {
       expect(list[0]!.therapistName).toBeNull();
     });
 
+    it("reports linkActive true under a live link and flips it to false once revoked", async () => {
+      const { clientId, therapistId, linkId } = await linkedPair();
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "steer me" });
+
+      const before = await listExercisesForClient(clientId);
+      expect(before[0]!.linkActive).toBe(true);
+
+      await revokeLink(linkId, clientId);
+
+      const after = await listExercisesForClient(clientId);
+      // Still visible as the client's own data — only its steering is over.
+      expect(after[0]!.instruction).toBe("steer me");
+      expect(after[0]!.linkActive).toBe(false);
+    });
+
     it("never shows another client's assignments", async () => {
       const { clientId, therapistId } = await linkedPair();
       await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "mine" });
