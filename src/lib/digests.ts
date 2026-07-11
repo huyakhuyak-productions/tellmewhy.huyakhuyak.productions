@@ -185,7 +185,9 @@ function tryDecryptBody(dek: Buffer, ciphertext: string, conversationId: string)
   try {
     return JSON.parse(decryptText(dek, ciphertext)) as DigestBody;
   } catch (error) {
-    console.error(`Failed to decrypt digest body for conversation ${conversationId}`, error);
+    // Ids + error name/message only — never the digest body plaintext.
+    const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
+    console.error(`Failed to decrypt digest body for conversation ${conversationId} (${cause})`);
     return null;
   }
 }
