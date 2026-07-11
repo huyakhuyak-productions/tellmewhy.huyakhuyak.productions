@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { buildHomeworkSection } from "./system-prompt";
+import { buildHomeworkSection, buildSystemPrompt } from "./system-prompt";
+
+describe("buildSystemPrompt", () => {
+  it("always carries the thought-record walk-through protocol — therapist or not", () => {
+    // The standalone law: the same column-by-column walk-through the chat
+    // affordance promises is present with no assignment and no therapist. It
+    // lives in the unconditional base prompt, not the (conditional) homework
+    // section, so a client with no homework still gets it.
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("one column at a time");
+    expect(prompt).toContain("situation");
+    expect(prompt).toContain("thoughts");
+    expect(prompt).toContain("emotions");
+    expect(prompt).toContain("behavior");
+    expect(prompt).toContain("body sensations");
+    expect(prompt.toLowerCase()).toContain("never");
+  });
+});
 
 describe("buildHomeworkSection", () => {
   it("returns null when there are no active exercises", () => {
@@ -14,18 +31,13 @@ describe("buildHomeworkSection", () => {
     expect(section!).toContain("Notice one anxious thought each evening.");
   });
 
-  it("tells the model it may gently weave homework in and guide one column at a time", () => {
+  it("tells the model it may gently weave homework in, never forcing it", () => {
     const section = buildHomeworkSection([{ type: "thought_record", instruction: "Track a moment of tension." }])!;
-    // The guidance the client depends on: never forced, walked one column at a
-    // time when asked, in the thought-record order.
+    // The listing part only: the walk-through protocol itself now lives
+    // unconditionally in buildSystemPrompt (covered above).
     expect(section.toLowerCase()).toContain("gently");
-    expect(section).toContain("one column at a time");
-    expect(section).toContain("situation");
-    expect(section).toContain("thoughts");
-    expect(section).toContain("emotions");
-    expect(section).toContain("behavior");
-    expect(section).toContain("body sensations");
     expect(section.toLowerCase()).toContain("never");
+    expect(section).toContain("active homework");
   });
 
   it("clamps each instruction to 300 characters", () => {

@@ -682,7 +682,20 @@ describe("POST /api/chat", () => {
       expect(content).not.toContain("The client has active homework");
     });
 
-    it("orders the system prompt base < mood < homework < guidance < crisis", async () => {
+    it("always briefs the thought-record walk-through, even with no homework or therapist", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Standalone walk-through");
+
+      const res = await POST(chatRequest({ conversationId: id, text: "Can you walk me through a thought record?" }));
+      await res.text();
+
+      // The standalone law: the same column-by-column protocol is present with
+      // no therapist and no assignment at all.
+      expect(systemContent()).toContain("one column at a time");
+    });
+
+    it("orders the system prompt base < walk-through < mood < homework < guidance < crisis", async () => {
       const clientId = `test-${randomUUID()}`;
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Everything at once");
@@ -699,15 +712,19 @@ describe("POST /api/chat", () => {
 
       const content = systemContent();
       const baseIndex = content.indexOf("You are a warm, attentive emotional-support companion");
+      const walkthroughIndex = content.indexOf("one column at a time");
       const moodIndex = content.indexOf("Recent mood check-ins");
       const homeworkIndex = content.indexOf("The client has active homework");
       const guidanceIndex = content.indexOf("Guidance from the client's therapist");
       const crisisIndex = content.indexOf("The latest message shows possible self-harm or suicidal intent");
 
-      for (const index of [baseIndex, moodIndex, homeworkIndex, guidanceIndex, crisisIndex]) {
+      for (const index of [baseIndex, walkthroughIndex, moodIndex, homeworkIndex, guidanceIndex, crisisIndex]) {
         expect(index).toBeGreaterThan(-1);
       }
-      expect(baseIndex).toBeLessThan(moodIndex);
+      // The always-on walk-through is base material: after the base opener, still
+      // before mood/homework/guidance, and always before the crisis addendum.
+      expect(baseIndex).toBeLessThan(walkthroughIndex);
+      expect(walkthroughIndex).toBeLessThan(moodIndex);
       expect(moodIndex).toBeLessThan(homeworkIndex);
       expect(homeworkIndex).toBeLessThan(guidanceIndex);
       expect(guidanceIndex).toBeLessThan(crisisIndex);

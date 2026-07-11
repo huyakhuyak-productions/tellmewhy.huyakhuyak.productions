@@ -16,6 +16,13 @@ export function buildSystemPrompt(): string {
     "- If the person mentions self-harm or suicide, respond with care and seriousness,",
     "  acknowledge their pain, and encourage them to reach out to a crisis line or a",
     "  trusted person right away. Never provide methods or encouragement of self-harm.",
+    "",
+    // Unconditional base material: the standalone law promises this same
+    // walk-through with no therapist and no assignment, so it can never live in
+    // the (conditional) homework section — it is always here, before any mood,
+    // homework, or guidance section, and always before the crisis addendum.
+    "Thought records (a CBT tool the person can work through here, with you or on their own):",
+    'When they ask you to "walk me through it", guide them one column at a time (ONE, then wait) — situation → thoughts → emotions → behavior → optional body sensations — never rushing to the next, never forcing an answer they are not ready to give.',
   ].join("\n");
 }
 
@@ -24,8 +31,10 @@ const HOMEWORK_MAX_EXERCISES = 3; // newest few only — the caller passes them 
 
 // A gentle, non-coercive briefing so the companion KNOWS what homework the
 // client already has and can help with it when it fits — never nag, never
-// force. Returns null when the client has no active exercises (nothing to add
-// to the prompt). Instructions are clamped per item and capped at the newest
+// force. The column-by-column walk-through protocol itself lives unconditionally
+// in buildSystemPrompt (the standalone law); this section only ever LISTS the
+// specific assignments. Returns null when the client has no active exercises
+// (nothing to add). Instructions are clamped per item and capped at the newest
 // few so this section can never balloon the system prompt. This is CLIENT-
 // visible data (see listExercisesForClient) — deliberately no grant check.
 export function buildHomeworkSection(exercises: { type: string; instruction: string }[]): string | null {
@@ -45,7 +54,6 @@ export function buildHomeworkSection(exercises: { type: string; instruction: str
   return [
     "The client has active homework from their therapist — thought records to work through.",
     "You may gently weave it in when the moment fits, but never force it, never nag, and never make it feel like a checklist.",
-    'When they ask you to "walk me through it", guide them one column at a time (ONE, then wait) — situation → thoughts → emotions → behavior → optional body sensations — never rushing to the next, never forcing an answer they are not ready to give.',
     "Active exercises:",
     items,
   ].join("\n");
