@@ -90,8 +90,12 @@ export async function assignExercise(
 
 // Only the assigning link's therapist, and only while that link is still
 // active, may close an exercise. A non-assigner, a revoked link, or an unknown
-// id all fail identically: NotFoundError. Entries are never touched — closing
-// an exercise ends new work, it does not erase what was already recorded.
+// id all fail identically: NotFoundError. Closing only flips status to "closed"
+// so the exercise stops surfacing as an active ask (in the chat prompt and the
+// client's actionable lists); it neither erases existing entries NOR blocks new
+// ones. The client may still record a late entry against a closed exercise —
+// saveEntry gates on ownership, not status — because those entries are the
+// client's own data, theirs to add whenever they return to the moment.
 export async function closeExercise(therapistId: string, exerciseId: string): Promise<void> {
   const [row] = await db
     .select({ id: exercises.id })

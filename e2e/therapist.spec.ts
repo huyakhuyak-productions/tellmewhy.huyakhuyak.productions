@@ -284,7 +284,8 @@ test("the reading view frames crisis messages and offers a crisis navigator", as
 // engagement and the entry, opens the shared conversation for its AI digest, and
 // the client shares (then unshares) their mood trend. The adversarial tail then
 // proves a link revoke tears down all three new surfaces at once. Fully
-// deterministic under AI_MOCK (fixed digest overview/theme, no anchors).
+// deterministic under AI_MOCK: a fixed digest overview and theme, plus a single
+// anchor on the first message that the therapist clicks to jump to it.
 test("the enrichment journey: assign, complete, share, read, digest, and mood trend", async ({
   browser,
 }) => {
