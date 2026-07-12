@@ -104,11 +104,15 @@ Anything your trusted person writes about you — private notes, guidance for th
 **Digests are AI-derived content, not a separate secret:**
 A session digest is produced by the same LLM that writes replies. To summarize a shared conversation, our server decrypts it under your key and sends the plaintext to the model — exactly as it does to generate a reply. The digest is AI-derived content, stored encrypted at rest like any message body, and it is only ever shown to a trusted person you've actively shared that conversation with; revoking the share (or ending the link) removes their access to the digest along with the conversation. Like replies, this is not end-to-end encrypted: plaintext exists on our servers during generation.
 
-**Mood scores are encrypted at rest and leave your view only by an explicit toggle:**
+**Mood scores and their dates — never the notes — leave your view only by an explicit toggle:**
 Your mood check-ins are encrypted at rest with your key, the same as messages. And like your messages, your recent check-ins — scores and any notes — are read into your own AI companion's context so it can meet you where you are, which means their plaintext transits the model during a reply, exactly as message bodies do. The toggle in `/trust` governs something different: what your trusted person sees. Nothing reaches them until you turn it on, and even then only the scores and their dates leave your view — never the private note you may attach to a check-in. Turning the toggle off removes the trend from your trusted person's view immediately, indistinguishable from never having shared it at all.
 
 **Thought-record entries are private by default and shared one at a time:**
 A thought record you write is private until you choose to share that specific entry. Sharing is per-entry, never all-or-nothing, and a self-guided record can't be shared at all. Your trusted person can see whether you've engaged with an assignment they gave you — a count of entries and how recently, never the words — but can read only the individual entries you explicitly shared, and only under a live link. Revoking the link ends that access to past and future entries alike.
+
+**Notes to your future self are yours alone:** encrypted at rest under your own
+key, never visible to your trusted person by any route, and never part of what
+the AI reads. There is no sharing toggle because there is nothing to share.
 
 **The audit trail is metadata, not a transcript:**
 `/trust` logs every time your trusted person reads a shared conversation, marks their place, writes to you, publishes a note, or checks on your flagged messages. That log records who did what and when — never what they read or what they wrote. It cannot substitute for actually reading your shared conversations yourself.
