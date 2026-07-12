@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isComposeSubmit } from "@/lib/keyboard";
+import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { useIsMac } from "@/lib/use-is-mac";
 import { relativeTime } from "@/lib/relative-time";
 import { entryCountLabel } from "@/lib/exercise-engagement";
 import type { TherapistAssignment } from "@/lib/exercises";
@@ -26,6 +27,7 @@ export function ExercisePanel({
   assignments: TherapistAssignment[];
 }) {
   const router = useRouter();
+  const isMac = useIsMac();
   const [instruction, setInstruction] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -33,10 +35,11 @@ export function ExercisePanel({
   // Close is pending-then-settled, not optimistic: the button stays mounted
   // reading "Closing…" until the request resolves, so there's never a dead
   // instant where it vanished but nothing confirmed. Only a confirmed success
-  // flips the card to "Closed" (the server truth then lands on refresh).
+  // flips the card to "Closed" (the server truth then lands on refresh). A
+  // failure's message belongs to the card that owns the failed close, not to a
+  // panel-wide banner — each card holds and renders its own close error.
   const [closedOverride, setClosedOverride] = useState<Set<string>>(new Set());
   const [closingId, setClosingId] = useState<string | null>(null);
-  const [closeError, setCloseError] = useState<string | null>(null);
 
   async function assign(e: React.FormEvent) {
     e.preventDefault();
@@ -67,12 +70,12 @@ export function ExercisePanel({
     }
   }
 
-  // Resolves true only on a confirmed close, so the card can hand focus off
-  // before its close button unmounts. Failure leaves the card untouched (the
-  // flip never happened, so there's nothing to revert) and states the error.
-  async function close(exerciseId: string): Promise<boolean> {
-    if (closingId) return false;
-    setCloseError(null);
+  // Resolves null on a confirmed close (so the card can hand focus off before
+  // its close button unmounts) or the error copy on failure — the card renders
+  // that copy in its own alert line. Failure leaves the card untouched (the
+  // flip never happened, so there's nothing to revert).
+  async function close(exerciseId: string): Promise<string | null> {
+    if (closingId) return null;
     setClosingId(exerciseId);
     try {
       const res = await fetch(`/api/therapist/exercises/${exerciseId}`, {
@@ -83,17 +86,13 @@ export function ExercisePanel({
       if (res.ok) {
         setClosedOverride((prev) => new Set(prev).add(exerciseId));
         router.refresh();
-        return true;
+        return null;
       }
-      setCloseError(
-        res.status === 429
-          ? "A gentle pace — give it a moment, then try again."
-          : "Couldn't close that just now — try again.",
-      );
-      return false;
+      return res.status === 429
+        ? "A gentle pace — give it a moment, then try again."
+        : "Couldn't close that just now — try again.";
     } catch {
-      setCloseError("Couldn't close that just now — try again.");
-      return false;
+      return "Couldn't close that just now — try again.";
     } finally {
       setClosingId(null);
     }
@@ -152,19 +151,13 @@ export function ExercisePanel({
           <button
             type="submit"
             disabled={!instruction.trim() || assigning}
-            title="⌘↵ to assign"
+            title={composeSubmitTitle("assign", isMac)}
             className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,opacity,scale] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
           >
             {assigning ? "Assigning…" : "Assign thought record"}
           </button>
         </div>
       </form>
-
-      {closeError ? (
-        <p role="alert" className="font-serif text-[12.5px] italic text-crisis-muted">
-          {closeError}
-        </p>
-      ) : null}
 
       {assignments.length === 0 ? (
         <p className="text-[12.5px] italic text-muted-foreground/80">
@@ -196,17 +189,20 @@ function AssignmentCard({
   assignment: TherapistAssignment;
   closed: boolean;
   closing: boolean;
-  /** Resolves true when the close was confirmed by the server. */
-  onClose: () => Promise<boolean>;
+  /** Resolves null on a confirmed close, or the error copy on failure. */
+  onClose: () => Promise<string | null>;
 }) {
   const { instruction, entryCount, lastEntryAt, sharedEntryIds } = assignment;
   // A confirmed close unmounts the close button, so focus is handed to the
   // card itself first (tabIndex={-1}) — it never drops to the document body,
   // and a screen reader lands on the card now carrying its "Closed" chip.
   const cardRef = useRef<HTMLLIElement>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
   async function handleClose() {
-    const confirmed = await onClose();
-    if (confirmed) cardRef.current?.focus();
+    setCloseError(null);
+    const error = await onClose();
+    if (error) setCloseError(error);
+    else cardRef.current?.focus();
   }
   return (
     <li
@@ -261,7 +257,12 @@ function AssignmentCard({
       ) : null}
 
       {!closed ? (
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          {closeError ? (
+            <p role="alert" className="font-serif text-[11.5px] italic text-crisis-muted">
+              {closeError}
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={() => void handleClose()}

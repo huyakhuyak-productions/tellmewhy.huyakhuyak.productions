@@ -95,51 +95,66 @@ export function DigestPanel({
         ? "Session digest"
         : "Digest unavailable right now";
 
+  // The header's inner layout — spark, live status line, coverage, chevron —
+  // shared by both the interactive (has-content) and the plain-status headers.
+  const headerContent = (
+    <>
+      <SparkIcon loading={status === "loading"} />
+      <span className="flex-1">
+        <span className="flex items-center gap-2">
+          <span
+            aria-live="polite"
+            className={`text-[13px] font-medium text-foreground ${status === "loading" ? "motion-safe:animate-pulse" : ""}`}
+          >
+            {title}
+          </span>
+          {coverage?.notCurrent ? (
+            <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">
+              Not current
+            </span>
+          ) : null}
+        </span>
+        {hasContent && coverage ? (
+          <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+            {coverage.line}
+          </span>
+        ) : null}
+      </span>
+      {hasContent ? (
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden
+          className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+        >
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : null}
+    </>
+  );
+
   return (
     <section
       aria-label="Session digest"
       className="mb-8 overflow-hidden rounded-2xl border border-border/75 bg-card/50"
     >
-      <button
-        type="button"
-        onClick={() => hasContent && setOpen((v) => !v)}
-        aria-expanded={hasContent ? open : undefined}
-        aria-controls={hasContent ? "digest-body" : undefined}
-        disabled={!hasContent}
-        className="group flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors duration-150 hover:bg-accent/[0.04] focus-visible:bg-accent/[0.05] disabled:cursor-default disabled:hover:bg-transparent"
-      >
-        <SparkIcon loading={status === "loading"} />
-        <span className="flex-1">
-          <span className="flex items-center gap-2">
-            <span
-              aria-live="polite"
-              className={`text-[13px] font-medium text-foreground ${status === "loading" ? "motion-safe:animate-pulse" : ""}`}
-            >
-              {title}
-            </span>
-            {coverage?.notCurrent ? (
-              <span className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">
-                Not current
-              </span>
-            ) : null}
-          </span>
-          {hasContent && coverage ? (
-            <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
-              {coverage.line}
-            </span>
-          ) : null}
-        </span>
-        {hasContent ? (
-          <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
-          >
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : null}
-      </button>
+      {/* When there's a real digest the header is the disclosure control; when
+          it's still preparing or genuinely unavailable it's plain status text,
+          never a dead disabled button. The aria-live span carries the state
+          either way. */}
+      {hasContent ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="digest-body"
+          className="group flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors duration-150 hover:bg-accent/[0.04] focus-visible:bg-accent/[0.05]"
+        >
+          {headerContent}
+        </button>
+      ) : (
+        <div className="flex w-full items-center gap-3 px-4 py-3 text-left">{headerContent}</div>
+      )}
 
       {hasContent && digest ? (
         <div
