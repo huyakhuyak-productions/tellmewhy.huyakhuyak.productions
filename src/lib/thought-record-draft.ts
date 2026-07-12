@@ -52,6 +52,20 @@ export type ThoughtRecordPayload = {
   occurredAt?: string;
 };
 
+// Decide which assignment — if any — an AI-guided chat draft should attach to.
+// EXACTLY one active assignment ⇒ the walk-through the person just did was
+// almost certainly about it, so the extracted draft attaches: its context heads
+// the worksheet and its id rides the saved entry, so engagement counts and the
+// share prompt appears under its normal gating. Zero or several active
+// assignments ⇒ null (self-guided): with no unambiguous target we stay
+// private-by-default rather than guess which homework a record answers — no
+// chooser UI, ambiguity resolves to private. Pure and DB-free; `assignments` is
+// the already-active-and-linked set the page hands the screen, so this only
+// weighs "how many", never re-checks status.
+export function assignmentForDraft<T>(assignments: readonly T[]): T | null {
+  return assignments.length === 1 ? assignments[0] : null;
+}
+
 function clampedString(value: unknown, max: number): string {
   return typeof value === "string" ? value.slice(0, max) : "";
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignmentForDraft,
   draftToPayload,
   EMPTY_DRAFT,
   missingRequiredFields,
@@ -143,6 +144,23 @@ describe("draftToPayload", () => {
     const payload = draftToPayload(FULL);
     expect(payload.occurredAt).toBe("last night");
     expect(payload.bodySensations).toBe("tight chest");
+  });
+});
+
+describe("assignmentForDraft", () => {
+  it("returns null when there are no active assignments (self-guided)", () => {
+    expect(assignmentForDraft([])).toBeNull();
+  });
+
+  it("returns the sole assignment when exactly one is active", () => {
+    const only = { id: "a1", instruction: "notice the meeting" };
+    expect(assignmentForDraft([only])).toBe(only);
+  });
+
+  it("returns null when several assignments are active (ambiguous stays private)", () => {
+    const first = { id: "a1", instruction: "one" };
+    const second = { id: "a2", instruction: "two" };
+    expect(assignmentForDraft([first, second])).toBeNull();
   });
 });
 

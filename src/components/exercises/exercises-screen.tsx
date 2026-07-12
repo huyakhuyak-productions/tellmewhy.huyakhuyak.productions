@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  assignmentForDraft,
   EMPTY_DRAFT,
   parseDraft,
   THOUGHT_RECORD_DRAFT_KEY,
@@ -70,15 +71,33 @@ export function ExercisesScreen({
     if (opened.current) return;
     opened.current = true;
 
-    // A chat "save what we worked out" hand-off wins: it's a self-guided draft
-    // the person asked to turn into a record. Consume the key so a refresh or a
-    // later visit never re-opens it.
+    // A chat "save what we worked out" hand-off wins: a record the person asked
+    // to turn from their conversation into an entry. Consume the key so a refresh
+    // or a later visit never re-opens it.
     let initial: Worksheet | null = null;
     const stashed = sessionStorage.getItem(THOUGHT_RECORD_DRAFT_KEY);
     if (stashed) {
       sessionStorage.removeItem(THOUGHT_RECORD_DRAFT_KEY);
       const draft = parseDraft(stashed);
-      if (draft) initial = { exercise: null, initialDraft: draft, prefilled: true };
+      if (draft) {
+        // Controller product decision: an AI-guided draft attaches to the
+        // client's assignment ONLY when there's exactly one active one — the
+        // walk-through the homework prompt invites was almost certainly about
+        // it, so the record should count. Attaching opens the worksheet with
+        // that assignment's context (its "FROM {name}" header and instruction,
+        // like the ?start= path) and carries its exerciseId, so engagement
+        // counts and the existing share prompt appears under its normal gating.
+        // Zero or several active assignments ⇒ self-guided (exercise: null): with
+        // no unambiguous target, ambiguity stays private-by-default — no chooser.
+        const target = assignmentForDraft(assignments);
+        initial = {
+          exercise: target
+            ? { id: target.id, instruction: target.instruction, therapistName: target.therapistName }
+            : null,
+          initialDraft: draft,
+          prefilled: true,
+        };
+      }
     }
 
     // Otherwise, a home assignment card may have asked to open a specific
