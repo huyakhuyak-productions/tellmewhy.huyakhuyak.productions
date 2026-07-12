@@ -42,12 +42,22 @@ export default async function ExercisesPage({
       createdAt: e.createdAt,
     }));
 
-  // Assignments whose link has since been revoked: still the client's own data
-  // (spec law — they never vanish), but no longer an open ask. Shown as quiet,
-  // inert history rather than an actionable card.
+  // Everything that ISN'T an active ask is quiet history — still the client's
+  // own data (spec law: assignments never vanish), just no longer actionable.
+  // Two ways an assignment lands here: the therapist closed it (status closed)
+  // or the link was revoked (linkActive false). A closed-but-live-link
+  // assignment used to vanish entirely; it belongs here too, since closing stops
+  // the ask without erasing it. `closedByName` labels a therapist-closed one
+  // ("Closed by {name}") while the connection is still live; a revoked link
+  // reads as an ended connection ("No longer active"), so its name drops.
   const pastAssignments = exercises
-    .filter((e) => e.status === "active" && !e.linkActive)
-    .map((e) => ({ id: e.id, instruction: e.instruction, createdAt: e.createdAt }));
+    .filter((e) => !(e.status === "active" && e.linkActive))
+    .map((e) => ({
+      id: e.id,
+      instruction: e.instruction,
+      createdAt: e.createdAt,
+      closedByName: e.status === "closed" && e.linkActive ? e.therapistName : null,
+    }));
 
   const entryRows = entries.map((e) => ({
     id: e.id,

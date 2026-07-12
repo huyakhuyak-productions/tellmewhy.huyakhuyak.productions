@@ -16,10 +16,17 @@ import { WorksheetForm, type WorksheetExercise } from "./worksheet-form";
 
 export type Assignment = { id: string; instruction: string; therapistName: string | null; createdAt: Date };
 
-// An assignment whose therapist link has since been revoked: kept as the
-// person's own data but no longer an open ask, so it carries no therapist name
-// and never opens a worksheet.
-export type PastAssignment = { id: string; instruction: string; createdAt: Date };
+// An assignment that's no longer an open ask — the therapist closed it, or the
+// link was revoked — kept as the person's own data but never opening a
+// worksheet. `closedByName` names the therapist who closed it while the link is
+// still live ("Closed by {name}"); a revoked link leaves it null and it reads as
+// an ended connection ("No longer active").
+export type PastAssignment = {
+  id: string;
+  instruction: string;
+  createdAt: Date;
+  closedByName: string | null;
+};
 
 // One open worksheet: which assignment it answers (null = self-guided), and what
 // it opened prefilled with (empty for a fresh record). `prefilled` drives the
@@ -245,10 +252,12 @@ export function ExercisesScreen({
           {pastAssignments.length > 0 ? (
             <section className="animate-message-rise flex flex-col gap-3" style={{ animationDelay: "140ms" }}>
               <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                From an ended connection
+                No longer active
               </h2>
-              {/* Inert by design: the link that carried these is gone, so they
-                  are read-only history, never an open ask. No button, no name. */}
+              {/* Inert by design: a therapist closed these or the link that
+                  carried them is gone, so they are read-only history, never an
+                  open ask. No button. A closed-by-a-live-therapist one still
+                  names them; a revoked link reads simply "No longer active". */}
               <ul className="flex flex-col gap-2.5">
                 {pastAssignments.map((a) => (
                   <li
@@ -257,7 +266,7 @@ export function ExercisesScreen({
                   >
                     <span className="flex items-baseline justify-between gap-3">
                       <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                        No longer active
+                        {a.closedByName ? `Closed by ${a.closedByName}` : "No longer active"}
                       </span>
                       <time
                         suppressHydrationWarning
