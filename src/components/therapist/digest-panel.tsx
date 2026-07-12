@@ -103,7 +103,6 @@ export function DigestPanel({
       <span className="flex-1">
         <span className="flex items-center gap-2">
           <span
-            aria-live="polite"
             className={`text-[13px] font-medium text-foreground ${status === "loading" ? "motion-safe:animate-pulse" : ""}`}
           >
             {title}
@@ -138,10 +137,18 @@ export function DigestPanel({
       aria-label="Session digest"
       className="mb-8 overflow-hidden rounded-2xl border border-border/75 bg-card/50"
     >
+      {/* One always-mounted live region carries every state change (preparing →
+          ready → unavailable). Keeping it here — never inside the header that
+          swaps div↔button when content lands — means the region is never
+          remounted, so screen readers reliably announce each new title (a
+          freshly inserted live region's initial content usually goes
+          unspoken). */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {title}
+      </span>
       {/* When there's a real digest the header is the disclosure control; when
           it's still preparing or genuinely unavailable it's plain status text,
-          never a dead disabled button. The aria-live span carries the state
-          either way. */}
+          never a dead disabled button. */}
       {hasContent ? (
         <button
           type="button"

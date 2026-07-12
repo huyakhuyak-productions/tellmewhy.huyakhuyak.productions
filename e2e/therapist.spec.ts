@@ -373,7 +373,9 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     // digest lands, so waiting for it to enable is the "ready" signal.
     const digestToggle = digest.getByRole("button").first();
     await expect(digestToggle).toBeEnabled();
-    await expect(digest.getByText("Session digest")).toBeVisible();
+    // Target the disclosure button's title, not the sr-only live-status span
+    // (which mirrors the same text) — getByText would match both.
+    await expect(digest.getByRole("button", { name: /Session digest/ })).toBeVisible();
     await digestToggle.click();
     // Mock content: the overview prose, the single theme chip, and one anchor —
     // the mock echoes the first transcript message id, which survives the

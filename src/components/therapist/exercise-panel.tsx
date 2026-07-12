@@ -73,9 +73,10 @@ export function ExercisePanel({
   // Resolves null on a confirmed close (so the card can hand focus off before
   // its close button unmounts) or the error copy on failure — the card renders
   // that copy in its own alert line. Failure leaves the card untouched (the
-  // flip never happened, so there's nothing to revert).
+  // flip never happened, so there's nothing to revert). Callers must not invoke
+  // this while another close is in flight (the card guards on `busy`): null here
+  // always means a real, confirmed close — never a silently-ignored click.
   async function close(exerciseId: string): Promise<string | null> {
-    if (closingId) return null;
     setClosingId(exerciseId);
     try {
       const res = await fetch(`/api/therapist/exercises/${exerciseId}`, {
@@ -171,6 +172,7 @@ export function ExercisePanel({
               assignment={a}
               closed={closedOverride.has(a.id) || a.status === "closed"}
               closing={closingId === a.id}
+              busy={closingId !== null}
               onClose={() => close(a.id)}
             />
           ))}
@@ -184,11 +186,14 @@ function AssignmentCard({
   assignment,
   closed,
   closing,
+  busy,
   onClose,
 }: {
   assignment: TherapistAssignment;
   closed: boolean;
   closing: boolean;
+  /** Any card's close is in flight — the panel serializes closes one at a time. */
+  busy: boolean;
   /** Resolves null on a confirmed close, or the error copy on failure. */
   onClose: () => Promise<string | null>;
 }) {
@@ -199,6 +204,9 @@ function AssignmentCard({
   const cardRef = useRef<HTMLLIElement>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   async function handleClose() {
+    // A click ignored because another close is already in flight is a pure
+    // no-op: it must not confirm (no focus handoff) nor surface an error.
+    if (busy) return;
     setCloseError(null);
     const error = await onClose();
     if (error) setCloseError(error);
