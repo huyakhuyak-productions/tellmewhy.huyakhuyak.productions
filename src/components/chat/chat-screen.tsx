@@ -8,6 +8,7 @@ import { DefaultChatTransport } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
 import { MessageBubble } from "./message-bubble";
 import { MessageFlag } from "./message-flag";
+import { MessageKeep } from "./message-keep";
 import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
@@ -52,6 +53,7 @@ export function ChatScreen({
   activeLink,
   shared,
   sharedIds,
+  keptMessageIds,
   reviewMarker,
   publicNotes,
   therapist,
@@ -68,6 +70,8 @@ export function ChatScreen({
   shared: boolean;
   /** Ids of all conversations currently shared — the rail's quiet shared-marks. */
   sharedIds: string[];
+  /** Ids of messages the person has already kept as a private note. */
+  keptMessageIds: string[];
   /** The therapist's review divider position, if they've reviewed here. */
   reviewMarker: ReviewMarker | null;
   /** Notes the therapist published under this conversation. */
@@ -81,6 +85,7 @@ export function ChatScreen({
   // therapist author name, flagged state). Key them by id so the render below
   // can recover those facts even though useChat only knows user/assistant roles.
   const metaById = new Map(initialMessages.map((m) => [m.id, m]));
+  const keptIds = new Set(keptMessageIds);
   const hasActiveLink = activeLink !== null;
   const therapistName = activeLink?.therapistName ?? null;
   const [crisis, setCrisis] = useState(false);
@@ -461,21 +466,40 @@ export function ChatScreen({
                 bubble = (
                   <div className="group/msg flex flex-col">
                     <MessageBubble role="user" text={text} />
-                    {/* Flag only persisted messages under an active link — a
-                        just-sent message has no server id yet to flag. */}
-                    {meta && hasActiveLink ? (
-                      <MessageFlag
-                        conversationId={conversationId}
-                        messageId={m.id}
-                        initialFlagged={meta.flaggedAt != null}
-                        shared={shared}
-                        therapistName={therapistName!}
-                      />
+                    {/* Keep and flag act on persisted messages only — a
+                        just-sent message has no server id yet. Both live in the
+                        right-aligned action row under the person's own bubble. */}
+                    {meta ? (
+                      <>
+                        <div className="flex justify-end">
+                          <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
+                        </div>
+                        {hasActiveLink ? (
+                          <MessageFlag
+                            conversationId={conversationId}
+                            messageId={m.id}
+                            initialFlagged={meta.flaggedAt != null}
+                            shared={shared}
+                            therapistName={therapistName!}
+                          />
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 );
               } else {
-                bubble = <MessageBubble role="assistant" text={text} />;
+                // The group/msg wrapper is what reveals the hover affordance, so
+                // AI messages need it too (client bubbles already had it). Keep
+                // stays left-aligned here and only shows on persisted messages —
+                // a still-streaming reply has no server id yet.
+                bubble = (
+                  <div className="group/msg flex flex-col">
+                    <MessageBubble role="assistant" text={text} />
+                    {meta ? (
+                      <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
+                    ) : null}
+                  </div>
+                );
               }
 
               return (

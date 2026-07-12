@@ -7,6 +7,7 @@ import { listFolders } from "@/lib/folders";
 import { deriveChatStats } from "@/lib/chat-stats";
 import { getGrantStateForClient, listGrantsForClient } from "@/lib/sharing";
 import { listMoodCheckins } from "@/lib/mood";
+import { listNotes } from "@/lib/notes";
 import { moodTodayUTC } from "@/lib/mood-sparkline";
 import { getReviewMarkerForClient } from "@/lib/therapist-access";
 import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
@@ -47,6 +48,7 @@ export default async function ConversationPage({
     reviewMarkerRow,
     publicNotes,
     moodCheckins,
+    notesList,
   ] = await Promise.all([
     listConversations(userId),
     listFolders(userId),
@@ -57,7 +59,17 @@ export default async function ConversationPage({
     listPublicNotesForClient(userId, conversationId),
     // ~8 weeks of the client's own check-ins for the rail's trend sparkline.
     listMoodCheckins(userId, 56),
+    // The person's private kept lines — used here only for the per-message
+    // "kept" badge; Task 11's rail panel reuses this same fetch, so the full
+    // list stays intact in scope rather than being reduced to just the Set.
+    listNotes(userId),
   ]);
+
+  // Which messages already have a kept note, so the affordance can show its
+  // settled "kept" state instead of the invitation on first paint.
+  const keptMessageIds = new Set(
+    notesList.flatMap((n) => (n.sourceMessageId ? [n.sourceMessageId] : [])),
+  );
 
   // Link state for the (now live) stats-rail panel — invited only matters when
   // there's no active link, matching the one-therapist rule.
@@ -100,6 +112,7 @@ export default async function ConversationPage({
       activeLink={activeLink ? { therapistName: activeLink.therapistName } : null}
       shared={shared}
       sharedIds={sharedIds}
+      keptMessageIds={[...keptMessageIds]}
       reviewMarker={
         reviewMarkerRow
           ? {
