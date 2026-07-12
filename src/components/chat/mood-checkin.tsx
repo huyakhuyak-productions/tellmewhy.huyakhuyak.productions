@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isComposeSubmit } from "@/lib/keyboard";
 
 // 1 (low) → 5 (good), matching the domain's scale. Gentle, non-clinical words
 // tuned to the twilight room — a heavy night through to a bright one — never a
@@ -143,6 +144,12 @@ export function MoodCheckin({
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (isComposeSubmit(e)) {
+                  e.preventDefault();
+                  void saveNote();
+                }
+              }}
               maxLength={NOTE_MAX}
               rows={2}
               aria-label="A word about how you feel"
@@ -161,6 +168,7 @@ export function MoodCheckin({
                 type="button"
                 onClick={saveNote}
                 disabled={saving}
+                title="⌘↵ to save"
                 className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-foreground outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:opacity-50"
               >
                 {saving ? "Saving…" : noteSaved ? "Saved" : "Save a word"}

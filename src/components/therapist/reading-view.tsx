@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { isComposeSubmit } from "@/lib/keyboard";
 import type { ReadingMessage } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
 import { CrisisNavigator } from "./crisis-navigator";
@@ -260,6 +261,12 @@ export function ReadingView({
           value={body}
           maxLength={8000}
           onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => {
+            if (isComposeSubmit(e)) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
           rows={3}
           className="min-h-[4.5rem] w-full resize-y rounded-xl border bg-card px-3.5 py-2.5 text-[14px] leading-relaxed shadow-sm outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
         />
@@ -267,6 +274,7 @@ export function ReadingView({
           <button
             type="submit"
             disabled={!body.trim() || sending}
+            title="⌘↵ to send"
             className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,opacity,scale] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
           >
             {sending ? "Sending…" : "Send as yourself"}

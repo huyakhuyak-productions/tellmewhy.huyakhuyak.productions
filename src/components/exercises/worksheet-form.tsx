@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isComposeSubmit } from "@/lib/keyboard";
 import {
   draftToPayload,
   missingRequiredFields,
@@ -230,6 +231,12 @@ export function WorksheetForm({
                     set(field.key, e.target.value);
                     grow(e.target);
                   }}
+                  onKeyDown={(e) => {
+                    if (isComposeSubmit(e)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   rows={2}
                   maxLength={2000}
                   placeholder={field.placeholder}
@@ -263,6 +270,7 @@ export function WorksheetForm({
         <button
           type="submit"
           disabled={saving}
+          title="⌘↵ to save"
           className="rounded-xl bg-accent px-5 py-2.5 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.97] disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save this record"}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isComposeSubmit } from "@/lib/keyboard";
 import type { NoteKind } from "@/lib/therapist-notes";
 
 const MAX_BODY = 4000;
@@ -94,6 +95,12 @@ export function NoteComposer({
         value={body}
         maxLength={MAX_BODY}
         onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (isComposeSubmit(e)) {
+            e.preventDefault();
+            e.currentTarget.form?.requestSubmit();
+          }
+        }}
         rows={3}
         className="min-h-[4.5rem] w-full resize-y rounded-xl border bg-card px-3.5 py-2.5 text-[14px] leading-relaxed shadow-sm outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
       />
@@ -101,6 +108,7 @@ export function NoteComposer({
         <button
           type="submit"
           disabled={!body.trim() || busy}
+          title="⌘↵ to save"
           className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,opacity,scale] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
         >
           {busy ? copy.busy : copy.button}
