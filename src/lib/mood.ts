@@ -166,9 +166,10 @@ export async function getMoodTrendForTherapist(
   return trend;
 }
 
-// Pure — no DB access. This line goes into the CLIENT's OWN chat prompt only
-// (Task 6), so unlike getMoodTrendForTherapist it's fine for the client's own
-// notes to appear here; it's their data, read back to their own AI.
+// Pure — no DB access. This line goes into the chat route's system prompt for
+// the CLIENT's OWN chat only, so unlike getMoodTrendForTherapist it's fine for
+// the client's own notes to appear here; it's their data, read back to their
+// own AI.
 export function buildMoodContextLine(checkins: MoodCheckin[]): string | null {
   if (checkins.length === 0) return null;
 

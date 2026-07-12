@@ -6,7 +6,8 @@ import { serializeDraft, THOUGHT_RECORD_DRAFT_KEY } from "@/lib/thought-record-d
 
 // The fixed line the "walk through" affordance drops into the composer. The
 // model (its homework section) takes it from there, guiding column by column.
-export const WALK_THROUGH_LINE = "Can you walk me through a thought record?";
+// Private to this file — the affordance is its only consumer.
+const WALK_THROUGH_LINE = "Can you walk me through a thought record?";
 
 // Two quiet ways to bring a thought record into the conversation, sitting just
 // above the composer:

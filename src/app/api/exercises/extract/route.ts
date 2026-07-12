@@ -18,7 +18,7 @@ const MAX_OUTPUT_TOKENS = 1024;
 
 // Draft a thought record from a conversation the client wants to turn into an
 // entry. This ONLY extracts — it persists nothing. The client reviews and
-// confirms the draft in a prefilled form (Task 6's entries route is what saves).
+// confirms the draft in a prefilled form (the entries route is what saves).
 //
 // Wrapped in withRequestScope like the chat route: decrypting the transcript
 // unwraps the user's DEK, which memoizes within the request scope.
