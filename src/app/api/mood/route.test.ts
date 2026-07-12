@@ -78,6 +78,19 @@ describe("POST/GET /api/mood", () => {
     expect(defaulted.checkins).toHaveLength(1);
   });
 
+  it("treats an empty days= as absent, falling back to the default window", async () => {
+    const clientId = `test-${randomUUID()}`;
+    session = { user: { id: clientId } };
+    // A check-in 30 days back sits inside the 56-day default window but outside
+    // a 1-day one — so an empty `?days=` that fell back to the default surfaces
+    // it, whereas the old clamp-to-1 would have hidden it.
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await checkInMood(clientId, { score: 2 }, thirtyDaysAgo);
+
+    const body = await (await GET(getRequest("?days="))).json();
+    expect(body.checkins).toHaveLength(1);
+  });
+
   it("returns 401 for POST when there is no session", async () => {
     session = null;
     const res = await POST(jsonRequest("POST", { score: 4 }));

@@ -45,11 +45,12 @@ export async function GET(req: Request): Promise<Response> {
   const userId = session.user.id;
 
   // days is best-effort — a bad query string should never 400 a read of the
-  // client's own data: a missing or non-numeric value falls back to the
+  // client's own data: a missing, empty, or non-numeric value falls back to the
   // default, while any numeric one (0 and negatives included) clamps into the
-  // 1–366 window.
+  // 1–366 window. Number("") is 0, so an empty/whitespace value is treated as
+  // absent rather than clamping to the 1-day floor.
   const daysParam = new URL(req.url).searchParams.get("days");
-  const raw = daysParam === null ? Number.NaN : Number(daysParam);
+  const raw = daysParam === null || daysParam.trim() === "" ? Number.NaN : Number(daysParam);
   const days = Number.isFinite(raw) ? Math.min(MAX_DAYS, Math.max(MIN_DAYS, Math.trunc(raw))) : DEFAULT_DAYS;
 
   // Decrypts the client's check-ins — scope the request so getOrCreateUserDek
