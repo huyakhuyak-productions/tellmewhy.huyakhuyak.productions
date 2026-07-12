@@ -433,6 +433,42 @@ describe("exercise entries — private until each is shared", () => {
       expect(events[0].therapistId).toBe(therapistId);
     });
 
+    it("reading two different shared entries writes two entry_viewed lines", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const entryA = await saveEntry(clientId, { exerciseId: exercise.id, payload: { ...SAMPLE, situation: "A" } });
+      const entryB = await saveEntry(clientId, { exerciseId: exercise.id, payload: { ...SAMPLE, situation: "B" } });
+      await shareEntry(clientId, entryA.id);
+      await shareEntry(clientId, entryB.id);
+
+      await getSharedEntryForTherapist(therapistId, entryA.id);
+      await getSharedEntryForTherapist(therapistId, entryB.id);
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_viewed")));
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.subjectId))).toEqual(new Set([entryA.id, entryB.id]));
+    });
+
+    it("re-reading the same entry inside the window stays one line", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });
+      const entryA = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+      await shareEntry(clientId, entryA.id);
+
+      await getSharedEntryForTherapist(therapistId, entryA.id);
+      await getSharedEntryForTherapist(therapistId, entryA.id);
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_viewed")));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].subjectId).toBe(entryA.id);
+    });
+
     it("hides an UNSHARED entry (NotFoundError) even though its engagement is still counted", async () => {
       const { clientId, therapistId } = await linkedPair();
       const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "record it" });

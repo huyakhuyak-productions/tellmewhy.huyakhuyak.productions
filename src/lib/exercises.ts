@@ -383,7 +383,7 @@ export async function getSharedEntryForTherapist(
   const payload = JSON.parse(decryptText(dek, entry.payloadCiphertext)) as ThoughtRecordPayload;
 
   await recordAuditDeduped(
-    { clientId: entry.clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId },
+    { clientId: entry.clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId, subjectId: entryId },
     ENTRY_VIEWED_DEDUPE_WINDOW_MS,
   );
 

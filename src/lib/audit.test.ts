@@ -108,6 +108,42 @@ describe("audit — centralized recording and the client feed", () => {
       const rows = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
       expect(rows).toHaveLength(2);
     });
+
+    it("keys the dedupe on subjectId — two different subjects write two rows", async () => {
+      const subjectA = randomUUID();
+      const subjectB = randomUUID();
+      await recordAuditDeduped({ clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId, subjectId: subjectA });
+      await recordAuditDeduped({ clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId, subjectId: subjectB });
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_viewed")));
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.subjectId))).toEqual(new Set([subjectA, subjectB]));
+    });
+
+    it("dedupes the same subjectId within the window to a single row", async () => {
+      const subjectA = randomUUID();
+      await recordAuditDeduped({ clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId, subjectId: subjectA });
+      await recordAuditDeduped({ clientId, therapistId, conversationId: null, action: "entry_viewed", actorId: therapistId, subjectId: subjectA });
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_viewed")));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].subjectId).toBe(subjectA);
+    });
+
+    it("preserves legacy null-subject dedupe — an omitted subjectId matches null twice as one row", async () => {
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
+      await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
+
+      const rows = await db.select().from(auditEvents).where(eq(auditEvents.clientId, clientId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].subjectId).toBeNull();
+    });
   });
 
   describe("listAuditEventsForClient", () => {

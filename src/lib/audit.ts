@@ -17,6 +17,10 @@ export type AuditEvent = {
   // rows remain valid); every call site here always passes a real user id.
   actorId: string | null;
   conversationId?: string | null;
+  // The specific record the action was about (e.g. the exercise entry read),
+  // when the action is per-subject rather than client-wide. Nullable to match
+  // the column; omitted (null) for client-wide actions like conversation_viewed.
+  subjectId?: string | null;
   action: AuditAction;
   createdAt?: Date;
 };
@@ -36,7 +40,11 @@ const CONVERSATION_VIEWED_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 // for client-wide actions like `attention_viewed` — matched with IS NULL, not
 // `=`, since SQL NULL never equals NULL. Other actions (e.g.
 // review_marker_advanced) are never deduped — each call is a distinct,
-// meaningful event.
+// meaningful event. `subjectId` extends the key so per-subject actions like
+// `entry_viewed` record one honest row per distinct record read (three shared
+// entries → three rows), while a rapid re-read of the SAME subject still
+// dedupes. Omitted (null) subjects match with IS NULL, preserving the legacy
+// client-wide behavior for actions that carry no subject.
 export async function recordAuditDeduped(
   event: {
     clientId: string;
@@ -44,9 +52,11 @@ export async function recordAuditDeduped(
     conversationId: string | null;
     action: AuditAction;
     actorId: string | null;
+    subjectId?: string | null;
   },
   windowMs: number = CONVERSATION_VIEWED_DEDUPE_WINDOW_MS,
 ): Promise<void> {
+  const subjectId = event.subjectId ?? null;
   const since = new Date(Date.now() - windowMs);
   const [existing] = await db
     .select({ id: auditEvents.id })
@@ -58,12 +68,13 @@ export async function recordAuditDeduped(
         event.conversationId === null
           ? isNull(auditEvents.conversationId)
           : eq(auditEvents.conversationId, event.conversationId),
+        subjectId === null ? isNull(auditEvents.subjectId) : eq(auditEvents.subjectId, subjectId),
         eq(auditEvents.action, event.action),
         gte(auditEvents.createdAt, since),
       ),
     );
   if (existing) return;
-  await recordAudit(event);
+  await recordAudit({ ...event, subjectId });
 }
 
 export type AuditEventForClient = {
