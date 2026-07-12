@@ -324,6 +324,23 @@ describe("exercise entries — private until each is shared", () => {
       expect(JSON.stringify(events)).not.toContain("standup");
     });
 
+    it("sharing twice concurrently stamps once and audits once", async () => {
+      const { clientId, therapistId } = await linkedPair();
+      const exercise = await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "log it" });
+      const { id } = await saveEntry(clientId, { exerciseId: exercise.id, payload: SAMPLE });
+
+      // Two racing shares of the same entry: the conditional stamp (WHERE
+      // shared_at IS NULL) lets exactly one win the row; the loser updates
+      // nothing and must not audit, so the trust feed never doubles.
+      await Promise.all([shareEntry(clientId, id), shareEntry(clientId, id)]);
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.clientId, clientId), eq(auditEvents.action, "entry_shared")));
+      expect(rows).toHaveLength(1);
+    });
+
     it("refuses to share a self-guided entry (null exerciseId) → NotFoundError", async () => {
       const clientId = `test-${randomUUID()}`;
       const { id } = await saveEntry(clientId, { payload: SAMPLE });

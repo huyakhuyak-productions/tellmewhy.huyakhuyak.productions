@@ -83,7 +83,10 @@ export async function getOrRefreshDigest(
   if (existing && existing.coversUpToMessageId === newestMessageId) {
     const cached = tryDecryptBody(dek, existing.bodyCiphertext, conversationId);
     if (cached) {
-      return { ...cached, coversUpToMessageId: existing.coversUpToMessageId, generatedAt: existing.generatedAt, stale: false };
+      // Re-filter on every serve: an anchor stored when its message still
+      // existed must drop the moment that message is deleted — a cached body is
+      // no exception.
+      return { ...filterAnchors(cached, validMessageIds), coversUpToMessageId: existing.coversUpToMessageId, generatedAt: existing.generatedAt, stale: false };
     }
     // Corrupt cached body — fall through and regenerate over the full history.
   }
@@ -156,29 +159,47 @@ export async function getOrRefreshDigest(
     const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
     console.error(`Digest generation failed for conversation ${conversationId} (${cause})`);
     if (existing && priorBody) {
-      return { ...priorBody, coversUpToMessageId: existing.coversUpToMessageId, generatedAt: existing.generatedAt, stale: true };
+      // Same guard on the stale fallback: the prior body may anchor a since-
+      // deleted message, which must not reach the therapist.
+      return { ...filterAnchors(priorBody, validMessageIds), coversUpToMessageId: existing.coversUpToMessageId, generatedAt: existing.generatedAt, stale: true };
     }
     return null;
   }
 
-  // Hallucination guard: keep only anchors pointing at messages that actually
-  // belong to this conversation — a fabricated or cross-conversation id is
-  // dropped before it can ever reach the therapist.
-  const anchors = generated.anchors.filter((a) => validMessageIds.has(a.messageId));
-  const body: DigestBody = { overview: generated.overview, themes: generated.themes, anchors };
+  // Hallucination guard on the fresh body: keep only anchors pointing at
+  // messages that belong to this conversation right now — a fabricated,
+  // cross-conversation, or since-deleted id is dropped before it can ever reach
+  // the therapist.
+  const body = filterAnchors(
+    { overview: generated.overview, themes: generated.themes, anchors: generated.anchors },
+    validMessageIds,
+  );
 
   const generatedAt = new Date();
   const bodyCiphertext = encryptText(dek, JSON.stringify(body));
-  // Latest-only: one digest per conversation, overwritten on refresh.
+  // Latest-only: one digest per conversation, overwritten on refresh — but only
+  // when our result still advances (or matches) the coverage we read.
   await db
     .insert(digests)
     .values({ conversationId, bodyCiphertext, coversUpToMessageId: newestMessageId, generatedAt })
     .onConflictDoUpdate({
       target: digests.conversationId,
       set: { bodyCiphertext, coversUpToMessageId: newestMessageId, generatedAt },
+      // Compare-and-set against the coverage we READ before generating: if a
+      // concurrent regeneration already advanced the row, our (older) result
+      // must not roll it back. Our caller still gets the body we generated — it
+      // was fresh at read time; the next open self-heals from the row.
+      setWhere: existing ? eq(digests.coversUpToMessageId, existing.coversUpToMessageId) : undefined,
     });
 
   return { ...body, coversUpToMessageId: newestMessageId, generatedAt, stale: false };
+}
+
+// Hallucination/staleness guard: an anchor may only point at a message that
+// exists in this conversation RIGHT NOW — fabricated ids and since-deleted
+// messages both drop, on fresh, cached, and stale-fallback paths alike.
+function filterAnchors(body: DigestBody, validMessageIds: Set<string>): DigestBody {
+  return { ...body, anchors: body.anchors.filter((a) => validMessageIds.has(a.messageId)) };
 }
 
 function tryDecryptBody(dek: Buffer, ciphertext: string, conversationId: string): DigestBody | null {

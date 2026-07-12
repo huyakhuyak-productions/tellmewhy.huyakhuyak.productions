@@ -17,7 +17,7 @@
 //     visible, only the therapist's name goes null.
 // Every foreign / revoked / unshared / self-guided path resolves to
 // NotFoundError, indistinguishable from a row that never existed.
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { exerciseEntries, exercises, therapistLinks, user } from "@/db/schema";
@@ -238,7 +238,17 @@ export async function shareEntry(userId: string, entryId: string): Promise<void>
   // the link is active (the join above guarantees it).
   if (entry.sharedAt) return;
 
-  await db.update(exerciseEntries).set({ sharedAt: new Date() }).where(eq(exerciseEntries.id, entryId));
+  // Conditional stamp: WHERE shared_at IS NULL makes two concurrent shares race
+  // for the one row atomically — the loser (its read saw null too, but the
+  // winner stamped first) updates nothing and must not audit, so the trust feed
+  // never shows a double "You shared" and the timestamp never shifts.
+  const updated = await db
+    .update(exerciseEntries)
+    .set({ sharedAt: new Date() })
+    .where(and(eq(exerciseEntries.id, entryId), isNull(exerciseEntries.sharedAt)))
+    .returning({ id: exerciseEntries.id });
+  if (updated.length === 0) return;
+
   await recordAudit({ clientId: userId, therapistId: entry.therapistId, action: "entry_shared", actorId: userId });
 }
 

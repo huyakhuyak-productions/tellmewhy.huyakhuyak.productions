@@ -139,6 +139,89 @@ describe("digests — get-or-refresh behind the gate", () => {
       expect(digest!.anchors).toEqual([{ messageId: real.id, label: "real moment", kind: "moment" }]);
     });
 
+    it("a slow regeneration cannot roll coverage back over a newer digest", async () => {
+      const convId = await grantedConversation("CAS");
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "first" });
+      const second = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "second" });
+
+      // Generate once: the row now covers `second`.
+      await getOrRefreshDigest(therapistId, convId);
+      const [beforeRow] = await db.select().from(digests).where(eq(digests.conversationId, convId));
+      expect(beforeRow.coversUpToMessageId).toBe(second.id);
+
+      // A new message makes our caller take the regenerate path (it reads the
+      // row as covering `second`, then generates over `third`).
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "third" });
+
+      // The winning writer lands BETWEEN our caller's read and its write: the
+      // mock's generation step stamps a newer coverage onto the row, exactly as
+      // a concurrent regeneration that finished first would have. Our caller's
+      // CAS (setWhere on the coverage it read) must then refuse to overwrite.
+      const fakeNewer = randomUUID();
+      vi.mocked(getDigestModel).mockReturnValueOnce(
+        new MockLanguageModelV3({
+          doGenerate: async () => {
+            await db.update(digests).set({ coversUpToMessageId: fakeNewer }).where(eq(digests.conversationId, convId));
+            return {
+              finishReason: MOCK_FINISH_REASON,
+              usage: MOCK_USAGE,
+              content: [{ type: "text", text: JSON.stringify({ overview: "slow", themes: [], anchors: [] }) }],
+              warnings: [],
+            };
+          },
+        }),
+      );
+
+      await getOrRefreshDigest(therapistId, convId);
+
+      const [afterRow] = await db.select().from(digests).where(eq(digests.conversationId, convId));
+      // The stale regeneration did NOT roll the coverage back: the concurrent
+      // winner's value survives.
+      expect(afterRow.coversUpToMessageId).toBe(fakeNewer);
+    });
+
+    it("a cached digest drops anchors whose messages were deleted", async () => {
+      const convId = await grantedConversation("Cached anchor drop");
+      const anchored = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "anchor me" });
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "newest" });
+
+      // The digest mock anchors the first transcript message → `anchored`.
+      const first = await getOrRefreshDigest(therapistId, convId);
+      expect(first!.anchors).toEqual([{ messageId: anchored.id, label: "A mock anchor", kind: "moment" }]);
+
+      // Delete the anchored message; the newest is untouched so the stored digest
+      // still covers it → the cached path serves without regenerating.
+      await db.delete(messages).where(eq(messages.id, anchored.id));
+
+      const before = vi.mocked(getDigestModel).mock.calls.length;
+      const cached = await getOrRefreshDigest(therapistId, convId);
+      expect(vi.mocked(getDigestModel).mock.calls.length).toBe(before);
+      expect(cached!.stale).toBe(false);
+      // The dangling anchor never reaches the therapist.
+      expect(cached!.anchors).toEqual([]);
+    });
+
+    it("a stale-fallback digest drops anchors whose messages were deleted", async () => {
+      const convId = await grantedConversation("Stale anchor drop");
+      const anchored = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "anchor me" });
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "second" });
+
+      const first = await getOrRefreshDigest(therapistId, convId);
+      expect(first!.anchors).toEqual([{ messageId: anchored.id, label: "A mock anchor", kind: "moment" }]);
+
+      // The anchored message is deleted and a new one arrives → the cache is
+      // stale and regeneration runs. Force it to fail so we fall back to the
+      // prior body, which still carries the now-dangling anchor.
+      await db.delete(messages).where(eq(messages.id, anchored.id));
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "third" });
+      vi.mocked(getDigestModel).mockReturnValueOnce(throwingDigestModel());
+
+      const stale = await getOrRefreshDigest(therapistId, convId);
+      expect(stale!.stale).toBe(true);
+      // Stale body is served, but the deleted anchor is filtered out.
+      expect(stale!.anchors).toEqual([]);
+    });
+
     it("stores the body under the client's DEK — the therapist's key cannot read it", async () => {
       const convId = await grantedConversation("Client-key body");
       await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "secret thoughts" });
