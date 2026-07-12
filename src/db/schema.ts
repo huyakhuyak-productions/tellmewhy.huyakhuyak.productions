@@ -44,8 +44,8 @@ export const conversations = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // Intentionally no FK to `user.id`: existing rows include orphaned
     // smoke-test user ids not present in the `user` table, so a FK add
-    // fails against real data (verified against the dev database — see
-    // Task 6 report). Indexed for lookup performance regardless.
+    // fails against real data (verified against the dev database).
+    // Indexed for lookup performance regardless.
     userId: text("user_id").notNull(),
     titleCiphertext: text("title_ciphertext").notNull(),
     // null = unsorted. Deleting a folder unsorts its conversations.

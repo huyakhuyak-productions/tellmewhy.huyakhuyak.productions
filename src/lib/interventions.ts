@@ -13,7 +13,7 @@ import { requireGrantedConversation } from "./sharing";
 
 // PRIVATE to this module. This is the one place client-ownership is
 // bypassed — by design, exactly once — because the caller has already
-// passed the Task 3 gate (an active link + a live grant), which stands in
+// passed the sharing gate (an active link + a live grant), which stands in
 // for ownership here. This function must never be exported, and
 // conversations.ts must never grow a public equivalent: any other module
 // needing to append a message on a client's behalf should be gated the same

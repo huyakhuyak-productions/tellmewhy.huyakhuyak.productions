@@ -76,8 +76,8 @@ export function HeroComposer() {
     // Success path: `pending` stays true through sessionStorage/navigation so
     // a rapid second Enter can't fire a duplicate create — the component
     // unmounts when the route changes.
-    // Never put message text in the URL — history and logs. Task 7's ChatScreen
-    // reads and clears this exact key on mount to send the first message.
+    // Never put message text in the URL — history and logs. ChatScreen reads
+    // and clears this exact key on mount to send the first message.
     sessionStorage.setItem(`tellmewhy:draft:${id}`, text);
     router.push(`/chat/${id}`);
   }

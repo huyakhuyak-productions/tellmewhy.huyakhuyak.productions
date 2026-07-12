@@ -272,8 +272,8 @@ export async function listPublicNotesForClient(
   return result;
 }
 
-// Server-internal only — Task 6 injects this into the system prompt, and
-// only when the conversation has a live grant (checked there, not here).
+// Server-internal only — the chat route injects this into the system prompt,
+// and only when the conversation has a live grant (checked there, not here).
 // Latest version wins; earlier versions exist purely for the history
 // listNotesForTherapist shows, never for steering.
 export async function getActiveAiInstruction(linkId: string): Promise<string | null> {

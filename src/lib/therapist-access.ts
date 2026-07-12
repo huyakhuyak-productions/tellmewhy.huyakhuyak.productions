@@ -1,4 +1,4 @@
-// Every function here begins with the Task 3 gate — requireGrantedConversation
+// Every function here begins with the sharing gate — requireGrantedConversation
 // — or a query shaped exactly like it (listAttentionItems spans many
 // conversations, so it re-expresses the gate's join rather than calling it in
 // a loop). No function reaches client data any other way.

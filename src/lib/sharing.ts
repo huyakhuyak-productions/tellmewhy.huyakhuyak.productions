@@ -122,7 +122,7 @@ export async function revokeGrant(clientId: string, conversationId: string): Pro
 // exact (therapist, client) active link can ever appear here. Titles are
 // decrypted with the CLIENT's DEK — the conversation belongs to them, not
 // the therapist. Message aggregates (count, last activity, flagged/crisis
-// counts) feed the Task 4 attention queue.
+// counts) feed the therapist's attention queue.
 export async function listGrantedConversations(
   therapistId: string,
   clientId: string,

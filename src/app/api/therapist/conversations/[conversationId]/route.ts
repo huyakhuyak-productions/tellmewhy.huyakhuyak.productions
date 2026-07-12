@@ -12,11 +12,11 @@ const paramsSchema = z.object({ conversationId: z.uuid() });
 type Ctx = { params: Promise<{ conversationId: string }> };
 
 // Messages come from loadSharedMessages, which already gates internally
-// (Task 3's requireGrantedConversation) and audits conversation_viewed. The
-// marker has no such module function (getReviewMarkerForClient is the
-// CLIENT's view of the divider) — per the Task 8 decision this route calls
-// the gate directly ONCE to get the linkId, then reads reviewMarkers inline
-// with it. That's a second, redundant call into requireGrantedConversation
+// (requireGrantedConversation) and audits conversation_viewed. The marker has
+// no such module function (getReviewMarkerForClient is the CLIENT's view of
+// the divider), so this route calls the gate directly ONCE to get the linkId,
+// then reads reviewMarkers inline with it. That's a second, redundant call
+// into requireGrantedConversation
 // (loadSharedMessages does its own), but it's a cheap read with no side
 // effect, so the duplication costs nothing and keeps the marker read
 // gate-consistent without inventing a new exported module function for it.

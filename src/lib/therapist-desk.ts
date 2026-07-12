@@ -1,5 +1,5 @@
-// The therapist's-desk reads (Task 10 UI). Every client-data read here flows
-// through the Task 3 gate primitives — requireGrantedConversation,
+// The therapist's-desk reads. Every client-data read here flows through the
+// sharing-gate primitives — requireGrantedConversation,
 // listGrantedConversations, loadSharedMessages, listAttentionItems — or
 // author-owned note reads; this module never reaches client data another way.
 // It only ENRICHES those primitives with the display labels the desk needs but
