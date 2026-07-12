@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { inspect } from "node:util";
 import { MockLanguageModelV3 } from "ai/test";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
@@ -11,6 +13,7 @@ import { user } from "@/db/schema";
 import { acceptInvite, createInvite, getActiveLinkForClient, revokeLink } from "@/lib/therapist-links";
 import { getGrantStateForClient, grantConversation, revokeGrant } from "@/lib/sharing";
 import { createNote, getActiveAiInstruction } from "@/lib/therapist-notes";
+import { createNote as createSelfNote } from "@/lib/notes";
 import { sendIntervention } from "@/lib/interventions";
 import { assignExercise, closeExercise } from "@/lib/exercises";
 import { checkInMood } from "@/lib/mood";
@@ -657,6 +660,50 @@ describe("POST /api/chat", () => {
       expect(content).toContain("The client has active homework");
       expect(content).toContain("ACTIVE_HOMEWORK track a tense moment");
       expect(content).not.toContain("CLOSED_HOMEWORK already finished");
+    });
+
+    it("orders homework newest-first — the newer assignment's instruction precedes the older one", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Two homework assignments");
+      const therapistId = await insertUser("Dr. Sequence");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      // Both active and both under a live link — the only thing separating them
+      // is creation order, so the newest-first contract is what decides which
+      // instruction the model reads first.
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "OLDER_HOMEWORK assigned first" });
+      await assignExercise(therapistId, clientId, { type: "thought_record", instruction: "NEWER_HOMEWORK assigned second" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      const content = systemContent();
+      const newerIndex = content.indexOf("NEWER_HOMEWORK assigned second");
+      const olderIndex = content.indexOf("OLDER_HOMEWORK assigned first");
+      expect(newerIndex).toBeGreaterThan(-1);
+      expect(olderIndex).toBeGreaterThan(-1);
+      expect(newerIndex).toBeLessThan(olderIndex);
+    });
+
+    it("never lets a client's own self-note reach the system prompt, and the route never imports the notes module", async () => {
+      const clientId = `test-${randomUUID()}`;
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Notes stay out of the prompt");
+      // A private self-note is the client's own data, but it is journal
+      // material — it must never be fed to the companion as context.
+      await createSelfNote(clientId, { body: "SENTINEL-NOTE-9317" });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      expect(systemContent()).not.toContain("SENTINEL-NOTE-9317");
+
+      // Belt-and-suspenders: the route must not even reach for the notes module.
+      // A future edit that adds `import ... from "@/lib/notes"` fails here before
+      // it can ever wire a note into the prompt.
+      const routeSource = readFileSync(path.join(process.cwd(), "src/app/api/chat/route.ts"), "utf8");
+      expect(routeSource).not.toContain("@/lib/notes");
     });
 
     it("drops homework once its therapist link is revoked — steering dies with the relationship", async () => {

@@ -112,22 +112,30 @@ async function handlePost(req: Request): Promise<Response> {
 
     let system = buildSystemPrompt();
 
+    // Mood and homework are independent reads of the client's OWN data (their
+    // DEK, no grant check) — fetch them together rather than one after the
+    // other. The APPEND order below is still the law: mood → homework →
+    // therapist guidance → crisis addendum last. Concurrency touches only WHEN
+    // each read happens, never the order in which its section is glued on.
+    const [moodCheckinsRecent, clientExercises] = await Promise.all([
+      listMoodCheckins(userId, MOOD_CONTEXT_DAYS),
+      listExercisesForClient(userId),
+    ]);
+
     // The client's own recent mood, read straight back into their own AI — the
     // first context section after the base prompt (their week colors how the
-    // companion reads everything below). Their data, their DEK; no grant check.
-    // Placed BEFORE any therapist guidance, so the crisis addendum still lands
-    // last no matter what.
-    const moodLine = buildMoodContextLine(await listMoodCheckins(userId, MOOD_CONTEXT_DAYS));
+    // companion reads everything below). Placed BEFORE any therapist guidance,
+    // so the crisis addendum still lands last no matter what.
+    const moodLine = buildMoodContextLine(moodCheckinsRecent);
     if (moodLine) system += `\n\n${moodLine}`;
 
-    // Active homework the client can already see (listExercisesForClient is
-    // client-visible data — deliberately no grant check, per spec). Added after
-    // mood, still before therapist guidance and the crisis addendum. Only a
-    // BOTH-active assignment steers the AI: status active AND its link still
-    // live — therapist steering dies with the relationship, so a revoked-link
-    // assignment (still the client's data on /exercises) never reaches here.
+    // Active homework the client can already see. Added after mood, still before
+    // therapist guidance and the crisis addendum. Only a BOTH-active assignment
+    // steers the AI: status active AND its link still live — therapist steering
+    // dies with the relationship, so a revoked-link assignment (still the
+    // client's data on /exercises) never reaches here.
     const homeworkSection = buildHomeworkSection(
-      (await listExercisesForClient(userId))
+      clientExercises
         .filter((e) => e.status === "active" && e.linkActive)
         .map((e) => ({ type: e.type, instruction: e.instruction })),
     );
