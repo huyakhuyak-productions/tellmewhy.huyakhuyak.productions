@@ -4,7 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
-import { isComposeSubmit } from "@/lib/keyboard";
+import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { useIsMac } from "@/lib/use-is-mac";
 import type { ReadingMessage } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
 import { CrisisNavigator } from "./crisis-navigator";
@@ -27,6 +28,7 @@ export function ReadingView({
   markerMessageId: string | null;
 }) {
   const router = useRouter();
+  const isMac = useIsMac();
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [markError, setMarkError] = useState<string | null>(null);
 
@@ -274,7 +276,7 @@ export function ReadingView({
           <button
             type="submit"
             disabled={!body.trim() || sending}
-            title="⌘↵ to send"
+            title={composeSubmitTitle("send", isMac)}
             className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,opacity,scale] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
           >
             {sending ? "Sending…" : "Send as yourself"}

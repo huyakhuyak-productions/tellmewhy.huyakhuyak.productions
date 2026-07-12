@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isComposeSubmit, type ComposeKeyEvent } from "./keyboard";
+import { composeSubmitTitle, isComposeSubmit, type ComposeKeyEvent } from "./keyboard";
 
 function event(overrides: Partial<ComposeKeyEvent>): ComposeKeyEvent {
   return { key: "Enter", metaKey: false, ctrlKey: false, shiftKey: false, ...overrides };
@@ -28,5 +28,17 @@ describe("isComposeSubmit", () => {
     expect(isComposeSubmit(event({ key: "a", metaKey: true }))).toBe(false);
     expect(isComposeSubmit(event({ key: "s", ctrlKey: true }))).toBe(false);
     expect(isComposeSubmit(event({ key: " ", metaKey: true }))).toBe(false);
+  });
+});
+
+describe("composeSubmitTitle", () => {
+  it("titles the shortcut per platform", () => {
+    expect(composeSubmitTitle("save", true)).toBe("⌘↵ to save");
+    expect(composeSubmitTitle("save", false)).toBe("Ctrl+↵ to save");
+  });
+
+  it("carries the verb through for each site", () => {
+    expect(composeSubmitTitle("assign", true)).toBe("⌘↵ to assign");
+    expect(composeSubmitTitle("send", false)).toBe("Ctrl+↵ to send");
   });
 });

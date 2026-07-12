@@ -23,3 +23,9 @@ export function isComposeSubmit(event: ComposeKeyEvent): boolean {
   if (event.shiftKey) return false;
   return event.metaKey || event.ctrlKey;
 }
+
+// The visible name of the shortcut, matched to the keyboard in front of the
+// person — ⌘ means nothing on a PC and Ctrl reads wrong on a Mac.
+export function composeSubmitTitle(verb: string, isMac: boolean): string {
+  return `${isMac ? "⌘↵" : "Ctrl+↵"} to ${verb}`;
+}

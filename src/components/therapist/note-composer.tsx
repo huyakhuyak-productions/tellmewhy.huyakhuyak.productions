@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isComposeSubmit } from "@/lib/keyboard";
+import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { useIsMac } from "@/lib/use-is-mac";
 import type { NoteKind } from "@/lib/therapist-notes";
 
 const MAX_BODY = 4000;
@@ -48,6 +49,7 @@ export function NoteComposer({
   kind: NoteKind;
 }) {
   const router = useRouter();
+  const isMac = useIsMac();
   const copy = copyFor(kind, clientName);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -108,7 +110,7 @@ export function NoteComposer({
         <button
           type="submit"
           disabled={!body.trim() || busy}
-          title="⌘↵ to save"
+          title={composeSubmitTitle("save", isMac)}
           className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,opacity,scale] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40"
         >
           {busy ? copy.busy : copy.button}
