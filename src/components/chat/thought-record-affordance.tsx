@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { serializeDraft, THOUGHT_RECORD_DRAFT_KEY } from "@/lib/thought-record-draft";
 
@@ -31,6 +31,22 @@ export function ThoughtRecordAffordance({
   const router = useRouter();
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // seedComposer APPENDS the fixed line to whatever is in the composer, so a
+  // double-click (or double-tap) would drop the line in twice. Latch on a ref
+  // the moment it seeds once — the append is synchronous, so there's no pending
+  // window to gate on. The latch re-arms per conversation: switching threads is
+  // the one time the same walk-through line is worth offering again.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    seededRef.current = false;
+  }, [conversationId]);
+
+  function seedWalkThrough() {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    onSeed(WALK_THROUGH_LINE);
+  }
 
   async function saveWorkedOut() {
     if (extracting) return;
@@ -68,7 +84,7 @@ export function ThoughtRecordAffordance({
     <div className="mx-auto mb-2 flex w-full max-w-[760px] flex-wrap items-center justify-between gap-x-4 gap-y-1">
       <button
         type="button"
-        onClick={() => onSeed(WALK_THROUGH_LINE)}
+        onClick={seedWalkThrough}
         className="inline-flex items-center gap-1.5 rounded-full py-1 text-[12px] text-muted-foreground outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent focus-visible:ring-2 focus-visible:ring-accent/40"
       >
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
