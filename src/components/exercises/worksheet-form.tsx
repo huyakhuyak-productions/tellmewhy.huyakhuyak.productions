@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isComposeSubmit } from "@/lib/keyboard";
+import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { useIsMac } from "@/lib/use-is-mac";
 import {
   draftToPayload,
   missingRequiredFields,
@@ -80,8 +81,8 @@ function grow(el: HTMLTextAreaElement) {
 
 // The thought record as a calm, single-column journal page. Saves via
 // POST /api/entries; when the saved entry is anchored to an assignment AND a
-// live link exists, the one share prompt follows — otherwise the save simply
-// completes (self-guided and prefilled-from-chat entries never see the prompt).
+// live link exists, the one share prompt follows — whether the draft was typed
+// here or drawn from a conversation. Self-guided saves simply complete.
 export function WorksheetForm({
   exercise,
   activeLink,
@@ -102,6 +103,7 @@ export function WorksheetForm({
   /** Called once the record is saved AND any share choice is resolved. */
   onSaved: () => void;
 }) {
+  const isMac = useIsMac();
   const [draft, setDraft] = useState<ThoughtRecordDraft>(initialDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,12 +146,17 @@ export function WorksheetForm({
         }),
       });
       if (!res.ok) {
-        setError("Couldn't save that just now — your words are still here. Try again.");
+        setError(
+          res.status === 429
+            ? "A gentle pace — give it a moment, then try again. Your words are still here."
+            : "Couldn't save that just now — your words are still here. Try again.",
+        );
         return;
       }
       const body: { id?: string } | null = await res.json().catch(() => null);
-      // The share prompt only appears for an assigned entry under a live link;
-      // everything else (self-guided, prefilled-from-chat, or no link) is done.
+      // The share prompt only appears for an assigned entry under a live link —
+      // whether the draft was typed here or drawn from a conversation. Everything
+      // else (self-guided, or no live link) simply completes.
       if (exercise && activeLink && body?.id) {
         setSavedEntryId(body.id);
         return;
@@ -187,6 +194,11 @@ export function WorksheetForm({
             <p className="text-pretty font-serif text-[1.15rem] italic leading-relaxed text-foreground">
               {exercise.instruction}
             </p>
+            {prefilled ? (
+              <p className="text-pretty text-[12.5px] italic leading-relaxed text-muted-foreground">
+                Drawn from your conversation. Read it back and make it yours — nothing saves until you say so.
+              </p>
+            ) : null}
           </>
         ) : (
           <>
@@ -270,7 +282,7 @@ export function WorksheetForm({
         <button
           type="submit"
           disabled={saving}
-          title="⌘↵ to save"
+          title={composeSubmitTitle("save", isMac)}
           className="rounded-xl bg-accent px-5 py-2.5 text-[13px] font-medium text-accent-foreground shadow-sm outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.97] disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save this record"}

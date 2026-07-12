@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isComposeSubmit } from "@/lib/keyboard";
+import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { useIsMac } from "@/lib/use-is-mac";
 
 // 1 (low) → 5 (good), matching the domain's scale. Gentle, non-clinical words
 // tuned to the twilight room — a heavy night through to a bright one — never a
@@ -30,11 +31,14 @@ export function MoodCheckin({
   initialNote: string | null;
 }) {
   const router = useRouter();
+  const isMac = useIsMac();
   const [score, setScore] = useState<number | null>(initialScore);
-  // The note lives in two layers: what the server holds (savedNote — sent
-  // along with every glyph re-tap so the upsert preserves it) and what's
-  // being typed (draft). Only "Save a word" promotes a draft to saved; a
-  // glyph tap must never quietly commit half-typed words.
+  // The note lives in two layers: what the server already holds (savedNote) and
+  // what's being typed (draft). A glyph re-tap posts only {score} — no note key
+  // — and the server's upsert PRESERVES the day's existing note untouched; the
+  // client never re-sends it. Only "Save a word" posts the note field, which
+  // sets it (non-empty draft) or clears it (""). A glyph tap must never quietly
+  // commit half-typed words.
   const [savedNote, setSavedNote] = useState(initialNote ?? "");
   const [draft, setDraft] = useState(initialNote ?? "");
   const [noteOpen, setNoteOpen] = useState(false);
@@ -180,7 +184,7 @@ export function MoodCheckin({
                 type="button"
                 onClick={saveNote}
                 disabled={saving}
-                title="⌘↵ to save"
+                title={composeSubmitTitle("save", isMac)}
                 className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-foreground outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.96] disabled:opacity-50"
               >
                 {saving ? "Saving…" : noteSaved ? "Saved" : "Save a word"}

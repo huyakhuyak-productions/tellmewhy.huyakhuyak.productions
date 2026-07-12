@@ -38,7 +38,11 @@ export function SharePrompt({
     try {
       const res = await fetch(`/api/entries/${entryId}/share`, { method: "POST" });
       if (!res.ok) {
-        setError("Couldn't share it just now — you can try again, or keep it private.");
+        setError(
+          res.status === 404
+            ? "This connection has ended, so it can't be shared — it stays private with you."
+            : "Couldn't share it just now — you can try again, or keep it private.",
+        );
         return;
       }
       onResolved();
