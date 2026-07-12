@@ -10,7 +10,7 @@ import { moodCheckins, therapistLinks } from "@/db/schema";
 import { recordAuditDeduped } from "./audit";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError, ValidationError } from "./errors";
+import { errorCause, NotFoundError, ValidationError } from "./errors";
 import { getActiveLinkForClient, getActiveLinksForTherapist } from "./therapist-links";
 
 const MIN_SCORE = 1;
@@ -36,6 +36,16 @@ function daysAgoString(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Best effort: a corrupt existing payload must not block today's check-in.
+function readExistingNote(dek: Buffer, payloadCiphertext: string): string | null {
+  try {
+    return (JSON.parse(decryptText(dek, payloadCiphertext)) as MoodPayload).note;
+  } catch (error) {
+    console.error(`Failed to read existing mood payload during check-in (${errorCause(error)})`);
+    return null;
+  }
+}
+
 export async function checkInMood(
   userId: string,
   input: { score: number; note?: string },
@@ -51,7 +61,22 @@ export async function checkInMood(
   }
 
   const dek = await getOrCreateUserDek(userId);
-  const payload: MoodPayload = { score: input.score, note: input.note ?? null };
+
+  // Absent note = "I only tapped a score" — the day's existing note (possibly
+  // written on another device) must survive. An explicit empty string is the
+  // deliberate delete gesture and clears it.
+  let note: string | null;
+  if (input.note === undefined) {
+    const [existing] = await db
+      .select({ payloadCiphertext: moodCheckins.payloadCiphertext })
+      .from(moodCheckins)
+      .where(and(eq(moodCheckins.userId, userId), eq(moodCheckins.day, day)));
+    note = existing ? readExistingNote(dek, existing.payloadCiphertext) : null;
+  } else {
+    note = input.note === "" ? null : input.note;
+  }
+
+  const payload: MoodPayload = { score: input.score, note };
   const payloadCiphertext = encryptText(dek, JSON.stringify(payload));
 
   // One check-in per (user, day) — a repeat check-in on the same day

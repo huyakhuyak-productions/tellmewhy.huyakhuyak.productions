@@ -100,6 +100,34 @@ describe("mood — client-owned check-ins, shared on the client's terms", () => 
       const rows = await db.select().from(moodCheckins).where(eq(moodCheckins.userId, userId));
       expect(rows).toHaveLength(0);
     });
+
+    it("a note-less re-check-in preserves the existing note", async () => {
+      await checkInMood(userId, { score: 4, note: "slept better" }, "2026-01-10");
+      await checkInMood(userId, { score: 2 }, "2026-01-10");
+      const [checkin] = await listMoodCheckins(userId, 365);
+      expect(checkin).toMatchObject({ score: 2, note: "slept better" });
+    });
+
+    it("an explicit empty note clears the existing note", async () => {
+      await checkInMood(userId, { score: 4, note: "slept better" }, "2026-01-10");
+      await checkInMood(userId, { score: 4, note: "" }, "2026-01-10");
+      const [checkin] = await listMoodCheckins(userId, 365);
+      expect(checkin!.note).toBeNull();
+    });
+
+    it("a note-less re-check-in over a corrupt payload does not block the check-in", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      await checkInMood(userId, { score: 4, note: "slept better" }, "2026-01-10");
+      await db
+        .update(moodCheckins)
+        .set({ payloadCiphertext: "not-valid-ciphertext" })
+        .where(and(eq(moodCheckins.userId, userId), eq(moodCheckins.day, "2026-01-10")));
+
+      await checkInMood(userId, { score: 2 }, "2026-01-10");
+      const [checkin] = await listMoodCheckins(userId, 365);
+      expect(checkin).toMatchObject({ score: 2, note: null });
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe("listMoodCheckins", () => {

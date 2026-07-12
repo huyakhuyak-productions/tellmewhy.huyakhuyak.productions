@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isComposeSubmit } from "@/lib/keyboard";
 
@@ -41,14 +41,21 @@ export function MoodCheckin({
   const [saving, setSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The "Saved" flash timer. Held in a ref so it survives re-renders, is
+  // cleared before re-arming (rapid saves), and is cancelled on unmount — a
+  // stray setNoteSaved(false) after unmount would warn and leak the timer.
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    },
+    [],
+  );
 
   const checkedIn = score !== null;
   const selectedLabel = MOODS.find((m) => m.score === score)?.label ?? null;
 
-  async function post(nextScore: number, nextNote: string): Promise<boolean> {
-    const trimmed = nextNote.trim();
-    const body: { score: number; note?: string } = { score: nextScore };
-    if (trimmed) body.note = trimmed;
+  async function post(body: { score: number; note?: string }): Promise<boolean> {
     try {
       const res = await fetch("/api/mood", {
         method: "POST",
@@ -67,9 +74,10 @@ export function MoodCheckin({
     setError(null);
     setScore(next); // optimistic
     setSaving(true);
-    // Send the last SAVED note (the upsert replaces the whole payload, so
-    // omitting it would erase it server-side) — never the live draft.
-    const ok = await post(next, savedNote);
+    // A tap is a pure score signal — it carries no note key at all. The
+    // server's upsert preserves whatever note the day already holds, so the
+    // saved note survives without the client re-sending it.
+    const ok = await post({ score: next });
     setSaving(false);
     if (!ok) {
       setScore(previous); // revert
@@ -83,7 +91,10 @@ export function MoodCheckin({
     if (score === null || saving) return;
     setError(null);
     setSaving(true);
-    const ok = await post(score, draft);
+    // The deliberate note gesture always sends the field: a non-empty draft
+    // stores it, an empty one clears the day's note (the server reads "" as an
+    // explicit delete, distinct from a note-less tap).
+    const ok = await post({ score, note: draft.trim() });
     setSaving(false);
     if (!ok) {
       setError("Couldn't save that just now — try again.");
@@ -91,7 +102,8 @@ export function MoodCheckin({
     }
     setSavedNote(draft); // the draft is now what the server holds
     setNoteSaved(true);
-    setTimeout(() => setNoteSaved(false), 1800);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setNoteSaved(false), 1800);
     router.refresh();
   }
 
