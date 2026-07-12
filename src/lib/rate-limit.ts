@@ -89,6 +89,12 @@ export const moodRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5
 // so draining one never throttles the other.
 export const entryRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
 
+// Self-note writes (hand-written or kept-from-chat), keyed by the owner's
+// userId. Each create writes a new encrypted row, so these accumulate — its
+// own small bucket blunts a runaway client or scripted keep loop, kept apart
+// from entryRateLimiter so draining one never throttles the other.
+export const noteRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
+
 // Session-digest reads, keyed by the therapistId. Reading a client's digest is
 // cheap and a therapist may reopen a desk often, so the ceiling is generous —
 // this only blunts a script hammering the endpoint (each miss can trigger an AI
