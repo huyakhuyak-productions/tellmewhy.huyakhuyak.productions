@@ -9,3 +9,10 @@ export class NotFoundError extends Error {}
 // error (DB, crypto) must stay a plain Error so it rethrows into a 500
 // instead of leaking its internals into a response body.
 export class ValidationError extends Error {}
+
+// The one shape a failure log may carry about an error: name + message,
+// never the object itself — AI/crypto/JSON errors can embed decrypted
+// content in their properties, and a raw dump would put plaintext in logs.
+export function errorCause(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
+}
