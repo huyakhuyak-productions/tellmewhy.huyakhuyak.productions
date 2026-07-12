@@ -17,6 +17,7 @@ import { getDigestModel } from "./ai/models";
 import { buildDigestPrompt } from "./ai/system-prompt";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
+import { errorCause } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 
 const MESSAGE_CLAMP = 500;
@@ -129,8 +130,7 @@ export async function getOrRefreshDigest(
         return [`[message ${row.id}] ${row.sender}: ${clamped}`];
       } catch (error) {
         // Ids + error name/message only — never the message plaintext.
-        const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-        console.error(`Skipping undecryptable message ${id} in digest for conversation ${conversationId} (${cause})`);
+        console.error(`Skipping undecryptable message ${id} in digest for conversation ${conversationId} (${errorCause(error)})`);
         return [];
       }
     })
@@ -156,8 +156,7 @@ export async function getOrRefreshDigest(
     // NoObjectGeneratedError's text embeds the raw generated digest), so a
     // routine provider 4xx/5xx would dump client plaintext into server logs.
     // Ids plus error name/message only.
-    const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-    console.error(`Digest generation failed for conversation ${conversationId} (${cause})`);
+    console.error(`Digest generation failed for conversation ${conversationId} (${errorCause(error)})`);
     if (existing && priorBody) {
       // Same guard on the stale fallback: the prior body may anchor a since-
       // deleted message, which must not reach the therapist.
@@ -207,8 +206,7 @@ function tryDecryptBody(dek: Buffer, ciphertext: string, conversationId: string)
     return JSON.parse(decryptText(dek, ciphertext)) as DigestBody;
   } catch (error) {
     // Ids + error name/message only — never the digest body plaintext.
-    const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-    console.error(`Failed to decrypt digest body for conversation ${conversationId} (${cause})`);
+    console.error(`Failed to decrypt digest body for conversation ${conversationId} (${errorCause(error)})`);
     return null;
   }
 }

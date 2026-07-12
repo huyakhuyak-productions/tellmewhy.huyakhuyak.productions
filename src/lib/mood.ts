@@ -107,8 +107,7 @@ export async function listMoodCheckins(userId: string, sinceDays: number): Promi
       return [{ day: r.day, score: payload.score, note: payload.note ?? null }];
     } catch (error) {
       // Ids + error name/message only — never the check-in note plaintext.
-      const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-      console.error(`Failed to decrypt mood check-in ${r.id} (${cause})`);
+      console.error(`Failed to decrypt mood check-in ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -174,8 +173,7 @@ export async function getMoodTrendForTherapist(
       return [{ day: r.day, score: payload.score }];
     } catch (error) {
       // Ids + error name/message only — never the check-in note plaintext.
-      const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-      console.error(`Failed to decrypt mood check-in ${r.id} (${cause})`);
+      console.error(`Failed to decrypt mood check-in ${r.id} (${errorCause(error)})`);
       return [];
     }
   });

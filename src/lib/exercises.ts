@@ -24,7 +24,7 @@ import { exerciseEntries, exercises, therapistLinks, user } from "@/db/schema";
 import { recordAudit, recordAuditDeduped } from "./audit";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { errorCause, NotFoundError } from "./errors";
 
 const ENTRY_VIEWED_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 
@@ -172,8 +172,7 @@ export async function listExercisesForClient(userId: string): Promise<ClientExer
       ];
     } catch (error) {
       // Ids + error name/message only — never the instruction plaintext.
-      const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-      console.error(`Failed to decrypt exercise instruction ${r.id} (${cause})`);
+      console.error(`Failed to decrypt exercise instruction ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -277,8 +276,7 @@ export async function listEntriesForClient(userId: string): Promise<ClientEntry[
       return [{ id: r.id, exerciseId: r.exerciseId, payload, sharedAt: r.sharedAt, createdAt: r.createdAt }];
     } catch (error) {
       // Ids + error name/message only — never the payload plaintext.
-      const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-      console.error(`Failed to decrypt exercise entry ${r.id} (${cause})`);
+      console.error(`Failed to decrypt exercise entry ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -353,8 +351,7 @@ export async function listAssignmentsForTherapist(
       ];
     } catch (error) {
       // Ids + error name/message only — never the instruction plaintext.
-      const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-      console.error(`Failed to decrypt exercise instruction ${ex.id} (${cause})`);
+      console.error(`Failed to decrypt exercise instruction ${ex.id} (${errorCause(error)})`);
       return [];
     }
   });

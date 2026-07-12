@@ -8,7 +8,7 @@ import { conversations, messages, reviewMarkers, sharingGrants, therapistLinks, 
 import { recordAudit, recordAuditDeduped } from "./audit";
 import { decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { errorCause, NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 
 const ATTENTION_EXCERPT_CODE_POINTS = 140;
@@ -52,7 +52,7 @@ export async function loadSharedMessages(therapistId: string, conversationId: st
         },
       ];
     } catch (error) {
-      console.error(`Failed to decrypt shared message ${r.id}`, error);
+      console.error(`Failed to decrypt shared message ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -214,7 +214,7 @@ export async function listAttentionItems(therapistId: string): Promise<Attention
         createdAt: row.createdAt,
       });
     } catch (error) {
-      console.error(`Failed to decrypt attention item ${row.messageId}`, error);
+      console.error(`Failed to decrypt attention item ${row.messageId} (${errorCause(error)})`);
     }
   }
 

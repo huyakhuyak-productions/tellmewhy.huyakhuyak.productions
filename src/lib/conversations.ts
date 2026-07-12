@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { errorCause, NotFoundError } from "./errors";
 
 // Re-exported for compatibility — existing callers importing NotFoundError
 // from here keep working; new code should import it from "./errors" directly.
@@ -44,7 +44,7 @@ export async function listConversations(userId: string) {
     try {
       return [{ id: r.id, title: decryptText(dek, r.titleCiphertext), updatedAt: r.updatedAt, folderId: r.folderId }];
     } catch (error) {
-      console.error(`Failed to decrypt conversation ${r.id}`, error);
+      console.error(`Failed to decrypt conversation ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -101,7 +101,7 @@ export async function loadMessages(conversationId: string, userId: string) {
         },
       ];
     } catch (error) {
-      console.error(`Failed to decrypt message ${r.id}`, error);
+      console.error(`Failed to decrypt message ${r.id} (${errorCause(error)})`);
       return [];
     }
   });

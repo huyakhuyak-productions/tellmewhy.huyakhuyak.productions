@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
-import { NotFoundError } from "@/lib/errors";
+import { errorCause, NotFoundError } from "@/lib/errors";
 import { assessRisk } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildHomeworkSection, buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
@@ -182,7 +182,7 @@ async function handlePost(req: Request): Promise<Response> {
         } catch (error) {
           // The stream already reached the client; without this log the reply
           // would vanish silently (ai v6 swallows onFinish rejections).
-          console.error(`Failed to persist AI reply for conversation ${conversationId}`, error);
+          console.error(`Failed to persist AI reply for conversation ${conversationId} (${errorCause(error)})`);
         }
 
         // A generated title can echo crisis phrasing prominently on the home
@@ -208,8 +208,7 @@ async function handlePost(req: Request): Promise<Response> {
             // requestBodyValues embeds the title prompt — message plaintext),
             // so a provider 4xx/5xx would dump client content into server
             // logs. Ids plus error name/message only.
-            const cause = error instanceof Error ? `${error.name}: ${error.message}` : "unknown error";
-            console.error(`Failed to auto-title conversation ${conversationId} (${cause})`);
+            console.error(`Failed to auto-title conversation ${conversationId} (${errorCause(error)})`);
           }
         }
       },

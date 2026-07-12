@@ -9,7 +9,7 @@ import { notes, therapistLinks, user } from "@/db/schema";
 import { recordAudit } from "./audit";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError } from "./errors";
+import { errorCause, NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 
 export type NoteKind = "private" | "public" | "ai_instruction";
@@ -193,7 +193,7 @@ export async function listNotesForTherapist(therapistId: string, clientId: strin
         },
       ];
     } catch (error) {
-      console.error(`Failed to decrypt note ${r.id}`, error);
+      console.error(`Failed to decrypt note ${r.id} (${errorCause(error)})`);
       return [];
     }
   });
@@ -266,7 +266,7 @@ export async function listPublicNotesForClient(
         createdAt: row.createdAt,
       });
     } catch (error) {
-      console.error(`Failed to decrypt public note ${row.id}`, error);
+      console.error(`Failed to decrypt public note ${row.id} (${errorCause(error)})`);
     }
   }
   return result;

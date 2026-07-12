@@ -16,7 +16,7 @@ import { conversations, messages, sharingGrants, therapistLinks } from "@/db/sch
 import { recordAudit } from "./audit";
 import { decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
-import { NotFoundError, ValidationError } from "./errors";
+import { errorCause, NotFoundError, ValidationError } from "./errors";
 
 const NO_ACTIVE_LINK_MESSAGE = "No active therapist link";
 
@@ -179,7 +179,7 @@ export async function listGrantedConversations(
         },
       ];
     } catch (error) {
-      console.error(`Failed to decrypt granted conversation ${row.id}`, error);
+      console.error(`Failed to decrypt granted conversation ${row.id} (${errorCause(error)})`);
       return [];
     }
   });

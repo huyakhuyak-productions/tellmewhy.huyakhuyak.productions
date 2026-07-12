@@ -158,9 +158,12 @@ describe("POST /api/chat", () => {
     await vi.waitFor(() => {
       expect(consoleErrorSpy).toHaveBeenCalled();
     });
-    const [logMessage, loggedError] = consoleErrorSpy.mock.calls[0]!;
-    expect(logMessage).toContain(id);
-    expect(loggedError).toBeInstanceOf(Error);
+    const call = consoleErrorSpy.mock.calls[0]!;
+    // Ids + errorCause(error) only — a single string, never a second raw
+    // error-object argument.
+    expect(call).toHaveLength(1);
+    expect(call[0]).toContain(id);
+    expect(call[0]).toContain("simulated persistence failure");
 
     const msgs = await loadMessages(id, userId);
     expect(msgs.map((m) => m.sender)).toEqual(["client"]);

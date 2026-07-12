@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { inspect } from "node:util";
 import { eq } from "drizzle-orm";
 import {
   NotFoundError,
@@ -160,7 +161,7 @@ describe("encrypted conversations", () => {
     expect(list.map((c) => c.id)).toContain(healthy.id);
     expect(list.map((c) => c.id)).not.toContain(corrupt.id);
     // Only the row id may be logged — never the ciphertext or decrypted text.
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id), expect.any(Error));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id));
     const [loggedMessage] = consoleErrorSpy.mock.calls[0]!;
     expect(loggedMessage).not.toContain("not-valid-ciphertext");
     consoleErrorSpy.mockRestore();
@@ -175,9 +176,45 @@ describe("encrypted conversations", () => {
 
     const loaded = await loadMessages(id, userId);
     expect(loaded.map((m) => m.text)).toEqual(["good message"]);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id), expect.any(Error));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(corrupt.id));
     const [loggedMessage] = consoleErrorSpy.mock.calls[0]!;
     expect(loggedMessage).not.toContain("not-valid-ciphertext");
+    consoleErrorSpy.mockRestore();
+  });
+
+  // Sentinel for the id + errorCause(error) discipline (never the raw error
+  // object): a corrupted row must log only the row id and the failure's
+  // name/message string, never a dumped object (which would carry a full
+  // stack trace) or any ciphertext/plaintext fragment. Mirrors the phase-3
+  // sentinel pattern in digests.test.ts (util.inspect over the logged call).
+  it("never logs the raw error object when a conversation fails to decrypt", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const corrupt = await createConversation(userId, "Will corrupt");
+    await db
+      .update(conversations)
+      .set({ titleCiphertext: "not-valid-ciphertext" })
+      .where(eq(conversations.id, corrupt.id));
+
+    await listConversations(userId);
+
+    // Isolate the call about THIS corrupted row — unrelated console.error
+    // noise elsewhere in the suite must not make this assertion flaky.
+    const call = consoleErrorSpy.mock.calls.find((args) =>
+      args.some((arg) => typeof arg === "string" && arg.includes(corrupt.id)),
+    );
+    expect(call).toBeDefined();
+    // Exactly one argument — a raw error object would show up as a second
+    // positional argument to console.error, which this call shape rules out.
+    expect(call).toHaveLength(1);
+
+    const logged = inspect(call, { depth: 20 });
+    expect(logged).toContain(corrupt.id);
+    // The crypto failure's own message must survive into the log line...
+    expect(logged).toContain("Unknown ciphertext format");
+    // ...but never as part of a raw object dump: no stack-trace frame, and
+    // never the corrupted ciphertext itself.
+    expect(logged).not.toContain("\n    at ");
+    expect(logged).not.toContain("not-valid-ciphertext");
     consoleErrorSpy.mockRestore();
   });
 
