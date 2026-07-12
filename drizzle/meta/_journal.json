@@ -85,6 +85,13 @@
       "when": 1783624012647,
       "tag": "0011_melted_phantom_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783874834880,
+      "tag": "0012_famous_talkback",
+      "breakpoints": true
     }
   ]
 }

@@ -158,6 +158,11 @@ export const auditEvents = pgTable("audit_events", {
   // rows rather than guessing which party did it.
   actorId: text("actor_id"),
   conversationId: uuid("conversation_id"),
+  // What the action touched, when one action can repeat across distinct
+  // subjects (e.g. entry_viewed carries the exercise-entry id so reading
+  // three shared records writes three honest lines). No FK: the audit row
+  // must outlive its subject. Null on all rows written before this column.
+  subjectId: uuid("subject_id"),
   action: auditActionEnum("action").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [index("audit_events_client_idx").on(t.clientId, t.createdAt)]);
@@ -210,5 +215,24 @@ export const exerciseEntries = pgTable("exercise_entries", {
   index("exercise_entries_user_id_idx").on(t.userId),
   index("exercise_entries_exercise_id_idx").on(t.exerciseId),
 ]);
+
+// "Notes to your future self" — the client's own kept lines. Body is
+// ciphertext under the OWNER's DEK; there is no share column and no
+// therapist path by design: this is the one content type nobody else can
+// ever read. source_message_id records provenance for a line kept from
+// chat (null = written by hand) and survives message deletion via set-null.
+export const selfNotes = pgTable(
+  "self_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    bodyCiphertext: text("body_ciphertext").notNull(),
+    sourceMessageId: uuid("source_message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("self_notes_user_id_idx").on(t.userId)],
+);
 
 export * from "./auth-schema";
