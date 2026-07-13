@@ -21,7 +21,14 @@ export function MessageKeep({ messageId, initialKept }: { messageId: string; ini
         body: JSON.stringify({ messageId }),
       });
       if (!res.ok) {
-        setError("Couldn't keep that just now — try again.");
+        // A 429 is the rate limiter's calm ask, not a failure — it wears the
+        // gentle-pace copy the rest of the app uses. A keep has no draft to
+        // reassure about, so the "your words are still here" tail is omitted.
+        setError(
+          res.status === 429
+            ? "A gentle pace — give it a moment, then try again."
+            : "Couldn't keep that just now — try again.",
+        );
         return;
       }
       setKept(true);
