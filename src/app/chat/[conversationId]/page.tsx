@@ -60,7 +60,7 @@ export default async function ConversationPage({
     // ~8 weeks of the client's own check-ins for the rail's trend sparkline.
     listMoodCheckins(userId, 56),
     // The person's private kept lines — used here only for the per-message
-    // "kept" badge; Task 11's rail panel reuses this same fetch, so the full
+    // "kept" badge; the rail's notes panel reuses this same fetch, so the full
     // list stays intact in scope rather than being reduced to just the Set.
     listNotes(userId),
   ]);
