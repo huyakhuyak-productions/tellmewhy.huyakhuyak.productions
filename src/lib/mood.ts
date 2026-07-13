@@ -37,11 +37,20 @@ function daysAgoString(days: number): string {
 }
 
 // Best effort: a corrupt existing payload must not block today's check-in.
-function readExistingNote(dek: Buffer, payloadCiphertext: string): string | null {
+function readExistingNote(
+  dek: Buffer,
+  payloadCiphertext: string,
+  userId: string,
+  day: string,
+): string | null {
   try {
     return (JSON.parse(decryptText(dek, payloadCiphertext)) as MoodPayload).note;
   } catch (error) {
-    console.error(`Failed to read existing mood payload during check-in (${errorCause(error)})`);
+    // Ids only — never the note plaintext — so a corrupt row is traceable to
+    // its (user, day) without leaking what the person wrote.
+    console.error(
+      `Failed to read existing mood payload for user ${userId} day ${day} (${errorCause(error)})`,
+    );
     return null;
   }
 }
@@ -71,7 +80,7 @@ export async function checkInMood(
       .select({ payloadCiphertext: moodCheckins.payloadCiphertext })
       .from(moodCheckins)
       .where(and(eq(moodCheckins.userId, userId), eq(moodCheckins.day, day)));
-    note = existing ? readExistingNote(dek, existing.payloadCiphertext) : null;
+    note = existing ? readExistingNote(dek, existing.payloadCiphertext, userId, day) : null;
   } else {
     note = input.note === "" ? null : input.note;
   }

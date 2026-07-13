@@ -126,6 +126,11 @@ describe("mood — client-owned check-ins, shared on the client's terms", () => 
       await checkInMood(userId, { score: 2 }, "2026-01-10");
       const [checkin] = await listMoodCheckins(userId, 365);
       expect(checkin).toMatchObject({ score: 2, note: null });
+      // The corrupt-payload log carries the safe identifiers (user + day) so a
+      // bad row is traceable, never the note plaintext.
+      const logged = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toContain(userId);
+      expect(logged).toContain("2026-01-10");
       consoleErrorSpy.mockRestore();
     });
   });
