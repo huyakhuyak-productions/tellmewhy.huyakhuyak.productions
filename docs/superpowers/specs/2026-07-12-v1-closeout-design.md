@@ -41,7 +41,10 @@ to. Adversarially tested like every other boundary.
 One new table, **`self_notes`**:
 
 - `id` — uuid pk
-- `user_id` — FK → users, cascade delete
+- `user_id` — `text`, no FK (the repo-wide pattern for user-id columns:
+  the dev database holds orphaned smoke-test user ids a FK would reject —
+  see `conversations.userId`; account deletion is crypto-shredding, which
+  makes orphaned rows unreadable noise)
 - `body_ciphertext` — AES-256-GCM under the **owner's DEK** (`v1.` envelope)
 - `source_message_id` — nullable FK → messages, **on delete set null**.
   Null = self-written; set = kept from chat. (Same nullable-provenance
@@ -126,8 +129,10 @@ post-gate ledger additions, with verdicts:
 8. Cached/stale digest return paths re-run the anchor filter against the
    current message set (a dangling anchor can never reach the therapist,
    even after message deletion).
-9. Chat route pins homework ordering itself (route-level `ORDER BY`
-   contract, not an implicit dependency on `listExercisesForClient`).
+9. The chat route's homework ordering (newest-first, active + live-link
+   only) is pinned as a route-level contract by a route test — a reorder
+   in `listExercisesForClient` fails the chat route's own suite. (Shipped
+   as a test-pinned contract rather than a redundant in-route sort.)
 10. Mood + exercise context loads in the chat route run concurrently.
 
 ### Fix — copy, comment & a11y truth

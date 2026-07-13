@@ -17,7 +17,7 @@ export type TherapistRailState = {
 };
 
 // A kept line, trimmed server-side for the rail's peek. The chat page clamps the
-// body to 140 chars and hands over the three newest.
+// body to 140 code points and hands over the three newest.
 export type RailNote = { id: string; body: string; createdAt: Date };
 
 function Panel({ children }: { children: React.ReactNode }) {

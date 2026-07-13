@@ -221,6 +221,8 @@ export const exerciseEntries = pgTable("exercise_entries", {
 // therapist path by design: this is the one content type nobody else can
 // ever read. source_message_id records provenance for a line kept from
 // chat (null = written by hand) and survives message deletion via set-null.
+// user_id carries no FK, like every user-id column here (see conversations);
+// deletion is crypto-shredding, which turns orphaned rows into noise.
 export const selfNotes = pgTable(
   "self_notes",
   {
