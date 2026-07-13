@@ -364,18 +364,62 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
       therapist.getByText("The room went quiet and everyone looked at me"),
     ).toBeVisible();
 
+    // --- A second entry proves the audit is per-entry, not per-connection. ---
+    // The client completes the same assignment again and shares that entry too.
+    await client.goto("/exercises");
+    await client.getByRole("button", { name: `Open assignment: ${instruction}` }).click();
+    await expect(client.getByRole("form", { name: "Thought record" })).toBeVisible();
+    await client.getByLabel("The situation").fill("It happened again the next week");
+    await client.getByLabel("Your thoughts").fill("Maybe this is just who I am");
+    await client.getByLabel("What you felt").fill("tired, resigned");
+    await client.getByLabel("What you did").fill("named it in my notes this time");
+    const secondEntrySaved = client.waitForResponse(
+      (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/entries",
+    );
+    await client.getByRole("button", { name: "Save this record" }).click();
+    await secondEntrySaved;
+    const secondEntryShared = client.waitForResponse(
+      (res) =>
+        res.request().method() === "POST" &&
+        /^\/api\/entries\/[^/]+\/share$/.test(new URL(res.url()).pathname),
+    );
+    await client.getByRole("button", { name: "Share this entry" }).click();
+    await secondEntryShared;
+
+    // The therapist reads BOTH shared entries. Reads are deduped per entry, so
+    // two distinct entries always land exactly two "read an exercise entry"
+    // lines in the client's trust feed — never one merged "they looked" event.
+    await therapist.goto(clientDeskUrl);
+    await expect(therapist.getByRole("button", { name: "Read shared record" })).toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      const entryRead = therapist.waitForResponse(
+        (res) =>
+          res.request().method() === "GET" &&
+          /^\/api\/therapist\/entries\/[^/]+$/.test(new URL(res.url()).pathname),
+      );
+      // Each click takes the first still-collapsed toggle — a read one relabels
+      // to "Hide shared record", so this always opens a fresh, unread entry.
+      await therapist.getByRole("button", { name: "Read shared record" }).first().click();
+      await entryRead;
+    }
+    await expect(therapist.getByText("It happened again the next week")).toBeVisible();
+
+    // The client's trust feed now carries a distinct line for each entry read.
+    await client.goto("/trust");
+    await expect(client.getByText(/read an exercise entry/)).toHaveCount(2);
+
     // --- The therapist opens the shared conversation; the AI digest renders. ---
     await therapist.getByRole("link", { name: /^Read /}).click();
     await expect(therapist).toHaveURL(/\/therapist\/conversations\/.+/);
     const readingUrl = therapist.url();
     const digest = therapist.locator('section[aria-label="Session digest"]');
-    // The panel fetches on mount; the disclosure button is disabled until the
-    // digest lands, so waiting for it to enable is the "ready" signal.
-    const digestToggle = digest.getByRole("button").first();
-    await expect(digestToggle).toBeEnabled();
-    // Target the disclosure button's title, not the sr-only live-status span
-    // (which mirrors the same text) — getByText would match both.
-    await expect(digest.getByRole("button", { name: /Session digest/ })).toBeVisible();
+    // The panel fetches on mount; until it resolves the header is a plain status
+    // line ("Preparing digest…") and only BECOMES a disclosure button once the
+    // digest lands — so the button appearing (not enabling) is the "ready"
+    // signal. Name it by its title, not the sr-only live-status span that
+    // mirrors the same text, which getByText would double-match.
+    const digestToggle = digest.getByRole("button", { name: /Session digest/ });
+    await expect(digestToggle).toBeVisible();
     await digestToggle.click();
     // Mock content: the overview prose, the single theme chip, and one anchor —
     // the mock echoes the first transcript message id, which survives the
@@ -423,6 +467,15 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     await therapist.goto(clientDeskUrl);
     await expect(therapist.locator('section[aria-labelledby="mood-heading"]')).toHaveCount(0);
 
+    // While the link is live, the granted digest endpoint answers 200 — pairing
+    // with the post-revoke 404 below, this proves that 404 is the revoke taking
+    // effect, not a mistyped URL that would 404 either way.
+    const conversationId = readingUrl.split("/").pop();
+    const digestBefore = await therapist.request.get(
+      `/api/therapist/conversations/${conversationId}/digest`,
+    );
+    expect(digestBefore.status()).toBe(200);
+
     // --- Adversarial: revoking the link tears down all three new surfaces. ---
     await client.goto("/trust");
     await client.getByRole("button", { name: "End connection" }).click();
@@ -433,7 +486,6 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     await linkRevoked;
 
     // The digest request 404s — no grant survives the revoke.
-    const conversationId = readingUrl.split("/").pop();
     const digestAfter = await therapist.request.get(
       `/api/therapist/conversations/${conversationId}/digest`,
     );

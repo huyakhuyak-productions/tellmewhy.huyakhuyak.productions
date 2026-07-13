@@ -192,6 +192,79 @@ test("drag a rail conversation onto a folder heading to file it", async ({ page 
   await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
 });
 
+test("keep a reply, find it on the rail and /notes, add one, then let it go", async ({ page }) => {
+  await signUp(page);
+
+  // Start a conversation from the hero and let the mock reply stream in.
+  await page.getByLabel("Start a conversation").fill("Something worth keeping for later");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // "Keep this" rides only on persisted messages — a just-streamed reply is
+  // still client-only, with no server id. The auto-title landing in the rail is
+  // the signal that the reply has been saved (see the title-watcher test);
+  // reloading then re-hydrates the transcript from the server, so every message
+  // carries its id and gains the affordance.
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A quiet mock title"),
+  ).toBeVisible({ timeout: 12_000 });
+  await page.reload();
+
+  // Scope to the AI reply's own group so the person's-message keep button
+  // (same aria-label, under their bubble) never collides.
+  const replyGroup = page.locator("div.group\\/msg").filter({ hasText: "mock reply" });
+  const keep = replyGroup.getByRole("button", { name: "Keep this for your future self" });
+  await expect(keep).toBeVisible();
+
+  await replyGroup.hover();
+  const kept = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/notes",
+  );
+  await keep.click();
+  await kept;
+  await expect(page.getByText("Kept for your future self")).toBeVisible();
+
+  // The kept line only reaches the server-rendered rail on the next load —
+  // keeping is optimistic and never refreshes the page under it.
+  await page.reload();
+  const railNotes = page.getByLabel("Notes to your future self");
+  await expect(railNotes).toContainText("mock reply");
+
+  // The whole rail card links through to the full /notes screen.
+  await railNotes.click();
+  await expect(page).toHaveURL(/\/notes$/);
+  await expect(page.getByText(/mock reply/)).toBeVisible();
+  await expect(page.getByText("Kept from a conversation")).toBeVisible();
+
+  // A second, hand-written note joins it — newest first, so it sits on top.
+  await page
+    .getByPlaceholder("Write something your future self should hear…")
+    .fill("Rest is allowed.");
+  const saved = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/notes",
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  await expect(page.locator("main li").first().locator("p").first()).toHaveText("Rest is allowed.");
+  await expect(page.getByText(/mock reply/)).toBeVisible();
+
+  // Letting the hand-written one go takes two deliberate clicks; the kept line
+  // from the conversation stays untouched.
+  const newest = page.locator("main li").first();
+  await newest.getByRole("button", { name: "Let it go" }).click();
+  const deleted = page.waitForResponse(
+    (res) => res.request().method() === "DELETE" && res.url().includes("/api/notes/"),
+  );
+  await newest.getByRole("button", { name: "Yes, let it go" }).click();
+  await deleted;
+  await expect(page.getByText("Rest is allowed.")).toHaveCount(0);
+  await expect(page.getByText(/mock reply/)).toBeVisible();
+});
+
 test("rename a conversation from the rail menu", async ({ page }) => {
   await signUp(page);
 
