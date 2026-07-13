@@ -155,7 +155,7 @@ export type AttentionItem = {
   createdAt: Date;
 };
 
-function truncateToCodePoints(text: string, max: number): string {
+export function truncateToCodePoints(text: string, max: number): string {
   const codePoints = Array.from(text);
   return codePoints.length <= max ? text : codePoints.slice(0, max).join("");
 }

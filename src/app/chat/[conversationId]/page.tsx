@@ -9,7 +9,7 @@ import { getGrantStateForClient, listGrantsForClient } from "@/lib/sharing";
 import { listMoodCheckins } from "@/lib/mood";
 import { listNotes } from "@/lib/notes";
 import { moodTodayUTC } from "@/lib/mood-sparkline";
-import { getReviewMarkerForClient } from "@/lib/therapist-access";
+import { getReviewMarkerForClient, truncateToCodePoints } from "@/lib/therapist-access";
 import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
 import { listPublicNotesForClient } from "@/lib/therapist-notes";
 import { getUserDisplayNames } from "@/lib/users";
@@ -136,13 +136,18 @@ export default async function ConversationPage({
         checkins: moodCheckins.map((c) => ({ day: c.day, score: c.score })),
         today: moodTodayUTC(),
       }}
-      // Reuse Task 10's listNotes fetch: the three newest, bodies clamped for the
-      // rail's peek. One read serves both the per-message kept badge and this.
-      notes={notesList.slice(0, 3).map((n) => ({
-        id: n.id,
-        body: n.body.length > 140 ? `${n.body.slice(0, 140)}…` : n.body,
-        createdAt: n.createdAt,
-      }))}
+      // The rail's peek reuses the same listNotes fetch: the three newest,
+      // bodies clamped for the panel. One read serves both the per-message kept
+      // badge and this. Clamp by code points so the cut never splits a surrogate
+      // pair (an emoji or astral glyph) into a broken half-character.
+      notes={notesList.slice(0, 3).map((n) => {
+        const clamped = truncateToCodePoints(n.body, 140);
+        return {
+          id: n.id,
+          body: clamped === n.body ? n.body : `${clamped}…`,
+          createdAt: n.createdAt,
+        };
+      })}
     />
   );
 }
