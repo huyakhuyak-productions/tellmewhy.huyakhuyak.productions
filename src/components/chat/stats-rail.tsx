@@ -16,17 +16,13 @@ export type TherapistRailState = {
   sharedCount: number;
 };
 
+// A kept line, trimmed server-side for the rail's peek. The chat page clamps the
+// body to 140 chars and hands over the three newest.
+export type RailNote = { id: string; body: string; createdAt: Date };
+
 function Panel({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-border/75 bg-card/55 p-4">{children}</div>
-  );
-}
-
-function SoonPill({ phase }: { phase: string }) {
-  return (
-    <span className="ml-auto whitespace-nowrap rounded-full bg-accent/[0.14] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-accent">
-      {phase}
-    </span>
   );
 }
 
@@ -96,11 +92,13 @@ export function StatsRail({
   stats,
   therapist,
   mood,
+  notes,
   className = "",
 }: {
   stats: ChatStats;
   therapist: TherapistRailState;
   mood: MoodTrend;
+  notes: RailNote[];
   className?: string;
 }) {
   const memberSince = stats.memberSince.toLocaleDateString(undefined, {
@@ -135,16 +133,33 @@ export function StatsRail({
         <MoodSparkline checkins={mood.checkins} today={mood.today} />
       </Panel>
 
-      {/* Below is honestly a placeholder — labeled, never faked. */}
-      <Panel>
-        <div className="flex items-center">
-          <span className="text-[13px] font-semibold">Notes to your future self</span>
-          <SoonPill phase="Phase 3" />
-        </div>
-        <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
-          Lines worth remembering will be set aside here for the next hard night.
-        </p>
-      </Panel>
+      {/* Live now: the client's own kept lines — private, always. */}
+      <Link
+        href="/notes"
+        aria-label="Notes to your future self"
+        className="group block rounded-2xl border border-border/75 bg-card/55 p-4 outline-none transition-[border-color,background-color] duration-150 hover:border-accent/40 hover:bg-card/80 focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        <span className="text-[13px] font-semibold">Notes to your future self</span>
+        {notes.length === 0 ? (
+          <p className="mt-2 text-[11.5px] leading-[1.55] text-muted-foreground">
+            Keep a line worth remembering — it&apos;ll wait here for the next hard night.
+          </p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1">
+            {notes.map((n) => (
+              <li key={n.id} className="truncate font-serif text-[12px] italic leading-[1.6] text-muted-foreground">
+                {n.body}
+              </li>
+            ))}
+          </ul>
+        )}
+        <span className="mt-2.5 inline-flex items-center gap-1 text-[11.5px] font-medium text-accent">
+          {notes.length === 0 ? "Write the first one" : "All your notes"}
+          <svg viewBox="0 0 16 16" fill="none" className="size-3 transition-transform duration-150 group-hover:translate-x-0.5" aria-hidden>
+            <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </Link>
     </aside>
   );
 }

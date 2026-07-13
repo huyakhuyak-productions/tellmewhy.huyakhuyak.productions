@@ -86,6 +86,17 @@ export default async function HomePage() {
         Thought records
       </Link>
 
+      {/* Reachable on every viewport — the rail's notes panel is desktop-only. */}
+      <Link
+        href="/notes"
+        className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M4 2.5h8v11l-4-3-4 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Notes to your future self
+      </Link>
+
       {/* A calm, single way through to sharing — home itself stays quiet. */}
       <Link
         href="/trust"

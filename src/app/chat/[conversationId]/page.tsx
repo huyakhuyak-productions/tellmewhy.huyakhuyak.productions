@@ -136,6 +136,13 @@ export default async function ConversationPage({
         checkins: moodCheckins.map((c) => ({ day: c.day, score: c.score })),
         today: moodTodayUTC(),
       }}
+      // Reuse Task 10's listNotes fetch: the three newest, bodies clamped for the
+      // rail's peek. One read serves both the per-message kept badge and this.
+      notes={notesList.slice(0, 3).map((n) => ({
+        id: n.id,
+        body: n.body.length > 140 ? `${n.body.slice(0, 140)}…` : n.body,
+        createdAt: n.createdAt,
+      }))}
     />
   );
 }

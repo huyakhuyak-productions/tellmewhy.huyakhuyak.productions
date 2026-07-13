@@ -12,7 +12,7 @@ import { MessageKeep } from "./message-keep";
 import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
-import { StatsRail, type ChatStats, type MoodTrend, type TherapistRailState } from "./stats-rail";
+import { StatsRail, type ChatStats, type MoodTrend, type RailNote, type TherapistRailState } from "./stats-rail";
 import { ThoughtRecordAffordance } from "./thought-record-affordance";
 import { PublicNoteCard } from "@/components/public-note-card";
 
@@ -58,6 +58,7 @@ export function ChatScreen({
   publicNotes,
   therapist,
   mood,
+  notes,
 }: {
   conversationId: string;
   initialMessages: InitialMessage[];
@@ -80,6 +81,8 @@ export function ChatScreen({
   therapist: TherapistRailState;
   /** The client's own recent mood check-ins for the rail's trend sparkline. */
   mood: MoodTrend;
+  /** The three newest kept lines (body clamped server-side) for the rail's notes panel. */
+  notes: RailNote[];
 }) {
   // Server-loaded messages carry facts useChat's own array can't (real sender,
   // therapist author name, flagged state). Key them by id so the render below
@@ -610,7 +613,7 @@ export function ChatScreen({
         </form>
       </div>
 
-      <StatsRail stats={stats} therapist={therapist} mood={mood} className="hidden lg:flex" />
+      <StatsRail stats={stats} therapist={therapist} mood={mood} notes={notes} className="hidden lg:flex" />
     </div>
   );
 }
