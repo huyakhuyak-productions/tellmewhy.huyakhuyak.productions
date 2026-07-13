@@ -226,7 +226,11 @@ test("keep a reply, find it on the rail and /notes, add one, then let it go", as
   );
   await keep.click();
   await kept;
-  await expect(page.getByText("Kept for your future self")).toBeVisible();
+  // The confirmation now lives in two places under the reply: the always-mounted
+  // sr-only live region (role=status) that a screen reader announces, and the
+  // visible settled line. Assert the announcement via its role — the plain
+  // visible text alone would be a strict-mode duplicate.
+  await expect(replyGroup.getByRole("status")).toHaveText("Kept for your future self");
 
   // The kept line only reaches the server-rendered rail on the next load —
   // keeping is optimistic and never refreshes the page under it.

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+const KEPT_LABEL = "Kept for your future self";
 
 // The quiet "keep this" gesture — a line worth remembering, set aside for the
 // next hard night. Works on the person's own words and the AI's alike, and is
@@ -9,6 +11,7 @@ export function MessageKeep({ messageId, initialKept }: { messageId: string; ini
   const [kept, setKept] = useState(initialKept);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const keptRef = useRef<HTMLDivElement>(null);
 
   async function keep() {
     if (busy || kept) return;
@@ -32,6 +35,11 @@ export function MessageKeep({ messageId, initialKept }: { messageId: string; ini
         return;
       }
       setKept(true);
+      // The focused "Keep this" button just unmounted; without this, focus
+      // drops to <body> and a screen reader hears nothing. Land it on the
+      // settled kept state (a move-not-trap, like exercises-screen's
+      // focusHeading) — rAF so it fires after React commits the new node.
+      requestAnimationFrame(() => keptRef.current?.focus());
     } catch {
       setError("Something went wrong — try again.");
     } finally {
@@ -39,36 +47,46 @@ export function MessageKeep({ messageId, initialKept }: { messageId: string; ini
     }
   }
 
-  if (kept) {
-    return (
-      <div className="mt-1 flex items-center gap-1.5 pr-1 text-[11px] text-accent/90">
-        <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
-          <path d="M4 2.5h8v11l-4-3-4 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        Kept for your future self
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-1 flex items-center gap-2 pr-1">
-      {error ? (
-        <span role="alert" className="font-serif text-[11px] italic text-accent">
-          {error}
-        </span>
-      ) : null}
-      <button
-        type="button"
-        aria-label="Keep this for your future self"
-        onClick={keep}
-        disabled={busy}
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground/70 opacity-0 outline-none transition-[opacity,color] duration-150 hover:text-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 group-hover/msg:opacity-100 disabled:opacity-40"
-      >
-        <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
-          <path d="M4 2.5h8v11l-4-3-4 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        Keep this
-      </button>
-    </div>
+    <>
+      {/* One always-mounted live region so the confirmation is spoken even
+          though the button unmounts — a freshly inserted region's content
+          usually goes unannounced (same idiom as DigestPanel). */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {kept ? KEPT_LABEL : ""}
+      </span>
+      {kept ? (
+        <div
+          ref={keptRef}
+          tabIndex={-1}
+          className="mt-1 flex items-center gap-1.5 pr-1 text-[11px] text-accent/90 outline-none"
+        >
+          <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
+            <path d="M4 2.5h8v11l-4-3-4 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {KEPT_LABEL}
+        </div>
+      ) : (
+        <div className="mt-1 flex items-center gap-2 pr-1">
+          {error ? (
+            <span role="alert" className="font-serif text-[11px] italic text-accent">
+              {error}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label="Keep this for your future self"
+            onClick={keep}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground/70 opacity-0 outline-none transition-[opacity,color] duration-150 hover:text-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 group-hover/msg:opacity-100 disabled:opacity-40"
+          >
+            <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
+              <path d="M4 2.5h8v11l-4-3-4 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Keep this
+          </button>
+        </div>
+      )}
+    </>
   );
 }
