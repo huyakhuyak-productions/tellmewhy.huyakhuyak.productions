@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   date,
   index,
@@ -54,6 +55,15 @@ export const conversations = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     // True once a human renamed the conversation — auto-titling must never overwrite.
     titleCustomized: boolean("title_customized").notNull().default(false),
+    // The leaf whose ancestor chain is the client's current path. No FK:
+    // a circular messages<->conversations FK complicates nothing useful —
+    // messages are never deleted, and an fk here would fight the
+    // messages.conversation_id cascade on conversation deletion.
+    activeLeafId: uuid("active_leaf_id"),
+    // "Delete" in the UI = hide from the client's own view. Therapist
+    // surfaces ignore this entirely; account deletion (crypto-shredding)
+    // remains the one true delete.
+    hiddenAt: timestamp("hidden_at"),
   },
   (table) => [index("conversations_user_id_idx").on(table.userId)],
 );
@@ -65,6 +75,11 @@ export const messages = pgTable(
     conversationId: uuid("conversation_id")
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
+    // Tree edge: the message this one answers/follows. Null = the
+    // conversation's root. Messages are never row-deleted, so no cascade
+    // semantics matter here; sibling groups (same parent) are the version
+    // sets the < n/m > switcher navigates.
+    parentId: uuid("parent_id").references((): AnyPgColumn => messages.id),
     sender: senderEnum("sender").notNull(),
     ciphertext: text("ciphertext").notNull(),
     riskLevel: riskLevelEnum("risk_level").notNull().default("none"),
@@ -73,7 +88,10 @@ export const messages = pgTable(
     authorId: text("author_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("messages_conversation_id_idx").on(table.conversationId)],
+  (table) => [
+    index("messages_conversation_id_idx").on(table.conversationId),
+    index("messages_parent_id_idx").on(table.parentId),
+  ],
 );
 
 export const linkStatusEnum = pgEnum("link_status", ["invited", "active", "revoked"]);
