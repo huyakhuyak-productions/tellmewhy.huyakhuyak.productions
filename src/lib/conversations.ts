@@ -1,9 +1,10 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { errorCause, NotFoundError } from "./errors";
+import { deepestDescendant, resolveActivePath } from "./message-tree";
 
 // Re-exported for compatibility — existing callers importing NotFoundError
 // from here keep working; new code should import it from "./errors" directly.
@@ -35,7 +36,9 @@ export async function listConversations(userId: string) {
   const rows = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.userId, userId))
+    // "Delete" in the UI only hides a conversation from the client's own list —
+    // the row lives on for therapist surfaces and is excluded here alone.
+    .where(and(eq(conversations.userId, userId), isNull(conversations.hiddenAt)))
     .orderBy(desc(conversations.updatedAt), desc(conversations.createdAt));
   // A single corrupted row (bit rot, a bad migration, manual tampering) must
   // never take the rest of the list down with it — skip and log just the row
@@ -50,61 +53,179 @@ export async function listConversations(userId: string) {
   });
 }
 
+// The "recently deleted" view: the client's hidden conversations, newest-hidden
+// first, each carrying its hiddenAt so the UI can offer a restore.
+export async function listHiddenConversations(userId: string) {
+  const dek = await getOrCreateUserDek(userId);
+  const rows = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.userId, userId), isNotNull(conversations.hiddenAt)))
+    .orderBy(desc(conversations.hiddenAt));
+  return rows.flatMap((r) => {
+    try {
+      return [
+        {
+          id: r.id,
+          title: decryptText(dek, r.titleCiphertext),
+          updatedAt: r.updatedAt,
+          folderId: r.folderId,
+          hiddenAt: r.hiddenAt!,
+        },
+      ];
+    } catch (error) {
+      console.error(`Failed to decrypt conversation ${r.id} (${errorCause(error)})`);
+      return [];
+    }
+  });
+}
+
+// Hide (soft-delete) or restore a conversation from the client's own list.
+export async function setConversationHidden(conversationId: string, userId: string, hidden: boolean): Promise<void> {
+  await requireOwnedConversation(conversationId, userId);
+  await db
+    .update(conversations)
+    .set({ hiddenAt: hidden ? new Date() : null })
+    .where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+}
+
 export async function saveMessage(input: {
   conversationId: string;
   userId: string;
   sender: Sender;
   text: string;
   riskLevel?: RiskLevel;
+  // undefined = append to the conversation's current leaf; an explicit uuid or
+  // null branches there instead (null = a brand-new root).
+  parentId?: string | null;
 }): Promise<{ id: string }> {
   await requireOwnedConversation(input.conversationId, input.userId);
   const dek = await getOrCreateUserDek(input.userId);
-  // The insert and the updatedAt bump must succeed or fail together — a
-  // reply persisted without bumping the conversation's ordering (or vice
-  // versa) would silently corrupt the sidebar's "most recent" sort.
+  // The insert, the leaf move, and the updatedAt bump must succeed or fail
+  // together — a reply persisted without moving the leaf (or bumping the
+  // conversation's ordering) would silently corrupt the client's active path
+  // or the sidebar's "most recent" sort.
   return db.transaction(async (tx) => {
+    let parentId: string | null;
+    if (input.parentId === undefined) {
+      // Append: read the freshest active leaf inside the transaction so
+      // concurrent appends can't chain off a stale one.
+      const [conv] = await tx
+        .select({ activeLeafId: conversations.activeLeafId })
+        .from(conversations)
+        .where(eq(conversations.id, input.conversationId));
+      parentId = conv.activeLeafId;
+    } else {
+      parentId = input.parentId;
+      // A branch point must be a real message of THIS conversation; a foreign
+      // or missing parent is indistinguishable from "not found" to the client.
+      if (parentId !== null) {
+        const [parent] = await tx
+          .select({ id: messages.id })
+          .from(messages)
+          .where(and(eq(messages.id, parentId), eq(messages.conversationId, input.conversationId)));
+        if (!parent) throw new NotFoundError("Parent message not found");
+      }
+    }
+
     const [row] = await tx
       .insert(messages)
       .values({
         conversationId: input.conversationId,
+        parentId,
         sender: input.sender,
         ciphertext: encryptText(dek, input.text),
         riskLevel: input.riskLevel ?? "none",
       })
       .returning({ id: messages.id });
-    await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));
+    await tx
+      .update(conversations)
+      .set({ activeLeafId: row.id, updatedAt: new Date() })
+      .where(eq(conversations.id, input.conversationId));
     return row;
   });
 }
 
-export async function loadMessages(conversationId: string, userId: string) {
-  await requireOwnedConversation(conversationId, userId);
+type LoadedMessage = {
+  id: string;
+  sender: Sender;
+  text: string;
+  riskLevel: RiskLevel;
+  authorId: string | null;
+  flaggedAt: Date | null;
+  parentId: string | null;
+  createdAt: Date;
+};
+
+function decryptMessageRow(
+  dek: Awaited<ReturnType<typeof getOrCreateUserDek>>,
+  r: typeof messages.$inferSelect,
+): LoadedMessage[] {
+  // Same corrupt-row isolation as listConversations: skip and log the row id
+  // only, never abort the whole conversation over one bad row.
+  try {
+    return [
+      {
+        id: r.id,
+        sender: r.sender,
+        text: decryptText(dek, r.ciphertext),
+        riskLevel: r.riskLevel,
+        authorId: r.authorId,
+        flaggedAt: r.flaggedAt,
+        parentId: r.parentId,
+        createdAt: r.createdAt,
+      },
+    ];
+  } catch (error) {
+    console.error(`Failed to decrypt message ${r.id} (${errorCause(error)})`);
+    return [];
+  }
+}
+
+// Every message of a conversation, flat, in (createdAt, id) order, plus the
+// active leaf — the raw material the version switcher and the active-path
+// reader both build on.
+export async function loadMessageTree(
+  conversationId: string,
+  userId: string,
+): Promise<{ messages: LoadedMessage[]; activeLeafId: string | null }> {
+  const conversation = await requireOwnedConversation(conversationId, userId);
   const dek = await getOrCreateUserDek(userId);
   const rows = await db
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt));
-  // Same corrupt-row isolation as listConversations: skip and log the row id
-  // only, never abort the whole conversation over one bad row.
-  return rows.flatMap((r) => {
-    try {
-      return [
-        {
-          id: r.id,
-          sender: r.sender,
-          text: decryptText(dek, r.ciphertext),
-          riskLevel: r.riskLevel,
-          authorId: r.authorId,
-          flaggedAt: r.flaggedAt,
-          createdAt: r.createdAt,
-        },
-      ];
-    } catch (error) {
-      console.error(`Failed to decrypt message ${r.id} (${errorCause(error)})`);
-      return [];
-    }
+    .orderBy(asc(messages.createdAt), asc(messages.id));
+  return { messages: rows.flatMap((r) => decryptMessageRow(dek, r)), activeLeafId: conversation.activeLeafId };
+}
+
+// The client's current view: the active leaf's root-to-leaf chain. Existing
+// callers that treated this as "the whole conversation" stay correct — a
+// linear conversation's active path IS its full chronological history.
+export async function loadMessages(conversationId: string, userId: string): Promise<LoadedMessage[]> {
+  const { messages: all, activeLeafId } = await loadMessageTree(conversationId, userId);
+  const path = resolveActivePath(all, activeLeafId);
+  const byId = new Map(all.map((m) => [m.id, m]));
+  return path.flatMap((id) => {
+    const m = byId.get(id);
+    return m ? [m] : [];
   });
+}
+
+// Point the conversation's active path at a chosen message. Switching to an
+// interior node lands on that subtree's deepest-latest leaf, so the client
+// sees the full continuation of the version they picked, not a truncated stub.
+export async function setActiveLeaf(conversationId: string, userId: string, messageId: string): Promise<void> {
+  await requireOwnedConversation(conversationId, userId);
+  const rows = await db
+    .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId));
+  if (!rows.some((r) => r.id === messageId)) throw new NotFoundError("Message not found");
+  await db
+    .update(conversations)
+    .set({ activeLeafId: deepestDescendant(rows, messageId) })
+    .where(eq(conversations.id, conversationId));
 }
 
 export async function renameConversation(

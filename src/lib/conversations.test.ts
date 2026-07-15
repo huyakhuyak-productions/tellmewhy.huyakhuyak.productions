@@ -7,8 +7,12 @@ import {
   createConversation,
   flagMessageForTherapist,
   listConversations,
+  listHiddenConversations,
+  loadMessageTree,
   loadMessages,
   saveMessage,
+  setActiveLeaf,
+  setConversationHidden,
 } from "./conversations";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
@@ -260,6 +264,145 @@ describe("encrypted conversations", () => {
       const msg = await saveMessage({ conversationId: id, userId, sender: "client", text: "no link at all" });
 
       await expect(flagMessageForTherapist(userId, msg.id)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("message tree", () => {
+    it("appends to the current leaf, chaining parentId and moving activeLeafId", async () => {
+      const { id } = await createConversation(userId, "Chain");
+      const m1 = await saveMessage({ conversationId: id, userId, sender: "client", text: "one" });
+      const m2 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "two" });
+
+      const rows = await db.select().from(messages).where(eq(messages.conversationId, id));
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      expect(byId.get(m1.id)!.parentId).toBeNull();
+      expect(byId.get(m2.id)!.parentId).toBe(m1.id);
+
+      const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+      expect(conv.activeLeafId).toBe(m2.id);
+    });
+
+    it("branches at an explicit parent: two children share it, the newest is the leaf", async () => {
+      const { id } = await createConversation(userId, "Branch");
+      const m1 = await saveMessage({ conversationId: id, userId, sender: "client", text: "root" });
+      const m2 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "first reply" });
+      const m3 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "retry reply", parentId: m1.id });
+
+      const rows = await db.select().from(messages).where(eq(messages.conversationId, id));
+      expect(rows.find((r) => r.id === m3.id)!.parentId).toBe(m1.id);
+      const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+      expect(conv.activeLeafId).toBe(m3.id);
+
+      // The active path follows the new branch — the abandoned m2 is gone from it.
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => m.text)).toEqual(["root", "retry reply"]);
+      expect(loaded.map((m) => m.id)).not.toContain(m2.id);
+      expect(loaded[1]!.parentId).toBe(m1.id);
+    });
+
+    it("branches at the root when given an explicit null parent", async () => {
+      const { id } = await createConversation(userId, "New root");
+      await saveMessage({ conversationId: id, userId, sender: "client", text: "old root" });
+      const fresh = await saveMessage({ conversationId: id, userId, sender: "client", text: "fresh root", parentId: null });
+
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => m.text)).toEqual(["fresh root"]);
+      const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+      expect(conv.activeLeafId).toBe(fresh.id);
+    });
+
+    it("rejects a parent from another conversation with NotFoundError", async () => {
+      const a = await createConversation(userId, "A");
+      const b = await createConversation(userId, "B");
+      const foreign = await saveMessage({ conversationId: b.id, userId, sender: "client", text: "in B" });
+
+      await expect(
+        saveMessage({ conversationId: a.id, userId, sender: "client", text: "x", parentId: foreign.id }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it("rejects a missing parent id with NotFoundError", async () => {
+      const { id } = await createConversation(userId, "Missing parent");
+      await expect(
+        saveMessage({ conversationId: id, userId, sender: "client", text: "x", parentId: randomUUID() }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it("loadMessageTree returns every message flat with the active leaf id", async () => {
+      const { id } = await createConversation(userId, "Whole tree");
+      const m1 = await saveMessage({ conversationId: id, userId, sender: "client", text: "root" });
+      const m2 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "reply a" });
+      const m3 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "reply b", parentId: m1.id });
+
+      const tree = await loadMessageTree(id, userId);
+      expect(new Set(tree.messages.map((m) => m.id))).toEqual(new Set([m1.id, m2.id, m3.id]));
+      expect(tree.activeLeafId).toBe(m3.id);
+      // Flat order is (createdAt, id) asc, so the abandoned branch is still present.
+      expect(tree.messages.map((m) => m.text)).toContain("reply a");
+    });
+
+    it("setActiveLeaf flips paths and lands on the deepest descendant of the target", async () => {
+      const { id } = await createConversation(userId, "Switch");
+      const m1 = await saveMessage({ conversationId: id, userId, sender: "client", text: "root" });
+      const m2 = await saveMessage({ conversationId: id, userId, sender: "ai", text: "b" });
+      const m3 = await saveMessage({ conversationId: id, userId, sender: "client", text: "c" });
+      // Branch off m1 so the active path leaves m2/m3's side.
+      await saveMessage({ conversationId: id, userId, sender: "ai", text: "other branch", parentId: m1.id });
+      expect((await loadMessages(id, userId)).map((m) => m.text)).toEqual(["root", "other branch"]);
+
+      // Switching to m2 must dive to its deepest descendant (m3), not stop at m2.
+      await setActiveLeaf(id, userId, m2.id);
+      expect((await loadMessages(id, userId)).map((m) => m.text)).toEqual(["root", "b", "c"]);
+      const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+      expect(conv.activeLeafId).toBe(m3.id);
+    });
+
+    it("setActiveLeaf refuses a message from another conversation", async () => {
+      const a = await createConversation(userId, "A");
+      const b = await createConversation(userId, "B");
+      const foreign = await saveMessage({ conversationId: b.id, userId, sender: "client", text: "in B" });
+      await expect(setActiveLeaf(a.id, userId, foreign.id)).rejects.toThrow(NotFoundError);
+    });
+
+    it("loads a legacy conversation (activeLeafId null) chronologically via the fallback", async () => {
+      const { id } = await createConversation(userId, "Legacy");
+      await saveMessage({ conversationId: id, userId, sender: "client", text: "first" });
+      await saveMessage({ conversationId: id, userId, sender: "ai", text: "second" });
+      // Simulate a pre-tree conversation: the parentId chain exists but no
+      // active leaf was ever recorded.
+      await db.update(conversations).set({ activeLeafId: null }).where(eq(conversations.id, id));
+
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => m.text)).toEqual(["first", "second"]);
+    });
+  });
+
+  describe("hiding conversations", () => {
+    it("hides a conversation from the list and surfaces it under listHiddenConversations", async () => {
+      const { id } = await createConversation(userId, "To hide");
+      expect((await listConversations(userId)).map((c) => c.id)).toContain(id);
+
+      await setConversationHidden(id, userId, true);
+
+      expect((await listConversations(userId)).map((c) => c.id)).not.toContain(id);
+      const hidden = await listHiddenConversations(userId);
+      const entry = hidden.find((c) => c.id === id);
+      expect(entry?.title).toBe("To hide");
+      expect(entry?.hiddenAt).toBeInstanceOf(Date);
+    });
+
+    it("restoring reverses hiding", async () => {
+      const { id } = await createConversation(userId, "Toggle");
+      await setConversationHidden(id, userId, true);
+      await setConversationHidden(id, userId, false);
+
+      expect((await listConversations(userId)).map((c) => c.id)).toContain(id);
+      expect((await listHiddenConversations(userId)).map((c) => c.id)).not.toContain(id);
+    });
+
+    it("refuses to hide someone else's conversation", async () => {
+      const { id } = await createConversation(userId, "Not yours");
+      await expect(setConversationHidden(id, "someone-else", true)).rejects.toThrow(NotFoundError);
     });
   });
 });

@@ -25,15 +25,30 @@ async function appendTherapistMessage(
   text: string,
 ): Promise<{ id: string }> {
   const dek = await getOrCreateUserDek(clientId);
-  // Same transactional shape as conversations.ts's saveMessage: the insert
-  // and the updatedAt bump must succeed or fail together, or the sidebar's
-  // "most recent" ordering could silently drift from reality.
+  // Same transactional shape as conversations.ts's saveMessage, and the same
+  // tree participation: an intervention is a silent append, so it chains onto
+  // the conversation's current leaf and becomes the new leaf itself. Skipping
+  // that would strand the therapist's message off the active path, hiding it
+  // from the client's own view and from the AI's context.
   return db.transaction(async (tx) => {
+    const [conv] = await tx
+      .select({ activeLeafId: conversations.activeLeafId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
     const [row] = await tx
       .insert(messages)
-      .values({ conversationId, sender: "therapist", authorId: therapistId, ciphertext: encryptText(dek, text) })
+      .values({
+        conversationId,
+        parentId: conv.activeLeafId,
+        sender: "therapist",
+        authorId: therapistId,
+        ciphertext: encryptText(dek, text),
+      })
       .returning({ id: messages.id });
-    await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
+    await tx
+      .update(conversations)
+      .set({ activeLeafId: row.id, updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
     return row;
   });
 }

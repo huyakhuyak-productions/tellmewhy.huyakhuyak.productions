@@ -190,7 +190,11 @@ describe("digests — get-or-refresh behind the gate", () => {
       expect(first!.anchors).toEqual([{ messageId: anchored.id, label: "A mock anchor", kind: "moment" }]);
 
       // Delete the anchored message; the newest is untouched so the stored digest
-      // still covers it → the cached path serves without regenerating.
+      // still covers it → the cached path serves without regenerating. Messages
+      // now chain via parentId, and the parent_id FK forbids removing a
+      // referenced row, so detach the child first — the point is only that the
+      // anchored row no longer exists.
+      await db.update(messages).set({ parentId: null }).where(eq(messages.parentId, anchored.id));
       await db.delete(messages).where(eq(messages.id, anchored.id));
 
       const before = vi.mocked(getDigestModel).mock.calls.length;
@@ -211,7 +215,9 @@ describe("digests — get-or-refresh behind the gate", () => {
 
       // The anchored message is deleted and a new one arrives → the cache is
       // stale and regeneration runs. Force it to fail so we fall back to the
-      // prior body, which still carries the now-dangling anchor.
+      // prior body, which still carries the now-dangling anchor. Detach the
+      // child first so the parent_id FK permits removing the anchored row.
+      await db.update(messages).set({ parentId: null }).where(eq(messages.parentId, anchored.id));
       await db.delete(messages).where(eq(messages.id, anchored.id));
       await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "third" });
       vi.mocked(getDigestModel).mockReturnValueOnce(throwingDigestModel());
