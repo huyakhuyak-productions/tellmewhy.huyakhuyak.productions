@@ -15,6 +15,7 @@ const ATTENTION_EXCERPT_CODE_POINTS = 140;
 
 export type SharedMessage = {
   id: string;
+  parentId: string | null;
   sender: "client" | "ai" | "therapist" | "system";
   text: string;
   riskLevel: "none" | "elevated" | "crisis";
@@ -30,11 +31,15 @@ export type SharedMessage = {
 export async function loadSharedMessages(therapistId: string, conversationId: string): Promise<SharedMessage[]> {
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
   const dek = await getOrCreateUserDek(clientId);
+  // The WHOLE tree, flat, in (createdAt, id) order — the therapist reads every
+  // branch, not just the client's active path. Path resolution happens only
+  // where a single path is needed (digests), via message-tree helpers over the
+  // parentId each row now carries.
   const rows = await db
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(asc(messages.createdAt));
+    .orderBy(asc(messages.createdAt), asc(messages.id));
 
   // Same corrupt-row isolation as loadMessages/listGrantedConversations: one
   // bad ciphertext must never take the rest of the read down with it.
@@ -43,6 +48,7 @@ export async function loadSharedMessages(therapistId: string, conversationId: st
       return [
         {
           id: r.id,
+          parentId: r.parentId,
           sender: r.sender,
           text: decryptText(dek, r.ciphertext),
           riskLevel: r.riskLevel,

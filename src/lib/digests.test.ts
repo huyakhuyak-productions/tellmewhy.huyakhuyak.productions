@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { digests, messages } from "@/db/schema";
 import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
-import { createConversation, saveMessage } from "./conversations";
+import { createConversation, saveMessage, setActiveLeaf } from "./conversations";
 import { CryptoError, decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
@@ -346,6 +346,70 @@ describe("digests — get-or-refresh behind the gate", () => {
       const prompt = lastDigestPrompt();
       expect(prompt).toContain("NEWEST_MARKER_204");
       expect(prompt).not.toContain("OLDEST_MARKER_0");
+    });
+  });
+
+  describe("path-aware (branches)", () => {
+    it("summarizes only the ACTIVE PATH — a superseded branch's words never reach the prompt", async () => {
+      const convId = await grantedConversation("Path-only transcript");
+      const m1 = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "PATH_ROOT" });
+      // A superseded branch off m1, with distinctive text, then the active branch.
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "SUPERSEDED_BRANCH_SECRET", parentId: m1.id });
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "ACTIVE_BRANCH_TEXT", parentId: m1.id });
+
+      await getOrRefreshDigest(therapistId, convId);
+      const prompt = lastDigestPrompt();
+      expect(prompt).toContain("ACTIVE_BRANCH_TEXT");
+      expect(prompt).toContain("PATH_ROOT");
+      // The off-path branch is invisible to the model.
+      expect(prompt).not.toContain("SUPERSEDED_BRANCH_SECRET");
+    });
+
+    it("goes stale when the active leaf moves, even though no message rows changed", async () => {
+      const convId = await grantedConversation("Leaf-move staleness");
+      const m1 = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "root" });
+      const branchA = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "branch A", parentId: m1.id });
+      const branchB = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "branch B", parentId: m1.id });
+
+      // Cover the current path (leaf = branchB, the latest child of m1).
+      const first = await getOrRefreshDigest(therapistId, convId);
+      expect(first!.coversUpToMessageId).toBe(branchB.id);
+
+      // No rows added or removed — only the active leaf moves to branchA.
+      await setActiveLeaf(convId, clientId, branchA.id);
+
+      const before = vi.mocked(getDigestModel).mock.calls.length;
+      const refreshed = await getOrRefreshDigest(therapistId, convId);
+      // A leaf move alone must trigger regeneration: the covered leaf changed.
+      expect(vi.mocked(getDigestModel).mock.calls.length).toBe(before + 1);
+      expect(refreshed!.coversUpToMessageId).toBe(branchA.id);
+      expect(refreshed!.stale).toBe(false);
+    });
+
+    it("drops an anchor pointing at a message on a superseded branch (path-scoped validMessageIds)", async () => {
+      const convId = await grantedConversation("Off-path anchor");
+      const m1 = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "root" });
+      const superseded = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "superseded", parentId: m1.id });
+      const active = await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "active", parentId: m1.id });
+      // Make branchA (superseded) the active leaf so `active` is off-path.
+      await setActiveLeaf(convId, clientId, superseded.id);
+
+      // The model anchors an off-path message (`active`) and an on-path one (m1).
+      vi.mocked(getDigestModel).mockReturnValueOnce(
+        digestModelReturning({
+          overview: "overview",
+          themes: ["theme"],
+          anchors: [
+            { messageId: active.id, label: "off-path", kind: "moment" },
+            { messageId: m1.id, label: "on-path root", kind: "moment" },
+          ],
+        }),
+      );
+
+      const digest = await getOrRefreshDigest(therapistId, convId);
+      // Only the on-path anchor survives; the off-path branch anchor is scrubbed
+      // by the path-scoped validMessageIds — not merely the whole-conversation set.
+      expect(digest!.anchors).toEqual([{ messageId: m1.id, label: "on-path root", kind: "moment" }]);
     });
   });
 

@@ -33,7 +33,7 @@ export function AttentionQueue({ entries }: { entries: AttentionEntry[] }) {
           {entries.map((entry) => (
             <li key={entry.messageId}>
               <Link
-                href={`/therapist/conversations/${entry.conversationId}`}
+                href={`/therapist/conversations/${entry.conversationId}?focus=${entry.messageId}`}
                 aria-label={`Read ${entry.clientName}'s conversation "${entry.conversationTitle}"`}
                 className={`group block rounded-2xl border px-5 py-4 shadow-sm outline-none transition-[border-color,background-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 ${
                   entry.kind === "crisis"

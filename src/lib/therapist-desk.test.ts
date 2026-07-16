@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, user } from "@/db/schema";
-import { createConversation, flagMessageForTherapist, saveMessage } from "./conversations";
+import { createConversation, flagMessageForTherapist, saveMessage, setConversationHidden } from "./conversations";
 import { sendIntervention } from "./interventions";
 import { advanceReviewMarker } from "./therapist-access";
 import { acceptInvite, createInvite } from "./therapist-links";
@@ -14,7 +14,7 @@ import {
   listAttentionQueue,
   listClientOverviews,
 } from "./therapist-desk";
-import { grantConversation } from "./sharing";
+import { grantConversation, listGrantedConversations } from "./sharing";
 
 async function insertUser(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -165,10 +165,56 @@ describe("therapist desk — composed reads", () => {
       expect(view.conversations[0].unreadCount).toBe(2);
     });
 
+    it("counts messages created after the marker regardless of which branch they land on (time-based, branch-stable)", async () => {
+      await link(clientId, therapistId);
+      const conv = await createConversation(clientId, "Branched unread");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "m1" });
+      const m2 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "m2" });
+      // Two branches off m2 — both created strictly after m2.
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch A", parentId: m2.id });
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch B", parentId: m2.id });
+
+      await advanceReviewMarker(therapistId, conv.id, m2.id);
+      const view = await getClientConversations(therapistId, clientId);
+      // branchA + branchB were both created after m2 → 2 unread, independent of
+      // which branch is active. (m1 predates the marker; m2 is the marker.)
+      expect(view.conversations[0].unreadCount).toBe(2);
+    });
+
+    it("keeps a hidden conversation fully visible in getClientConversations (hide changes nothing therapist-visible)", async () => {
+      await link(clientId, therapistId);
+      const conv = await createConversation(clientId, "Hidden but shared");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "one" });
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "two" });
+
+      const before = await getClientConversations(therapistId, clientId);
+      await setConversationHidden(conv.id, clientId, true);
+      const after = await getClientConversations(therapistId, clientId);
+      // Direct before/after equality: no therapist surface may filter on hiddenAt.
+      expect(after).toEqual(before);
+    });
+
     it("returns an empty list for a client with no active link", async () => {
       const stranger = await insertUser("Stranger");
       const view = await getClientConversations(therapistId, stranger);
       expect(view).toEqual({ clientName: null, linkedSince: null, conversations: [] });
+    });
+  });
+
+  describe("hide-blindness (adversarial)", () => {
+    it("keeps a hidden conversation in listGrantedConversations, byte-for-byte", async () => {
+      await link(clientId, therapistId);
+      const conv = await createConversation(clientId, "Hidden grant");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "hi" });
+
+      const before = await listGrantedConversations(therapistId, clientId);
+      await setConversationHidden(conv.id, clientId, true);
+      const after = await listGrantedConversations(therapistId, clientId);
+      expect(after).toEqual(before);
+      expect(after.map((c) => c.id)).toContain(conv.id);
     });
   });
 
@@ -189,6 +235,26 @@ describe("therapist desk — composed reads", () => {
       const therapistMsg = view.messages.find((m) => m.sender === "therapist");
       expect(therapistMsg?.authorName).toBe("Dr. Vale");
       expect(therapistMsg?.text).toBe("I'm here with you.");
+    });
+
+    it("exposes the active leaf and the WHOLE tree (both branches), each message carrying its parentId", async () => {
+      await link(clientId, therapistId);
+      const conv = await createConversation(clientId, "Tree reading");
+      await grantConversation(clientId, conv.id);
+      const m1 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "root" });
+      const m2 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "reply" });
+      const branchA = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch A", parentId: m2.id });
+      const branchB = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch B", parentId: m2.id });
+
+      const view = await getReadingView(therapistId, conv.id);
+      // The latest child of m2 is the active leaf.
+      expect(view.activeLeafId).toBe(branchB.id);
+      // The whole tree is returned, not just the active path.
+      expect(view.messages.map((m) => m.id).sort()).toEqual([m1.id, m2.id, branchA.id, branchB.id].sort());
+      const byId = new Map(view.messages.map((m) => [m.id, m]));
+      expect(byId.get(branchA.id)!.parentId).toBe(m2.id);
+      expect(byId.get(branchB.id)!.parentId).toBe(m2.id);
+      expect(byId.get(m1.id)!.parentId).toBeNull();
     });
 
     it("audits the view as a conversation_viewed (a view is a view)", async () => {

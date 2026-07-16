@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, conversations, messages } from "@/db/schema";
-import { createConversation, loadMessages } from "./conversations";
+import { createConversation, loadMessages, saveMessage } from "./conversations";
 import { CryptoError, decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
@@ -32,6 +32,23 @@ describe("sendIntervention", () => {
     expect(loaded.map((m) => [m.sender, m.text])).toEqual([
       ["therapist", "Try grounding: name five things you can see."],
     ]);
+  });
+
+  it("lands as a child of the current active leaf and becomes the new leaf", async () => {
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+    const conv = await createConversation(clientId, "Shared");
+    await grantConversation(clientId, conv.id);
+    const leafBefore = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "the current leaf" });
+
+    const { id } = await sendIntervention(therapistId, conv.id, "I'm here.");
+
+    const [row] = await db.select().from(messages).where(eq(messages.id, id));
+    // Chains off the committed leaf, not stranded off the active path.
+    expect(row.parentId).toBe(leafBefore.id);
+    // And moves the conversation's active leaf onto itself.
+    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conv.id));
+    expect(conversation.activeLeafId).toBe(id);
   });
 
   it("stamps the message with the sending therapist's id as its author", async () => {

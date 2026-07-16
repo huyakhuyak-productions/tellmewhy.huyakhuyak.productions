@@ -7,9 +7,9 @@
 // unread-since-marker counts. Titles and excerpts returned here are already
 // decrypted by the primitives (with the CLIENT's DEK), so callers must treat
 // them as display data — never widen this surface to leak ids or ciphertext.
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { messages, reviewMarkers, therapistLinks, user } from "@/db/schema";
+import { conversations as conversationsTable, messages, reviewMarkers, therapistLinks, user } from "@/db/schema";
 import {
   type GrantedConversationSummary,
   listGrantedConversations,
@@ -166,27 +166,30 @@ export async function getClientConversations(
   const markerByConversation = new Map(markerRows.map((m) => [m.conversationId, m.messageId]));
 
   const msgRows = await db
-    .select({ id: messages.id, conversationId: messages.conversationId })
+    .select({ id: messages.id, conversationId: messages.conversationId, createdAt: messages.createdAt })
     .from(messages)
-    .where(inArray(messages.conversationId, ids))
-    .orderBy(asc(messages.createdAt));
-  const idsByConversation = new Map<string, string[]>();
+    .where(inArray(messages.conversationId, ids));
+  // Per conversation: the whole tree's rows, and each message's createdAt for
+  // the time-based unread math below.
+  const rowsByConversation = new Map<string, { id: string; createdAt: Date }[]>();
+  const createdAtById = new Map<string, Date>();
   for (const row of msgRows) {
-    const list = idsByConversation.get(row.conversationId) ?? [];
-    list.push(row.id);
-    idsByConversation.set(row.conversationId, list);
+    const list = rowsByConversation.get(row.conversationId) ?? [];
+    list.push({ id: row.id, createdAt: row.createdAt });
+    rowsByConversation.set(row.conversationId, list);
+    createdAtById.set(row.id, row.createdAt);
   }
 
+  // Unread is time-based, not index-based: a message is unread when it landed
+  // strictly after the marker message — regardless of which branch it sits on.
+  // No marker (nothing reviewed yet) → every message counts.
   const conversations = convs.map((c) => {
-    const order = idsByConversation.get(c.id) ?? [];
+    const rows = rowsByConversation.get(c.id) ?? [];
     const markerId = markerByConversation.get(c.id);
-    let unreadCount: number;
-    if (!markerId) {
-      unreadCount = order.length;
-    } else {
-      const idx = order.indexOf(markerId);
-      unreadCount = idx === -1 ? order.length : order.length - idx - 1;
-    }
+    const markerAt = markerId ? createdAtById.get(markerId) : undefined;
+    const unreadCount = markerAt
+      ? rows.filter((r) => r.createdAt.getTime() > markerAt.getTime()).length
+      : rows.length;
     return { ...c, unreadCount };
   });
 
@@ -195,6 +198,8 @@ export async function getClientConversations(
 
 export type ReadingMessage = {
   id: string;
+  parentId: string | null;
+  createdAt: Date;
   sender: "client" | "ai" | "therapist" | "system";
   text: string;
   riskLevel: SharedMessage["riskLevel"];
@@ -207,7 +212,10 @@ export type ReadingView = {
   clientId: string;
   clientName: string | null;
   conversationTitle: string;
+  /** The WHOLE tree, flat, (createdAt, id) asc — every branch, not just the
+   *  active path. The view projects the marker per displayed path itself. */
   messages: ReadingMessage[];
+  activeLeafId: string | null;
   markerMessageId: string | null;
 };
 
@@ -233,14 +241,23 @@ export async function getReadingView(
     .from(reviewMarkers)
     .where(and(eq(reviewMarkers.linkId, linkId), eq(reviewMarkers.conversationId, conversationId)));
 
-  const [authorNames, links, convs] = await Promise.all([
+  const [authorNames, links, convs, convRow] = await Promise.all([
     getUserDisplayNames(authorIds),
     getTherapistClientLinks(therapistId),
     listGrantedConversations(therapistId, clientId),
+    db
+      .select({ activeLeafId: conversationsTable.activeLeafId })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId)),
   ]);
 
+  // The WHOLE tree — loadSharedMessages already returns every branch, flat in
+  // (createdAt, id) order. The marker id stays raw here; the reading view
+  // projects it onto whichever path it displays via projectMarkerOntoPath.
   const messages_ = shared.map((m) => ({
     id: m.id,
+    parentId: m.parentId,
+    createdAt: m.createdAt,
     sender: m.sender,
     text: m.text,
     riskLevel: m.riskLevel,
@@ -254,6 +271,7 @@ export async function getReadingView(
     clientName: links.find((l) => l.clientId === clientId)?.clientName ?? null,
     conversationTitle: convs.find((c) => c.id === conversationId)?.title ?? "Untitled reflection",
     messages: messages_,
+    activeLeafId: convRow[0]?.activeLeafId ?? null,
     markerMessageId: markerRow?.messageId ?? null,
   };
 }

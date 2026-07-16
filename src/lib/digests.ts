@@ -12,7 +12,8 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { db } from "@/db";
-import { digests, messages } from "@/db/schema";
+import { conversations, digests, messages } from "@/db/schema";
+import { resolveActivePath } from "./message-tree";
 import { getDigestModel } from "./ai/models";
 import { buildDigestPrompt } from "./ai/system-prompt";
 import { decryptText, encryptText } from "./crypto/envelope";
@@ -60,21 +61,36 @@ export async function getOrRefreshDigest(
   // THE GATE — first line, before touching any digest or message data.
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
 
-  // Staleness and anchor-validity need only ids: fetch id + createdAt for the
-  // whole conversation, but NO ciphertext. On a cache hit this is all we ever
-  // read of the messages — the ciphertext is fetched later, only when we
+  // Staleness and anchor-validity need only ids: fetch id + parentId + createdAt
+  // for the whole conversation, but NO ciphertext. On a cache hit this is all we
+  // ever read of the messages — the ciphertext is fetched later, only when we
   // actually regenerate, and only for the windowed slice we summarize.
-  const idRows = await db
-    .select({ id: messages.id, createdAt: messages.createdAt })
+  const treeRows = await db
+    .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt), asc(messages.id));
 
   // Nothing to digest: never create a row for an empty conversation.
-  if (idRows.length === 0) return null;
+  if (treeRows.length === 0) return null;
 
-  const newestMessageId = idRows[idRows.length - 1].id;
-  const validMessageIds = new Set(idRows.map((m) => m.id));
+  // The digest summarizes the client's ACTIVE PATH, not the whole tree —
+  // superseded branches are neither in the transcript nor valid anchor targets.
+  // Resolve the path from the conversation's active leaf; a leaf move alone
+  // (same rows) shifts the path and thus the coverage, forcing a refresh.
+  const [conv] = await db
+    .select({ activeLeafId: conversations.activeLeafId })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId));
+  const pathIds = resolveActivePath(treeRows, conv?.activeLeafId ?? null);
+  if (pathIds.length === 0) return null;
+
+  const byId = new Map(treeRows.map((r) => [r.id, r]));
+  // idRows in path order (root-first = chronological down the chain).
+  const idRows = pathIds.map((id) => byId.get(id)!);
+
+  const newestMessageId = pathIds[pathIds.length - 1];
+  const validMessageIds = new Set(pathIds);
 
   const [existing] = await db.select().from(digests).where(eq(digests.conversationId, conversationId));
   const dek = await getOrCreateUserDek(clientId);

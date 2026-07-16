@@ -3,9 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { auditEvents, messages, reviewMarkers, user } from "@/db/schema";
-import { createConversation, saveMessage } from "./conversations";
+import { createConversation, saveMessage, setConversationHidden } from "./conversations";
 import { NotFoundError } from "./errors";
-import { grantConversation, revokeGrant } from "./sharing";
+import { grantConversation, requireGrantedConversation, revokeGrant } from "./sharing";
 import {
   advanceReviewMarker,
   getReviewMarkerForClient,
@@ -51,6 +51,43 @@ describe("therapist access — reads, review line, attention queue", () => {
         ["client", "hello"],
         ["ai", "hi there"],
       ]);
+    });
+
+    it("returns BOTH branches (whole tree) after a client edits mid-conversation, each carrying its parentId", async () => {
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const conv = await createConversation(clientId, "Branched");
+      await grantConversation(clientId, conv.id);
+      const m1 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "root" });
+      const m2 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "reply" });
+      // A client edit branches at m2: two children sharing the same parent.
+      const branchA = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch A", parentId: m2.id });
+      const branchB = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch B", parentId: m2.id });
+
+      const loaded = await loadSharedMessages(therapistId, conv.id);
+      const byId = new Map(loaded.map((m) => [m.id, m]));
+      // The whole tree is present — neither branch is filtered out by a path.
+      expect(loaded.map((m) => m.text).sort()).toEqual(["branch A", "branch B", "reply", "root"]);
+      expect(byId.get(m1.id)!.parentId).toBeNull();
+      expect(byId.get(m2.id)!.parentId).toBe(m1.id);
+      expect(byId.get(branchA.id)!.parentId).toBe(m2.id);
+      expect(byId.get(branchB.id)!.parentId).toBe(m2.id);
+    });
+
+    it("still loads a HIDDEN conversation and still passes the gate (therapist surfaces ignore hiddenAt)", async () => {
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const conv = await createConversation(clientId, "Hidden by the client");
+      await grantConversation(clientId, conv.id);
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "still visible to the therapist" });
+
+      const before = await loadSharedMessages(therapistId, conv.id);
+      await setConversationHidden(conv.id, clientId, true);
+      // The gate must not care about hiddenAt.
+      await expect(requireGrantedConversation(therapistId, conv.id)).resolves.toMatchObject({ clientId });
+      const after = await loadSharedMessages(therapistId, conv.id);
+      expect(after.map((m) => m.text)).toEqual(before.map((m) => m.text));
+      expect(after).toHaveLength(1);
     });
 
     it("refuses an ungranted conversation with NotFoundError", async () => {
@@ -161,6 +198,22 @@ describe("therapist access — reads, review line, attention queue", () => {
       const rows = await db.select().from(reviewMarkers).where(eq(reviewMarkers.conversationId, conv.id));
       expect(rows).toHaveLength(1); // upsert, not a second row
       expect(rows[0].lastReviewedMessageId).toBe(msg2.id);
+    });
+
+    it("accepts a review marker on an INACTIVE branch (any message of the conversation, not just the active path)", async () => {
+      const therapistUser = await insertUser("Dr. Reyes");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistUser);
+      const conv = await createConversation(clientId, "Branched review");
+      await grantConversation(clientId, conv.id);
+      const m1 = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "root" });
+      const inactive = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "superseded branch", parentId: m1.id });
+      // A later sibling becomes the active leaf, leaving `inactive` off the path.
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "active branch", parentId: m1.id });
+
+      await advanceReviewMarker(therapistUser, conv.id, inactive.id);
+      const marker = await getReviewMarkerForClient(clientId, conv.id);
+      expect(marker!.lastReviewedMessageId).toBe(inactive.id);
     });
 
     it("rejects a message that belongs to a DIFFERENT conversation", async () => {
