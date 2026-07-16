@@ -16,6 +16,8 @@ import {
 } from "./conversations";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
+import { encryptText } from "./crypto/envelope";
+import { getOrCreateUserDek } from "./crypto/user-keys";
 
 describe("encrypted conversations", () => {
   let userId: string;
@@ -374,6 +376,59 @@ describe("encrypted conversations", () => {
 
       const loaded = await loadMessages(id, userId);
       expect(loaded.map((m) => m.text)).toEqual(["first", "second"]);
+    });
+
+    it("keeps ancestors above a corrupt mid-chain row, skipping only the corrupt node", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { id } = await createConversation(userId, "Corrupt middle");
+      const root = await saveMessage({ conversationId: id, userId, sender: "client", text: "root msg" });
+      const middle = await saveMessage({ conversationId: id, userId, sender: "ai", text: "middle msg" });
+      const leaf = await saveMessage({ conversationId: id, userId, sender: "client", text: "leaf msg" });
+      // Corrupt ONLY the middle row. Because the active path resolves over raw
+      // ids (never the ciphertext), the leaf's ancestor (root) must survive even
+      // though the node linking them is unreadable — only the corrupt node drops.
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, middle.id));
+
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => [m.id, m.text])).toEqual([
+        [root.id, "root msg"],
+        [leaf.id, "leaf msg"],
+      ]);
+      // The corrupt node's id is logged (never the ciphertext), same discipline
+      // as every other skip.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(middle.id));
+      const [loggedMessage] = consoleErrorSpy.mock.calls.find((c) =>
+        typeof c[0] === "string" && c[0].includes(middle.id),
+      )!;
+      expect(loggedMessage).not.toContain("not-valid-ciphertext");
+      consoleErrorSpy.mockRestore();
+    });
+
+    // Invariant pin: if backfill ever missed rows, messages exist with all-null
+    // parents (inserted here directly, bypassing saveMessage, so nothing chains)
+    // and activeLeafId is never set. resolveActivePath then has no leaf to walk
+    // and falls back to the latest root's deepest chain — which, with no
+    // children anywhere, is just that single latest root.
+    it("with all-null parents and no active leaf, falls back to the latest root only", async () => {
+      const { id } = await createConversation(userId, "Unbackfilled");
+      const dek = await getOrCreateUserDek(userId);
+      await db.insert(messages).values({
+        conversationId: id,
+        parentId: null,
+        sender: "client",
+        ciphertext: encryptText(dek, "first"),
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      await db.insert(messages).values({
+        conversationId: id,
+        parentId: null,
+        sender: "ai",
+        ciphertext: encryptText(dek, "second"),
+        createdAt: new Date("2026-01-01T00:00:01Z"),
+      });
+
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => m.text)).toEqual(["second"]);
     });
   });
 

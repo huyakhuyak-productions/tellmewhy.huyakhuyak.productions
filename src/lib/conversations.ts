@@ -207,12 +207,25 @@ export async function loadMessageTree(
 // callers that treated this as "the whole conversation" stay correct — a
 // linear conversation's active path IS its full chronological history.
 export async function loadMessages(conversationId: string, userId: string): Promise<LoadedMessage[]> {
-  const { messages: all, activeLeafId } = await loadMessageTree(conversationId, userId);
-  const path = resolveActivePath(all, activeLeafId);
-  const byId = new Map(all.map((m) => [m.id, m]));
+  const conversation = await requireOwnedConversation(conversationId, userId);
+  const dek = await getOrCreateUserDek(userId);
+  const rows = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(asc(messages.createdAt), asc(messages.id));
+  // Resolve the active path over RAW rows first — id/parentId/createdAt need
+  // no decryption — so an undecryptable row mid-chain can't sever the ancestors
+  // above it. Only the path's own rows are then decrypted; a corrupt node is
+  // skipped (and logged) by decryptMessageRow, leaving its ancestors intact.
+  const path = resolveActivePath(
+    rows.map((r) => ({ id: r.id, parentId: r.parentId, createdAt: r.createdAt })),
+    conversation.activeLeafId,
+  );
+  const byId = new Map(rows.map((r) => [r.id, r]));
   return path.flatMap((id) => {
-    const m = byId.get(id);
-    return m ? [m] : [];
+    const r = byId.get(id);
+    return r ? decryptMessageRow(dek, r) : [];
   });
 }
 
