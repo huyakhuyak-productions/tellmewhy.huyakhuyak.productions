@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
+import { simulateReadableStream } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
+import { MOCK_USAGE } from "@/test/ai-fixtures";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
@@ -1004,6 +1006,81 @@ describe("POST /api/chat", () => {
 
       const content = String(lastChatPrompt().find((m) => m.role === "system")?.content);
       expect(content).not.toContain("The latest message shows possible self-harm or suicidal intent");
+    });
+
+    it("an edit with a foreign/nonexistent parentId is a route-level 404", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Edit misparent");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "a real turn" });
+
+      // A parent that belongs to no message of this conversation (here, a fresh
+      // random uuid) is indistinguishable from "not found" to the client.
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, text: "edit onto nowhere", parentId: randomUUID() }));
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "Not found" });
+    });
+
+    it("a root edit (parentId: null) collapses history to one message and DELIBERATELY re-titles when uncustomized", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "July 6");
+      // First exchange auto-titles (uncustomized).
+      await postAndAwaitReply(clientId, { conversationId: id, text: "first thought" });
+      await vi.waitFor(async () => {
+        const [conversation] = (await listConversations(clientId)).filter((c) => c.id === id);
+        expect(conversation?.title).toBe("A quiet mock title");
+      });
+      // Move the title away, still marked uncustomized — so a re-title is
+      // observable (the mock always regenerates "A quiet mock title").
+      await renameConversation(id, clientId, "A placeholder", { customized: false });
+
+      // A root edit branches at the root, so the active path is just this one
+      // new client message → history.length === 1 again.
+      await postAndAwaitReply(clientId, { conversationId: id, text: "root edit thought", parentId: null });
+
+      await vi.waitFor(async () => {
+        const [conversation] = (await listConversations(clientId)).filter((c) => c.id === id);
+        expect(conversation?.title).toBe("A quiet mock title");
+      });
+      expect(await isTitleCustomized(id, clientId)).toBe(false);
+    });
+
+    it("a first exchange whose stream ends in a model error keeps its neutral title (partial still persisted)", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "July 6");
+
+      // The stream closes cleanly (so onFinish runs), but the model reports it
+      // finished in error — a truncated reply. onFinish sees finishReason
+      // "error" with the streamed prefix already accumulated.
+      vi.mocked(getChatModel).mockReturnValueOnce(
+        new MockLanguageModelV3({
+          doStream: async () => ({
+            stream: simulateReadableStream({
+              chunks: [
+                { type: "text-start", id: "1" },
+                { type: "text-delta", id: "1", delta: "half a thought" },
+                { type: "text-end", id: "1" },
+                { type: "finish", finishReason: { unified: "error", raw: "error" }, usage: MOCK_USAGE },
+              ],
+            }),
+          }),
+        }),
+      );
+
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, text: "first thought" }));
+      expect(res.status).toBe(200);
+      await res.text(); // drain so onFinish runs
+
+      // The honest partial is still persisted…
+      await vi.waitFor(async () => {
+        const ai = (await loadMessages(id, clientId)).find((m) => m.sender === "ai");
+        expect(ai?.text).toBe("half a thought");
+      });
+      // …but a title generated from a truncated first exchange is misleading, so
+      // the neutral date title stays put.
+      const [conversation] = (await listConversations(clientId)).filter((c) => c.id === id);
+      expect(conversation?.title).toBe("July 6");
     });
 
     it("the AI context is the ACTIVE PATH, not the whole tree", async () => {

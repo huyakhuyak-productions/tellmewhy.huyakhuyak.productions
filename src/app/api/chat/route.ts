@@ -248,7 +248,7 @@ async function handlePost(req: Request): Promise<Response> {
       // Persistence lives HERE (not streamText's own onFinish) because this
       // callback is abort-aware: on a stop it still fires, with the partial
       // responseMessage accumulated so far and isAborted set.
-      onFinish: async ({ responseMessage, isAborted }) => {
+      onFinish: async ({ responseMessage, isAborted, finishReason }) => {
         const replyText = responseMessage.parts
           .filter((p): p is { type: "text"; text: string } => p.type === "text")
           .map((p) => p.text)
@@ -267,7 +267,29 @@ async function handlePost(req: Request): Promise<Response> {
         // crisis-flagged first exchanges keep the neutral date title instead.
         // Send path only (clientText null on regenerate — a regenerated reply
         // is never a first exchange), and never off an aborted stub.
-        if (!isAborted && clientText !== null && history.length === 1 && riskLevel !== "crisis") {
+        //
+        // finishReason "error" means the model reported the reply finished in
+        // error (a truncated turn) even though the stream itself closed cleanly
+        // enough to reach here: the honest partial above is still persisted, but
+        // a title generated from a truncated first exchange would be misleading
+        // — skip it, and let a later successful turn (or a manual rename) title
+        // the conversation. (A stream that THROWS mid-reply never reaches this
+        // callback at all — ai's UI stream only runs onFinish on a clean flush
+        // or a client-cancel, not on an error — so that path persists nothing
+        // and titles nothing, which is fine: there is no honest reply to name.)
+        //
+        // An explicit `parentId: null` root edit collapses the active path back
+        // to a single message (history.length === 1) — this branch then runs
+        // again and DELIBERATELY re-titles the conversation from the new root
+        // exchange, unless the user has customized the title. That re-title is
+        // intended, not accidental (pinned in route.test.ts).
+        if (
+          !isAborted &&
+          finishReason !== "error" &&
+          clientText !== null &&
+          history.length === 1 &&
+          riskLevel !== "crisis"
+        ) {
           try {
             if (!(await isTitleCustomized(conversationId, userId))) {
               const { text: rawTitle } = await generateText({
