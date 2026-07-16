@@ -11,6 +11,8 @@ import { MessageBubble } from "./message-bubble";
 import { MessageEdit } from "./message-edit";
 import { MessageFlag } from "./message-flag";
 import { MessageKeep } from "./message-keep";
+import { MessageCopy } from "./message-copy";
+import { VersionSwitcher } from "./version-switcher";
 import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
@@ -31,6 +33,11 @@ export type InitialMessage = {
       threads it further; this task carries it through the type + page mapping. */
   parentId?: string | null;
 };
+
+// A message's place in its version set: 0-based position, set size, and the
+// ordered sibling ids the switcher walks. Present only for branched path
+// messages (server rows by construction — an optimistic send has no entry).
+export type VersionEntry = { index: number; count: number; siblings: string[] };
 
 export type ActiveLink = { therapistName: string };
 
@@ -53,6 +60,7 @@ type SendFailure = { kind: "rate-limit" | "generic" };
 export function ChatScreen({
   conversationId,
   initialMessages,
+  versions,
   conversations,
   folders,
   stats,
@@ -68,6 +76,9 @@ export function ChatScreen({
 }: {
   conversationId: string;
   initialMessages: InitialMessage[];
+  /** Per-message version-set info, keyed by message id. Only branched path
+      messages appear — the switcher mounts exactly where an entry exists. */
+  versions: Record<string, VersionEntry>;
   conversations: RailConversation[];
   folders: RailFolder[];
   stats: ChatStats;
@@ -567,6 +578,7 @@ export function ChatScreen({
                                 />
                               }
                             />
+                            <MessageCopy text={text} />
                             <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
                           </div>
                           {hasActiveLink ? (
@@ -577,6 +589,20 @@ export function ChatScreen({
                               shared={shared}
                               therapistName={therapistName!}
                             />
+                          ) : null}
+                          {/* An edited message branches versions from its
+                              parent — the arrows are always visible so the
+                              other versions stay discoverable. */}
+                          {versions[m.id] ? (
+                            <div className="flex justify-end">
+                              <VersionSwitcher
+                                messageId={m.id}
+                                index={versions[m.id]!.index}
+                                count={versions[m.id]!.count}
+                                siblings={versions[m.id]!.siblings}
+                                conversationId={conversationId}
+                              />
+                            </div>
                           ) : null}
                         </>
                       ) : null}
@@ -607,8 +633,20 @@ export function ChatScreen({
                             />
                           }
                         />
+                        <MessageCopy text={text} />
                         <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
                       </div>
+                    ) : null}
+                    {/* A regenerated reply branches versions from the same user
+                        turn — the arrows walk between them, always visible. */}
+                    {meta && versions[m.id] ? (
+                      <VersionSwitcher
+                        messageId={m.id}
+                        index={versions[m.id]!.index}
+                        count={versions[m.id]!.count}
+                        siblings={versions[m.id]!.siblings}
+                        conversationId={conversationId}
+                      />
                     ) : null}
                   </div>
                 );
