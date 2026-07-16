@@ -5,9 +5,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { isTitleCustomized, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import { isTitleCustomized, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { errorCause, NotFoundError } from "@/lib/errors";
-import { assessRisk } from "@/lib/ai/crisis";
+import { resolveActivePath } from "@/lib/message-tree";
+import { assessRisk, type RiskLevel } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 import { buildHomeworkSection, buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 import { listExercisesForClient } from "@/lib/exercises";
@@ -19,7 +20,17 @@ import { getActiveAiInstruction } from "@/lib/therapist-notes";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
 import { clampTitle } from "@/lib/title";
 
-const bodySchema = z.object({ conversationId: z.uuid(), text: z.string().min(1).max(8000) });
+const sendSchema = z.object({
+  conversationId: z.uuid(),
+  text: z.string().min(1).max(8000),
+  // Present = branch here (edit): the new message becomes a sibling of
+  // whatever else shares this parent. null = branch at the root.
+  parentId: z.uuid().nullable().optional(),
+});
+// Regenerate: grow a new AI sibling under the target reply's parent. No new
+// client text exists, so no risk classification and no client row.
+const regenerateSchema = z.object({ conversationId: z.uuid(), regenerateOf: z.uuid() });
+const bodySchema = z.union([sendSchema, regenerateSchema]);
 
 const CONTEXT_WINDOW = 30; // most recent messages sent to the model
 const MOOD_CONTEXT_DAYS = 14; // how far back the mood context line looks
@@ -52,13 +63,54 @@ async function handlePost(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid body" }, { status: 400 });
-  const { conversationId, text } = parsed.data;
+  const { conversationId } = parsed.data;
 
   try {
-    const riskLevel = await assessRisk(text, getClassifierModel());
-    await saveMessage({ conversationId, userId, sender: "client", text, riskLevel });
+    // What the model must see (root-to-leaf active path), the client text a
+    // fresh send carries (null on regenerate — nothing new was said), the risk
+    // it was classified at, and where the AI reply will hang in the tree.
+    let history: Awaited<ReturnType<typeof loadMessages>>;
+    let clientText: string | null;
+    let riskLevel: RiskLevel;
+    let aiParentId: string | null;
 
-    const history = await loadMessages(conversationId, userId);
+    if ("regenerateOf" in parsed.data) {
+      const { regenerateOf } = parsed.data;
+      // Ownership is checked inside loadMessageTree — a foreign conversation
+      // and a foreign/unknown message id answer the same uniform 404.
+      const tree = await loadMessageTree(conversationId, userId);
+      const target = tree.messages.find((m) => m.id === regenerateOf);
+      // Only an AI reply can be regenerated, and a root AI message cannot
+      // exist (every reply answers some client turn) — a missing, non-AI, or
+      // parentless target is indistinguishable from "not found".
+      if (!target || target.sender !== "ai" || target.parentId === null) {
+        throw new NotFoundError("Message not found");
+      }
+      // The context is exactly the chain that produced the original reply:
+      // root → the client message it answered (the target's parent).
+      const chainIds = resolveActivePath(tree.messages, target.parentId);
+      const byId = new Map(tree.messages.map((m) => [m.id, m]));
+      history = chainIds.flatMap((id) => {
+        const m = byId.get(id);
+        return m ? [m] : [];
+      });
+      clientText = null;
+      riskLevel = "none"; // no new client text — nothing to classify
+      aiParentId = target.parentId; // the new reply is the old one's sibling
+    } else {
+      const { text, parentId } = parsed.data;
+      clientText = text;
+      riskLevel = await assessRisk(text, getClassifierModel());
+      // parentId undefined passes through as "append to the active leaf";
+      // an explicit uuid/null branches there instead (an edit).
+      const savedClient = await saveMessage({ conversationId, userId, sender: "client", text, riskLevel, parentId });
+      // The AI reply must chain off THIS client message — never "whatever the
+      // leaf happens to be when the stream finishes", which a concurrent send
+      // could have moved.
+      aiParentId = savedClient.id;
+      history = await loadMessages(conversationId, userId);
+    }
+
     const windowMessages = history.slice(-CONTEXT_WINDOW);
 
     // The active link still gates whether therapist guidance may reach the
@@ -176,9 +228,29 @@ async function handlePost(req: Request): Promise<Response> {
       // Adaptation: ai@6 makes `convertToModelMessages` async (it now returns
       // `Promise<ModelMessage[]>` instead of a synchronous array) — await it.
       messages: await convertToModelMessages(uiMessages),
-      onFinish: async ({ text: replyText }) => {
+      // Stop/tab-close abort the model call itself; the streamed prefix is
+      // what gets persisted below — an honest partial, never a fake whole.
+      abortSignal: req.signal,
+    });
+
+    // Keep the model stream flowing even when the client stops reading the
+    // response — an abandoned tab must not stall the pipeline and lose the
+    // AI turn (persistence below runs when the stream settles either way).
+    result.consumeStream();
+
+    return result.toUIMessageStreamResponse({
+      headers: { "x-risk-level": riskLevel },
+      // Persistence lives HERE (not streamText's own onFinish) because this
+      // callback is abort-aware: on a stop it still fires, with the partial
+      // responseMessage accumulated so far and isAborted set.
+      onFinish: async ({ responseMessage, isAborted }) => {
+        const replyText = responseMessage.parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("");
+        if (!replyText) return; // aborted before any token — nothing honest to save
         try {
-          await saveMessage({ conversationId, userId, sender: "ai", text: replyText });
+          await saveMessage({ conversationId, userId, sender: "ai", text: replyText, parentId: aiParentId });
         } catch (error) {
           // The stream already reached the client; without this log the reply
           // would vanish silently (ai v6 swallows onFinish rejections).
@@ -188,12 +260,14 @@ async function handlePost(req: Request): Promise<Response> {
         // A generated title can echo crisis phrasing prominently on the home
         // screen — display exposure, distinct from encryption at rest — so
         // crisis-flagged first exchanges keep the neutral date title instead.
-        if (history.length === 1 && riskLevel !== "crisis") {
+        // Send path only (clientText null on regenerate — a regenerated reply
+        // is never a first exchange), and never off an aborted stub.
+        if (!isAborted && clientText !== null && history.length === 1 && riskLevel !== "crisis") {
           try {
             if (!(await isTitleCustomized(conversationId, userId))) {
               const { text: rawTitle } = await generateText({
                 model: getTitleModel(),
-                prompt: buildTitlePrompt(text, replyText),
+                prompt: buildTitlePrompt(clientText, replyText),
                 abortSignal: AbortSignal.timeout(5000),
               });
               // Code-point-safe clamp — see clampTitle for why a plain
@@ -213,13 +287,6 @@ async function handlePost(req: Request): Promise<Response> {
         }
       },
     });
-
-    // Persist the reply even if the client disconnects mid-stream:
-    // without this, onFinish only fires when the client consumes the
-    // full stream, and an abandoned tab loses the AI turn forever.
-    result.consumeStream();
-
-    return result.toUIMessageStreamResponse({ headers: { "x-risk-level": riskLevel } });
   } catch (error) {
     if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;

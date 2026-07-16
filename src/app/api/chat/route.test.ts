@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
 import { MockLanguageModelV3 } from "ai/test";
-import { createConversation, isTitleCustomized, listConversations, loadMessages, renameConversation, saveMessage } from "@/lib/conversations";
+import { createConversation, isTitleCustomized, listConversations, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
@@ -17,7 +17,7 @@ import { createNote as createSelfNote } from "@/lib/notes";
 import { sendIntervention } from "@/lib/interventions";
 import { assignExercise, closeExercise } from "@/lib/exercises";
 import { checkInMood } from "@/lib/mood";
-import { getChatModel, getTitleModel } from "@/lib/ai/models";
+import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -778,6 +778,207 @@ describe("POST /api/chat", () => {
       expect(moodIndex).toBeLessThan(homeworkIndex);
       expect(homeworkIndex).toBeLessThan(guidanceIndex);
       expect(guidanceIndex).toBeLessThan(crisisIndex);
+    });
+  });
+
+  describe("branch sends, regenerate, and honest stop", () => {
+    // Fresh client per test (same discipline as the blocks above): keeps the
+    // shared `userId` rate-limit bucket pristine for the final drain test, and
+    // gives every tree its own conversation-owning user.
+    function mockSession(clientId: string) {
+      vi.mocked(auth.api.getSession).mockResolvedValueOnce({
+        user: { id: clientId },
+      } as Awaited<ReturnType<typeof auth.api.getSession>>);
+    }
+
+    // POST one chat body and wait until its persistence settles: +2 rows for a
+    // send (client turn + AI reply), +1 for a regenerate (AI reply only).
+    // Sequential seeds NEED this — an append chains off the active leaf, so
+    // firing the next send before the AI reply lands would misparent it.
+    async function postAndAwaitReply(clientId: string, body: { conversationId: string } & Record<string, unknown>) {
+      const before = (await loadMessageTree(body.conversationId, clientId)).messages.length;
+      mockSession(clientId);
+      const res = await POST(chatRequest(body));
+      expect(res.status).toBe(200);
+      await res.text(); // drain the stream so onFinish persistence runs
+      const expected = before + ("regenerateOf" in body ? 1 : 2);
+      await vi.waitFor(async () => {
+        expect((await loadMessageTree(body.conversationId, clientId)).messages.length).toBe(expected);
+      });
+      return loadMessageTree(body.conversationId, clientId);
+    }
+
+    it("an edit branches: the new client message is a sibling of the edited one", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Branching edit");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "first thought" });
+      await postAndAwaitReply(clientId, { conversationId: id, text: "second thought" });
+
+      const path = await loadMessages(id, clientId);
+      expect(path.map((m) => m.sender)).toEqual(["client", "ai", "client", "ai"]);
+      const [, r1, m2, r2] = path;
+
+      // Edit m2: branch at ITS parent (r1), so the edit is m2's sibling.
+      const tree = await postAndAwaitReply(clientId, {
+        conversationId: id,
+        text: "second thought, edited",
+        parentId: m2.parentId,
+      });
+
+      const edited = tree.messages.find((m) => m.text === "second thought, edited");
+      expect(edited?.parentId).toBe(r1.id);
+      const newReply = tree.messages.find((m) => m.parentId === edited?.id);
+      expect(newReply?.sender).toBe("ai");
+      expect(tree.activeLeafId).toBe(newReply?.id);
+
+      // The superseded version and its reply survive — an edit hides, never deletes.
+      const ids = tree.messages.map((m) => m.id);
+      expect(ids).toContain(m2.id);
+      expect(ids).toContain(r2.id);
+    });
+
+    it("regenerate creates an AI sibling and moves the leaf", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Regenerated reply");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "tell me why" });
+      const [m1, r1] = await loadMessages(id, clientId);
+
+      const classifierSpy = vi.mocked(getClassifierModel);
+      classifierSpy.mockClear();
+      const tree = await postAndAwaitReply(clientId, { conversationId: id, regenerateOf: r1.id });
+
+      // Two AI versions now hang under the same client message; the leaf is the new one.
+      const aiSiblings = tree.messages.filter((m) => m.parentId === m1.id && m.sender === "ai");
+      expect(aiSiblings).toHaveLength(2);
+      const newReply = aiSiblings.find((m) => m.id !== r1.id);
+      expect(tree.activeLeafId).toBe(newReply?.id);
+      expect((await loadMessages(id, clientId)).map((m) => m.id)).toEqual([m1.id, newReply?.id]);
+
+      // No client message was saved, and no risk classification ran — there
+      // is no new client text to classify.
+      expect(tree.messages.filter((m) => m.sender === "client")).toHaveLength(1);
+      expect(classifierSpy).not.toHaveBeenCalled();
+
+      // The model's context ends at the parent client turn: the regenerated-away
+      // reply must not steer its own replacement.
+      const promptJson = JSON.stringify(lastChatPrompt());
+      expect(promptJson).toContain("tell me why");
+      expect(promptJson).not.toContain("mock reply");
+    });
+
+    it("regenerateOf rejects a non-AI or foreign message with 404", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Regenerate misuse");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "hello" });
+      const [m1] = await loadMessages(id, clientId);
+
+      // A client message cannot be regenerated.
+      mockSession(clientId);
+      const nonAi = await POST(chatRequest({ conversationId: id, regenerateOf: m1.id }));
+      expect(nonAi.status).toBe(404);
+
+      // Another user's AI message id answers the same uniform 404 — no
+      // existence oracle across ownership boundaries.
+      const strangerId = `test-${randomUUID()}`;
+      const foreign = await createConversation(strangerId, "Not yours");
+      await saveMessage({ conversationId: foreign.id, userId: strangerId, sender: "ai", text: "foreign reply" });
+      const [foreignAi] = await loadMessages(foreign.id, strangerId);
+      mockSession(clientId);
+      const foreignRes = await POST(chatRequest({ conversationId: id, regenerateOf: foreignAi.id }));
+      expect(foreignRes.status).toBe(404);
+    });
+
+    it("aborting the stream persists exactly the streamed prefix", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Stopped mid-reply");
+
+      const FULL_REPLY_CHUNKS = ["The ", "river ", "keeps ", "moving ", "even ", "when ", "you ", "rest."];
+      const STREAMED_COUNT = 3;
+      const fullReply = FULL_REPLY_CHUNKS.join("");
+      vi.mocked(getChatModel).mockReturnValueOnce(
+        new MockLanguageModelV3({
+          doStream: async ({ abortSignal }) => ({
+            stream: new ReadableStream({
+              async start(controller) {
+                controller.enqueue({ type: "text-start", id: "1" });
+                for (const delta of FULL_REPLY_CHUNKS.slice(0, STREAMED_COUNT)) {
+                  controller.enqueue({ type: "text-delta", id: "1", delta });
+                }
+                // Hold the rest of the reply hostage until the request aborts.
+                // Deterministic by construction: the full reply can never be
+                // produced, so whatever gets persisted MUST be the streamed
+                // prefix — no sleep-based racing. If the route fails to wire
+                // req.signal through to the model, this never resolves and the
+                // waitFor below times out: an honest failure.
+                await new Promise<void>((resolve) => {
+                  if (abortSignal?.aborted) return resolve();
+                  abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+                });
+                controller.error(new DOMException("The stream was aborted", "AbortError"));
+              },
+            }),
+          }),
+        }),
+      );
+
+      mockSession(clientId);
+      const controller = new AbortController();
+      const res = await POST(
+        new Request("http://localhost/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ conversationId: id, text: "keep going" }),
+          signal: controller.signal,
+        }),
+      );
+      expect(res.status).toBe(200);
+
+      // Read until the streamed prefix has actually reached the client, then
+      // stop the request — exactly what the Stop button does.
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let seen = "";
+      while (!seen.includes("keeps ")) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        seen += decoder.decode(value, { stream: true });
+      }
+      controller.abort();
+      // Drain the tail (the abort part closes the stream cleanly) so the
+      // pipeline settles and onFinish can run.
+      try {
+        while (!(await reader.read()).done) {
+          /* drain */
+        }
+      } catch {
+        // an errored tail is fine — the abort already happened
+      }
+
+      await vi.waitFor(async () => {
+        const ai = (await loadMessages(id, clientId)).find((m) => m.sender === "ai");
+        expect(ai).toBeDefined();
+        // A strict non-empty prefix: honest partial, never a fake whole.
+        expect(ai!.text.length).toBeGreaterThan(0);
+        expect(ai!.text.length).toBeLessThan(fullReply.length);
+        expect(fullReply.startsWith(ai!.text)).toBe(true);
+      });
+    });
+
+    it("the AI context is the ACTIVE PATH, not the whole tree", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Branch-aware context");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "original first" });
+      await postAndAwaitReply(clientId, { conversationId: id, text: "SUPERSEDED_BRANCH original second" });
+      const [, , m2] = await loadMessages(id, clientId);
+
+      await postAndAwaitReply(clientId, { conversationId: id, text: "edited second", parentId: m2.parentId });
+      await postAndAwaitReply(clientId, { conversationId: id, text: "and a follow-up" });
+
+      const promptJson = JSON.stringify(lastChatPrompt());
+      expect(promptJson).toContain("original first");
+      expect(promptJson).toContain("edited second");
+      expect(promptJson).toContain("and a follow-up");
+      expect(promptJson).not.toContain("SUPERSEDED_BRANCH");
     });
   });
 
