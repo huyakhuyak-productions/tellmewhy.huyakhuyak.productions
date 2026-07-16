@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
+import { buildChatRequestBody } from "@/lib/chat-request";
 import { MessageBubble } from "./message-bubble";
+import { MessageEdit } from "./message-edit";
 import { MessageFlag } from "./message-flag";
 import { MessageKeep } from "./message-keep";
 import { ShareControl } from "./share-control";
@@ -24,6 +26,10 @@ export type InitialMessage = {
   authorName?: string | null;
   /** Client messages only — set once the person flagged it for their therapist. */
   flaggedAt?: Date | null;
+  /** The message this row branches from — an edit reuses it so the server
+      branches from the same point (null at the conversation's root). Task 7
+      threads it further; this task carries it through the type + page mapping. */
+  parentId?: string | null;
 };
 
 export type ActiveLink = { therapistName: string };
@@ -105,7 +111,14 @@ export function ChatScreen({
   // (same pattern as conversationsRef below; refs must not be written during
   // render, so the sync lives in its own effect).
   const failureHandlerRef = useRef<() => void>(() => {});
-  const { messages, sendMessage, setMessages, status } = useChat({
+  // The transport is created once by useChat (held in a ref, recreated only on
+  // an id change), so its closure would freeze the first render's `metaById`
+  // and go stale after every `router.refresh()` — an edit of a message that
+  // landed after a refresh would then lose its parent lookup. Read the meta map
+  // through this ref (synced in its own effect below, refs-not-written-in-render
+  // like `conversationsRef`) so the transport always sees the freshest parents.
+  const metaByIdRef = useRef(metaById);
+  const { messages, sendMessage, setMessages, status, stop, regenerate } = useChat({
     // react-hooks/refs flags the rateLimited write inside the custom fetch
     // below: the rule cannot see when a render-created closure runs, so it
     // only trusts on*-named props. This wrapper only ever runs at request
@@ -117,9 +130,18 @@ export function ChatScreen({
     // eslint-disable-next-line react-hooks/refs
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      prepareSendMessagesRequest: ({ messages }) => {
+      prepareSendMessagesRequest: ({ messages, trigger, messageId }) => {
         const last = messages[messages.length - 1];
-        return { body: { conversationId, text: partsToText(last.parts) } };
+        return {
+          body: buildChatRequestBody({
+            conversationId,
+            trigger,
+            messageId,
+            // "" for a regenerate — no user turn rides along; the mapper ignores it.
+            text: last ? partsToText(last.parts) : "",
+            parentIdOf: (id) => metaByIdRef.current.get(id)?.parentId,
+          }),
+        };
       },
       fetch: async (input, init) => {
         // Reset before the attempt: a thrown fetch (offline) after an earlier
@@ -175,7 +197,54 @@ export function ChatScreen({
     conversationsRef.current = conversations;
   });
 
+  // Keep the transport's parent lookup fresh (see metaByIdRef above). Its own
+  // effect so the ref is never written during render (react-hooks/refs).
+  useEffect(() => {
+    metaByIdRef.current = metaById;
+  });
+
+  // Which of the person's own messages is currently open for editing, if any.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // A branch operation (edit / regenerate / stop) just went out; after the
+  // stream settles the server's active path is the source of truth (new ids,
+  // version counts, a stopped partial gaining meta), so re-sync once via the
+  // settle effect below rather than trusting the SDK's optimistic local state.
+  const pendingRefresh = useRef(false);
+
   const isBusy = status === "submitted" || status === "streaming";
+
+  // After a branch operation's stream settles, re-sync server truth exactly
+  // once. Guarded by the ref so a plain send (or the initial ready state) never
+  // triggers a refresh — only edit/regenerate/stop arm it.
+  useEffect(() => {
+    if (status === "ready" && pendingRefresh.current) {
+      pendingRefresh.current = false;
+      router.refresh();
+    }
+  }, [status, router]);
+
+  function saveEdit(id: string, text: string) {
+    setEditingId(null);
+    setSendFailure(null);
+    pendingRefresh.current = true;
+    // The SDK replaces the message in place AND truncates every message after
+    // it (verified in node_modules/ai: sendMessage slices to messageIndex + 1
+    // before replacing), so no manual setMessages truncate is needed here.
+    sendMessage({ text, messageId: id });
+  }
+
+  function regenerateMessage(id: string) {
+    setSendFailure(null);
+    pendingRefresh.current = true;
+    regenerate({ messageId: id });
+  }
+
+  function stopAndRefresh() {
+    // A zero-token stop saves no AI row server-side, so the local partial (if
+    // any) may vanish on reload — the refresh reconciles to whatever persisted.
+    pendingRefresh.current = true;
+    void stop();
+  }
 
   // Consume the first message the home hero stashed for this conversation. The
   // ref guard makes this fire exactly once even though `sendMessage`'s identity
@@ -466,30 +535,53 @@ export function ChatScreen({
                   />
                 );
               } else if (sender === "client") {
-                bubble = (
-                  <div className="group/msg flex flex-col">
-                    <MessageBubble role="user" text={text} />
-                    {/* Keep and flag act on persisted messages only — a
-                        just-sent message has no server id yet. Both live in the
-                        right-aligned action row under the person's own bubble. */}
-                    {meta ? (
-                      <>
-                        <div className="flex justify-end">
-                          <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
-                        </div>
-                        {hasActiveLink ? (
-                          <MessageFlag
-                            conversationId={conversationId}
-                            messageId={m.id}
-                            initialFlagged={meta.flaggedAt != null}
-                            shared={shared}
-                            therapistName={therapistName!}
-                          />
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
-                );
+                bubble =
+                  editingId === m.id ? (
+                    <MessageEdit
+                      initialText={text}
+                      isBusy={isBusy}
+                      onSave={(next) => saveEdit(m.id, next)}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <div className="group/msg flex flex-col">
+                      <MessageBubble role="user" text={text} />
+                      {/* Edit, keep, and flag act on persisted messages only — a
+                          just-sent message has no server id yet. They live in the
+                          right-aligned action row under the person's own bubble. */}
+                      {meta ? (
+                        <>
+                          <div className="flex items-center justify-end gap-1">
+                            <HoverAction
+                              label="Edit this message"
+                              text="Edit"
+                              onClick={() => setEditingId(m.id)}
+                              disabled={isBusy}
+                              icon={
+                                <path
+                                  d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5Z"
+                                  stroke="currentColor"
+                                  strokeWidth="1.3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              }
+                            />
+                            <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
+                          </div>
+                          {hasActiveLink ? (
+                            <MessageFlag
+                              conversationId={conversationId}
+                              messageId={m.id}
+                              initialFlagged={meta.flaggedAt != null}
+                              shared={shared}
+                              therapistName={therapistName!}
+                            />
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  );
               } else {
                 // The group/msg wrapper is what reveals the hover affordance, so
                 // AI messages need it too (client bubbles already had it). Keep
@@ -499,7 +591,24 @@ export function ChatScreen({
                   <div className="group/msg flex flex-col">
                     <MessageBubble role="assistant" text={text} />
                     {meta ? (
-                      <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
+                      <div className="flex items-center gap-1">
+                        <HoverAction
+                          label="Regenerate this reply"
+                          text="Regenerate"
+                          onClick={() => regenerateMessage(m.id)}
+                          disabled={isBusy}
+                          icon={
+                            <path
+                              d="M12.5 6.5A5 5 0 1 0 13 9.5M12.5 3v3.5H9"
+                              stroke="currentColor"
+                              strokeWidth="1.3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          }
+                        />
+                        <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
+                      </div>
                     ) : null}
                   </div>
                 );
@@ -593,28 +702,78 @@ export function ChatScreen({
               }}
               rows={1}
             />
-            <button
-              type="submit"
-              aria-label="Send"
-              className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-sm outline-none transition-[transform,background-color,opacity] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.94] disabled:pointer-events-none disabled:opacity-40"
-              disabled={isBusy}
-            >
-              <svg viewBox="0 0 20 20" fill="none" className="size-[1.15rem]" aria-hidden>
-                <path
-                  d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            {/* While a stream is in flight the send button becomes a Stop
+                control — same geometry, so the composer never shifts. Stop
+                aborts and re-syncs server truth; a zero-token stop saves no AI
+                row, so the refresh reconciles to whatever actually persisted. */}
+            {isBusy ? (
+              <button
+                type="button"
+                aria-label="Stop generating"
+                onClick={stopAndRefresh}
+                className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-sm outline-none transition-[transform,background-color,opacity] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.94]"
+              >
+                <svg viewBox="0 0 20 20" fill="none" className="size-[1.15rem]" aria-hidden>
+                  <rect x="6" y="6" width="8" height="8" rx="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label="Send"
+                className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-sm outline-none transition-[transform,background-color,opacity] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.94] disabled:pointer-events-none disabled:opacity-40"
+                disabled={!draft.trim()}
+              >
+                <svg viewBox="0 0 20 20" fill="none" className="size-[1.15rem]" aria-hidden>
+                  <path
+                    d="M4 10h11m0 0-4.5-4.5M15 10l-4.5 4.5"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
           </div>
         </form>
       </div>
 
       <StatsRail stats={stats} therapist={therapist} mood={mood} notes={notes} className="hidden lg:flex" />
     </div>
+  );
+}
+
+// A hover-revealed message action (Edit / Regenerate) sharing the quiet idiom
+// of the Keep affordance: invisible until the message is hovered or the button
+// is focused, so the reading column stays calm. The icon is the caller's <path>
+// inside a shared 16-box svg.
+function HoverAction({
+  label,
+  text,
+  icon,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  text: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground/70 opacity-0 outline-none transition-[opacity,color] duration-150 hover:text-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 group-hover/msg:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+    >
+      <svg viewBox="0 0 16 16" fill="none" className="size-3" aria-hidden>
+        {icon}
+      </svg>
+      {text}
+    </button>
   );
 }
 

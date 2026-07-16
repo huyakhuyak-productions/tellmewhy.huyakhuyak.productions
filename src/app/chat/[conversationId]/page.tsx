@@ -89,6 +89,9 @@ export default async function ConversationPage({
     authorName:
       m.sender === "therapist" ? (m.authorId ? (authorNames.get(m.authorId) ?? null) : null) : undefined,
     flaggedAt: m.sender === "client" ? m.flaggedAt : undefined,
+    // Carried so an edit can branch from the same parent (loadMessages rows
+    // already hold it); the client's transport reads it for the wire body.
+    parentId: m.parentId,
   }));
 
   const stats = deriveChatStats(conversationList, session.user.createdAt);
