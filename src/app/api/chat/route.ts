@@ -95,7 +95,12 @@ async function handlePost(req: Request): Promise<Response> {
         return m ? [m] : [];
       });
       clientText = null;
-      riskLevel = "none"; // no new client text — nothing to classify
+      // Regenerate runs NO risk classification — but it must not silently
+      // downgrade a crisis turn. Reuse the risk the parent client message was
+      // ALREADY classified at (stored on its row): a regenerated reply to a
+      // crisis-flagged message still gets the crisis addendum below and still
+      // reports `x-risk-level: crisis`, without re-invoking the classifier.
+      riskLevel = byId.get(target.parentId)?.riskLevel ?? "none";
       aiParentId = target.parentId; // the new reply is the old one's sibling
     } else {
       const { text, parentId } = parsed.data;

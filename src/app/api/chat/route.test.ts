@@ -964,6 +964,48 @@ describe("POST /api/chat", () => {
       });
     });
 
+    it("regenerating a crisis-flagged turn reuses its stored risk — addendum and header both crisis, no re-classification", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Crisis regenerate");
+      // MOCK_CRISIS flags via the classifier (not the regex floor) so the
+      // stored risk on the client row is genuinely "crisis".
+      await postAndAwaitReply(clientId, { conversationId: id, text: "MOCK_CRISIS I can't keep going" });
+      const [m1, r1] = await loadMessages(id, clientId);
+      expect(m1.riskLevel).toBe("crisis");
+
+      const classifierSpy = vi.mocked(getClassifierModel);
+      classifierSpy.mockClear();
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, regenerateOf: r1.id }));
+      // The regenerated reply carries the parent turn's risk through the header…
+      expect(res.headers.get("x-risk-level")).toBe("crisis");
+      await res.text();
+
+      // …and the crisis addendum is still the LAST thing the model reads.
+      const content = String(lastChatPrompt().find((m) => m.role === "system")?.content);
+      expect(content).toContain("The latest message shows possible self-harm or suicidal intent");
+      expect(content.trimEnd().endsWith("gently encourage immediate real-world support.")).toBe(true);
+
+      // Reuse, not re-run: regenerate never invokes the classifier.
+      expect(classifierSpy).not.toHaveBeenCalled();
+    });
+
+    it("regenerating a normal turn stays none — no crisis addendum, header none", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Normal regenerate");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "just an ordinary thought" });
+      const [m1, r1] = await loadMessages(id, clientId);
+      expect(m1.riskLevel).toBe("none");
+
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, regenerateOf: r1.id }));
+      expect(res.headers.get("x-risk-level")).toBe("none");
+      await res.text();
+
+      const content = String(lastChatPrompt().find((m) => m.role === "system")?.content);
+      expect(content).not.toContain("The latest message shows possible self-harm or suicidal intent");
+    });
+
     it("the AI context is the ACTIVE PATH, not the whole tree", async () => {
       const clientId = `test-${randomUUID()}`;
       const { id } = await createConversation(clientId, "Branch-aware context");
