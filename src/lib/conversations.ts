@@ -108,12 +108,16 @@ export async function saveMessage(input: {
   return db.transaction(async (tx) => {
     let parentId: string | null;
     if (input.parentId === undefined) {
-      // Append: read the freshest active leaf inside the transaction so
-      // concurrent appends can't chain off a stale one.
+      // Append: read the active leaf under a row lock (SELECT … FOR UPDATE) so
+      // concurrent appends serialize per conversation — the second waits for
+      // the first to commit and chains off the freshly-moved leaf, instead of
+      // both reading the same leaf and inserting accidental siblings.
       const [conv] = await tx
         .select({ activeLeafId: conversations.activeLeafId })
         .from(conversations)
-        .where(eq(conversations.id, input.conversationId));
+        .where(eq(conversations.id, input.conversationId))
+        .for("update");
+      if (!conv) throw new NotFoundError("Conversation not found");
       parentId = conv.activeLeafId;
     } else {
       parentId = input.parentId;
@@ -217,15 +221,26 @@ export async function loadMessages(conversationId: string, userId: string): Prom
 // sees the full continuation of the version they picked, not a truncated stub.
 export async function setActiveLeaf(conversationId: string, userId: string, messageId: string): Promise<void> {
   await requireOwnedConversation(conversationId, userId);
-  const rows = await db
-    .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })
-    .from(messages)
-    .where(eq(messages.conversationId, conversationId));
-  if (!rows.some((r) => r.id === messageId)) throw new NotFoundError("Message not found");
-  await db
-    .update(conversations)
-    .set({ activeLeafId: deepestDescendant(rows, messageId) })
-    .where(eq(conversations.id, conversationId));
+  await db.transaction(async (tx) => {
+    // Lock the conversation row (SELECT … FOR UPDATE) so this leaf move
+    // serializes against concurrent appends — which lock it the same way —
+    // instead of the switch and an append clobbering each other's activeLeafId.
+    const [conv] = await tx
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conv) throw new NotFoundError("Conversation not found");
+    const rows = await tx
+      .select({ id: messages.id, parentId: messages.parentId, createdAt: messages.createdAt })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId));
+    if (!rows.some((r) => r.id === messageId)) throw new NotFoundError("Message not found");
+    await tx
+      .update(conversations)
+      .set({ activeLeafId: deepestDescendant(rows, messageId) })
+      .where(eq(conversations.id, conversationId));
+  });
 }
 
 export async function renameConversation(

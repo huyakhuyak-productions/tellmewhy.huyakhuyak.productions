@@ -9,6 +9,7 @@ import { conversations, messages } from "@/db/schema";
 import { recordAudit } from "./audit";
 import { encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
+import { NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 
 // PRIVATE to this module. This is the one place client-ownership is
@@ -31,10 +32,15 @@ async function appendTherapistMessage(
   // that would strand the therapist's message off the active path, hiding it
   // from the client's own view and from the AI's context.
   return db.transaction(async (tx) => {
+    // Row-lock the conversation (SELECT … FOR UPDATE) so this append serializes
+    // against any concurrent append — client or therapist — and chains off the
+    // committed leaf instead of racing to a stale one and stranding siblings.
     const [conv] = await tx
       .select({ activeLeafId: conversations.activeLeafId })
       .from(conversations)
-      .where(eq(conversations.id, conversationId));
+      .where(eq(conversations.id, conversationId))
+      .for("update");
+    if (!conv) throw new NotFoundError("Conversation not found");
     const [row] = await tx
       .insert(messages)
       .values({
