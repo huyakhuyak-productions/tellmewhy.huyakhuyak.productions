@@ -68,6 +68,13 @@ export default chatRateLimiter;
 // Kept apart from chatRateLimiter so exhausting one never throttles the other.
 export const conversationCreateRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5 * 60 * 1000 });
 
+// Mutations on an existing conversation — rename, move to a folder, hide/restore,
+// switch the active branch — keyed by the owner's userId. These are cheap edits a
+// real client fires in small bursts, so the ceiling is generous; it exists only to
+// blunt a runaway client or scripted loop. Its own namespace, isolated from the
+// create bucket so draining one never throttles the other.
+export const conversationMutateRateLimiter = new RateLimiter({ capacity: 30, refillWindowMs: 5 * 60 * 1000 });
+
 // Separate instance, own bucket namespace, keyed by the initiating userId —
 // invite tokens are a resource (each one is a live credential that grants a
 // therapist link), so creating them gets its own small, tighter bucket
