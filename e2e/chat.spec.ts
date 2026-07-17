@@ -177,6 +177,48 @@ test("a self-guided thought record is saved and listed under records", async ({ 
   await expect(page.getByText("A long silence after I spoke up in the meeting")).toBeVisible();
 });
 
+test("hiding a conversation from its home card, then restoring it", async ({ page }) => {
+  await signUp(page);
+
+  await startFromHero(page, "A card to tuck away");
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  const conversationHref = new URL(page.url()).pathname;
+
+  // Phones have no rail — the card's overflow menu is the only path to hide.
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Hide" }).click();
+  await expect(page.getByRole("dialog", { name: "Hide conversation?" })).toBeVisible();
+  const hidePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await page.getByRole("button", { name: "Hide it" }).click();
+  await hidePersisted;
+
+  // The card leaves the grid: its ONLY remaining copy now lives inside the
+  // Hidden drawer (scoped by the drawer's own `group/hidden` row wrapper), and
+  // the Hidden disclosure appears with it.
+  await expect(page.locator(`a[href="${conversationHref}"]`)).toHaveCount(1);
+  await expect(page.locator(`.group\\/hidden a[href="${conversationHref}"]`)).toHaveCount(1);
+  const hiddenDrawer = page.getByRole("button", { name: /^Hidden/ });
+  await expect(hiddenDrawer).toBeVisible();
+
+  // Expanding the drawer reveals it, and Restore returns it to the home cards.
+  await hiddenDrawer.click();
+  await expect(page.getByRole("button", { name: "Restore" })).toBeVisible();
+  const restored = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await page.getByRole("button", { name: "Restore" }).click();
+  await restored;
+
+  // The conversation returns to the home cards (no longer in the drawer), and
+  // the now-empty Hidden section is gone entirely.
+  await expect(page.locator(`.group\\/hidden a[href="${conversationHref}"]`)).toHaveCount(0);
+  await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
+});
+
 test("rename a conversation from the home card menu", async ({ page }) => {
   await signUp(page);
 

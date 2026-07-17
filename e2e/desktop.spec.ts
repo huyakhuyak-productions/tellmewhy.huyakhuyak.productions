@@ -273,6 +273,225 @@ test("keep a reply, find it on the rail and /notes, add one, then let it go", as
   await expect(page.getByText(/mock reply/)).toBeVisible();
 });
 
+// The three quiet-action tests below all need a persisted first exchange:
+// message actions (Edit/Regenerate/Copy) ride only on server rows, and a
+// just-streamed reply is still client-only. Start from the hero, wait for the
+// generated title to reach the rail (the persistence signal, same as the keep
+// test), then reload to re-hydrate every message with its server id.
+async function startAndPersist(
+  page: import("@playwright/test").Page,
+  firstMessage: string,
+): Promise<string> {
+  await page.getByLabel("Start a conversation").fill(firstMessage);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const conversationHref = new URL(page.url()).pathname;
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(`a[href="${conversationHref}"]`).getByText("A quiet mock title"),
+  ).toBeVisible({ timeout: 12_000 });
+  await page.reload();
+  return conversationHref;
+}
+
+test("editing a message branches a new version and the arrows walk both ways", async ({ page }) => {
+  await signUp(page);
+  const original = "I keep replaying a conversation from work";
+  await startAndPersist(page, original);
+
+  // Open the person's own message for editing and rewrite it (⌘↵ saves).
+  const clientGroup = page.locator("div.group\\/msg").filter({ hasText: original });
+  await clientGroup.hover();
+  await clientGroup.getByRole("button", { name: "Edit this message" }).click();
+  const editBox = page.getByRole("textbox", { name: "Edit your message" });
+  const edited = "Actually it was something my brother said";
+  await editBox.fill(edited);
+  const branchStreamed = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/chat",
+  );
+  await editBox.press("Meta+Enter");
+  await branchStreamed;
+
+  // The edited words replace the original on the active path, and the version
+  // arrows appear — this is version 2 of 2, so Next is disabled and Previous open.
+  await expect(page.getByText(edited)).toBeVisible();
+  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Previous version" })).toBeEnabled();
+
+  // Step back to version 1: the ORIGINAL message and its reply return.
+  const switchedBack = page.waitForResponse(
+    (res) => res.request().method() === "POST" && res.url().includes("/active-leaf"),
+  );
+  await page.getByRole("button", { name: "Previous version" }).click();
+  await switchedBack;
+  await expect(page.getByText(original)).toBeVisible();
+  await expect(page.getByText(edited)).toHaveCount(0);
+  await expect(page.getByText("1/2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous version" })).toBeDisabled();
+
+  // Step forward again: the edited branch is back on screen.
+  const switchedForward = page.waitForResponse(
+    (res) => res.request().method() === "POST" && res.url().includes("/active-leaf"),
+  );
+  await page.getByRole("button", { name: "Next version" }).click();
+  await switchedForward;
+  await expect(page.getByText(edited)).toBeVisible();
+  await expect(page.getByText(original)).toHaveCount(0);
+});
+
+test("regenerating a reply branches an AI sibling reachable by the arrows", async ({ page }) => {
+  await signUp(page);
+  await startAndPersist(page, "Something worth a second take");
+
+  const replyGroup = page.locator("div.group\\/msg").filter({ hasText: "mock reply" });
+  await replyGroup.hover();
+  const regenerated = page.waitForResponse(
+    (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/chat",
+  );
+  await replyGroup.getByRole("button", { name: "Regenerate this reply" }).click();
+  await regenerated;
+
+  // The regenerated reply is version 2 of 2 on the AI message: Next is disabled.
+  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Previous version" })).toBeEnabled();
+
+  // Both siblings stay reachable — step back to the first, then forward again.
+  // (Both mock replies read identically, so the switcher's own index readout is
+  // the proof of navigation, not the message text.)
+  const back = page.waitForResponse(
+    (res) => res.request().method() === "POST" && res.url().includes("/active-leaf"),
+  );
+  await page.getByRole("button", { name: "Previous version" }).click();
+  await back;
+  await expect(page.getByText("1/2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous version" })).toBeDisabled();
+
+  const forward = page.waitForResponse(
+    (res) => res.request().method() === "POST" && res.url().includes("/active-leaf"),
+  );
+  await page.getByRole("button", { name: "Next version" }).click();
+  await forward;
+  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
+});
+
+test("copying a reply flashes a confirmation and lands the text on the clipboard", async ({
+  page,
+}) => {
+  await signUp(page);
+  await startAndPersist(page, "A line worth carrying elsewhere");
+
+  const replyGroup = page.locator("div.group\\/msg").filter({ hasText: "mock reply" });
+  await replyGroup.hover();
+  await replyGroup.getByRole("button", { name: "Copy this message" }).click();
+
+  // The button flips to its copied state, the visible label flashes "Copied",
+  // and the sr-only live region announces it — scope the status by text, since
+  // message-keep mounts its own always-on role=status span in the same group.
+  await expect(replyGroup.getByRole("button", { name: "Copied to clipboard" })).toBeVisible();
+  await expect(replyGroup.getByText("Copied", { exact: true })).toBeVisible();
+  await expect(
+    replyGroup.getByRole("status").filter({ hasText: "Copied to clipboard" }),
+  ).toHaveText("Copied to clipboard");
+
+  // The real clipboard now holds the message's exact text.
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toBe("This is a **mock reply** for tests.");
+});
+
+test("stopping mid-stream keeps the honest partial reply and its actions", async ({ page }) => {
+  await signUp(page);
+
+  // A normal first exchange gets us into a conversation with a live composer;
+  // its hero draft is cleared on the clean finish, so a later reload is safe.
+  await page.getByLabel("Start a conversation").fill("Something to think through together");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // A MOCK_SLOW message streams word-by-word (see models.ts), so there is a
+  // reliable window to interrupt it. Composer sends stash no draft, so reloading
+  // below never re-sends this message.
+  await page.getByPlaceholder("What's on your mind?").fill("MOCK_SLOW walk me through this slowly");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  // Once the first words appear the stream is open and the send button has
+  // become the Stop control — hit it before the tail word ever arrives.
+  await expect(page.getByText(/Slowly/)).toBeVisible();
+  await page.getByRole("button", { name: "Stop generating" }).click();
+
+  // The server persists the partial in its abort-aware onFinish, which may land
+  // a beat after the client aborts — reload until the saved partial reappears.
+  // It carries its actions (a real server row), holds the head word, and never
+  // reached STREAMTAIL: an honest partial, not the whole reply.
+  await expect(async () => {
+    await page.reload();
+    const partialGroup = page.locator("div.group\\/msg").filter({ hasText: "Slowly" });
+    await expect(
+      partialGroup.getByRole("button", { name: "Regenerate this reply" }),
+    ).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(page.getByText("STREAMTAIL")).toHaveCount(0);
+});
+
+test("hiding a conversation moves it to the rail's Hidden drawer, then restores it", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  // Two conversations, so the rail keeps a visible row after one is hidden — and
+  // we hide the one we're NOT reading, a clean rail-row hide with no header chip.
+  await page.getByLabel("Start a conversation").fill("A thread to tuck away");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const hiddenHref = new URL(page.url()).pathname;
+
+  await page.goto("/chat");
+  await page.getByLabel("Start a conversation").fill("A thread to keep in view");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+
+  // Open the first conversation's rail row menu and hide it (confirm required).
+  const row = page.locator(`div:has(> a[href="${hiddenHref}"])`).first();
+  await row.getByRole("button", { name: "Conversation actions" }).click();
+  await page.getByRole("menuitem", { name: "Hide" }).click();
+  await expect(page.getByRole("dialog", { name: "Hide conversation?" })).toBeVisible();
+  const hidePersisted = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await page.getByRole("button", { name: "Hide it" }).click();
+  await hidePersisted;
+
+  // The row leaves the rail's groups: its ONLY remaining copy now lives inside
+  // the Hidden drawer (scoped by the drawer's own `group/hidden` row wrapper),
+  // and the Hidden disclosure appears in its place.
+  await expect(page.locator(`a[href="${hiddenHref}"]`)).toHaveCount(1);
+  await expect(page.locator(`.group\\/hidden a[href="${hiddenHref}"]`)).toHaveCount(1);
+  const hiddenDrawer = page.getByRole("button", { name: /^Hidden/ });
+  await expect(hiddenDrawer).toBeVisible();
+
+  // Expanding the drawer reveals the conversation with its Restore action.
+  await hiddenDrawer.click();
+  await expect(page.getByRole("button", { name: "Restore" })).toBeVisible();
+  const restored = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await page.getByRole("button", { name: "Restore" }).click();
+  await restored;
+
+  // The conversation returns to the rail (no longer in the drawer), and the
+  // now-empty Hidden section is gone entirely.
+  await expect(page.locator(`.group\\/hidden a[href="${hiddenHref}"]`)).toHaveCount(0);
+  await expect(page.locator(`a[href="${hiddenHref}"]`)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
+});
+
 test("rename a conversation from the rail menu", async ({ page }) => {
   await signUp(page);
 

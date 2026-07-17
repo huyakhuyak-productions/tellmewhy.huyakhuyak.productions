@@ -37,8 +37,16 @@ export default defineConfig({
     },
     {
       name: "desktop",
-      use: { ...devices["Desktop Chrome"], browserName: "chromium", viewport: { width: 1440, height: 900 } },
-      testMatch: [/desktop\.spec\.ts/, /therapist\.spec\.ts/],
+      use: {
+        ...devices["Desktop Chrome"],
+        browserName: "chromium",
+        viewport: { width: 1440, height: 900 },
+        // The Copy affordance writes to (and the test reads back from) the
+        // system clipboard; grant both so navigator.clipboard resolves instead
+        // of rejecting under the headless permission prompt.
+        permissions: ["clipboard-read", "clipboard-write"],
+      },
+      testMatch: [/desktop\.spec\.ts/, /therapist\.spec\.ts/, /landing\.spec\.ts/],
     },
   ],
   webServer: {

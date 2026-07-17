@@ -24,6 +24,36 @@ function openrouter() {
 
 const MOCK_REPLY_TEXT = "This is a **mock reply** for tests.";
 
+// MOCK_SLOW is the streaming twin of MOCK_CRISIS: any message whose text
+// contains this marker makes the mock stream its reply word-by-word with a
+// per-chunk delay, instead of the usual single instant delta. That deliberate
+// slowness gives an e2e test a reliable window to catch the stream mid-flight
+// and hit "Stop generating" before it completes — and the honest partial the
+// server persists on abort is whatever prefix arrived first. The reply's first
+// word ("Slowly") and its unique tail word ("STREAMTAIL") let a test prove the
+// persisted text is a genuine partial (has the head, lacks the tail).
+const MOCK_SLOW_MARKER = "MOCK_SLOW";
+const MOCK_SLOW_WORDS =
+  "Slowly this partial reply keeps arriving one word at a time until the very last STREAMTAIL".split(
+    " ",
+  );
+
+// Split the reply into per-word text deltas wrapped by the stream's start/end
+// and finish parts. Leading space on every word after the first reconstitutes
+// the sentence exactly when concatenated.
+function slowStreamChunks() {
+  return [
+    { type: "text-start" as const, id: "1" },
+    ...MOCK_SLOW_WORDS.map((word, i) => ({
+      type: "text-delta" as const,
+      id: "1",
+      delta: i === 0 ? word : ` ${word}`,
+    })),
+    { type: "text-end" as const, id: "1" },
+    { type: "finish" as const, finishReason: MOCK_FINISH_REASON, usage: MOCK_USAGE },
+  ];
+}
+
 function mockChatModel(): LanguageModel {
   return new MockLanguageModelV3({
     // `generateText` calls `doGenerate`; `streamText` calls `doStream`. Both are
@@ -34,16 +64,25 @@ function mockChatModel(): LanguageModel {
       content: [{ type: "text", text: MOCK_REPLY_TEXT }],
       warnings: [],
     }),
-    doStream: async () => ({
-      stream: simulateReadableStream({
-        chunks: [
-          { type: "text-start", id: "1" },
-          { type: "text-delta", id: "1", delta: MOCK_REPLY_TEXT },
-          { type: "text-end", id: "1" },
-          { type: "finish", finishReason: MOCK_FINISH_REASON, usage: MOCK_USAGE },
-        ],
-      }),
-    }),
+    doStream: async ({ prompt }) => {
+      const slow = JSON.stringify(prompt).includes(MOCK_SLOW_MARKER);
+      return {
+        stream: simulateReadableStream({
+          // A slow reply staggers each word so a test can interrupt it; the
+          // default (0/0) keeps every other reply instant so nothing else slows.
+          initialDelayInMs: slow ? 150 : 0,
+          chunkDelayInMs: slow ? 180 : 0,
+          chunks: slow
+            ? slowStreamChunks()
+            : [
+                { type: "text-start", id: "1" },
+                { type: "text-delta", id: "1", delta: MOCK_REPLY_TEXT },
+                { type: "text-end", id: "1" },
+                { type: "finish", finishReason: MOCK_FINISH_REASON, usage: MOCK_USAGE },
+              ],
+        }),
+      };
+    },
   });
 }
 

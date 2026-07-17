@@ -500,6 +500,136 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
   }
 });
 
+// The reading view's branch navigation is VIEW-LOCAL, the review line PROJECTS
+// onto whatever branch is shown, and a client hiding a shared conversation is
+// invisible to their therapist. One shared conversation exercises all three: the
+// client edits a message (branching it), which drops the therapist's marked
+// message off the client's new path, then hides the whole conversation.
+test("branching is view-local, the review line projects, and hiding is invisible to the therapist", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+
+  const clientCtx = await browser.newContext();
+  const therapistCtx = await browser.newContext();
+  const client = await clientCtx.newPage();
+  const therapist = await therapistCtx.newPage();
+
+  const secondTurn = "Then I stayed silent for the rest of the call";
+  const editedTurn = "Actually I spoke up near the end after all";
+
+  try {
+    // --- Link a client and therapist. ---
+    await signUp(client, "Ivy Client");
+    const invitePath = await createInvitePath(client);
+    await followInviteAndSignUp(therapist, invitePath, "Nan Therapist");
+
+    // --- The client writes two turns, then shares the conversation. ---
+    await client.goto("/chat");
+    await client.getByLabel("Start a conversation").fill("First I froze in the meeting");
+    await client.keyboard.press("Enter");
+    await expect(client).toHaveURL(/\/chat\/.+/);
+    const conversationHref = new URL(client.url()).pathname;
+    await expect(client.getByText("mock reply")).toBeVisible();
+
+    const secondReplied = client.waitForResponse(
+      (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/chat",
+    );
+    await client.getByPlaceholder("What's on your mind?").fill(secondTurn);
+    await client.getByRole("button", { name: "Send" }).click();
+    await secondReplied;
+    await expect(client.getByText("mock reply")).toHaveCount(2);
+
+    // Reload so both messages carry server ids — the Edit affordance needs them.
+    await client.reload();
+    await expect(client.getByText(secondTurn)).toBeVisible();
+
+    const shareLanded = client.waitForResponse(
+      (res) => res.request().method() === "POST" && res.url().includes("/share"),
+    );
+    await client.getByRole("button", { name: /^Share with/ }).click();
+    await shareLanded;
+
+    // --- The therapist opens the conversation and marks read to the LAST message. ---
+    await therapist.goto("/therapist");
+    await therapist.getByRole("link", { name: "Open Ivy Client" }).click();
+    await expect(therapist).toHaveURL(/\/therapist\/clients\/.+/);
+    const clientDeskUrl = therapist.url();
+    await therapist.getByRole("link", { name: /^Read /}).click();
+    await expect(therapist).toHaveURL(/\/therapist\/conversations\/.+/);
+    const readingUrl = therapist.url();
+    await expect(therapist.getByText(secondTurn)).toBeVisible();
+
+    const markerLanded = therapist.waitForResponse(
+      (res) => res.request().method() === "PUT" && res.url().includes("/review-marker"),
+    );
+    await therapist.getByRole("button", { name: "Mark read to here" }).last().click();
+    await markerLanded;
+    await expect(therapist.getByRole("separator", { name: "Your review line" })).toBeVisible();
+
+    // --- The client edits their second message: it branches, and the marked
+    //     reply falls off the client's new active path. ---
+    const clientGroup = client.locator("div.group\\/msg").filter({ hasText: secondTurn });
+    await clientGroup.hover();
+    await clientGroup.getByRole("button", { name: "Edit this message" }).click();
+    const editBox = client.getByRole("textbox", { name: "Edit your message" });
+    await editBox.fill(editedTurn);
+    const editStreamed = client.waitForResponse(
+      (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/chat",
+    );
+    await editBox.press("Meta+Enter");
+    await editStreamed;
+    await expect(client.getByText(editedTurn)).toBeVisible();
+
+    // --- The therapist reloads: they see the client's NEW path, the review line
+    //     still renders (projected onto an earlier message), and the arrows show. ---
+    await therapist.goto(readingUrl);
+    await expect(therapist.getByText(editedTurn)).toBeVisible();
+    await expect(therapist.getByRole("separator", { name: "Your review line" })).toBeVisible();
+
+    // Stepping back a version is view-local — the therapist reads the OLD branch,
+    // but the client's own active leaf never moves.
+    const readingPrev = therapist.getByRole("button", { name: "Previous version" });
+    await expect(readingPrev).toBeVisible();
+    await readingPrev.click();
+    await expect(therapist.getByText(secondTurn)).toBeVisible();
+    await expect(therapist.getByText(editedTurn)).toHaveCount(0);
+
+    // The client still sees their edited path — the therapist's step was local.
+    await client.goto(conversationHref);
+    await expect(client.getByText(editedTurn)).toBeVisible();
+    await expect(client.getByText(secondTurn)).toHaveCount(0);
+
+    // --- The client hides the shared conversation. The therapist is blind to it. ---
+    await client.goto("/chat");
+    const row = client.locator(`div:has(> a[href="${conversationHref}"])`).first();
+    await row.getByRole("button", { name: "Conversation actions" }).click();
+    await client.getByRole("menuitem", { name: "Hide" }).click();
+    const hideLanded = client.waitForResponse(
+      (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+    );
+    await client.getByRole("button", { name: "Hide it" }).click();
+    await hideLanded;
+    // The client's own rail no longer surfaces the row in its groups — its only
+    // copy now lives inside the Hidden drawer (scoped by its `group/hidden` row).
+    await expect(client.locator(`a[href="${conversationHref}"]`)).toHaveCount(1);
+    await expect(
+      client.locator(`.group\\/hidden a[href="${conversationHref}"]`),
+    ).toHaveCount(1);
+
+    // The therapist's desk still lists the shared conversation...
+    await therapist.goto(clientDeskUrl);
+    await expect(therapist.getByRole("link", { name: /^Read /})).toBeVisible();
+    // ...and the reading view still answers 200, unaffected by the client hiding.
+    const stillReadable = await therapist.goto(readingUrl);
+    expect(stillReadable?.status()).toBe(200);
+    await expect(therapist.getByText(editedTurn)).toBeVisible();
+  } finally {
+    await clientCtx.close();
+    await therapistCtx.close();
+  }
+});
+
 // Every path a hostile or merely mistaken party might try, refused the same
 // calm way the rest of the therapist layer refuses: 404 or an unremarkable
 // error, never a hint at what's actually being protected.
