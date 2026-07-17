@@ -142,7 +142,9 @@ serious SEO/AEO.
   tooling (no runtime/app dependencies added).
 - **Metadata:** `metadataBase` (https://tellmewhy.huyakhuyak.productions),
   title template (`%s · tellmewhy`), real descriptions; Open Graph +
-  Twitter card with a designed static OG image; canonical URLs.
+  Twitter card with a designed static OG image; canonical URLs. No
+  separate `twitter-image.png` was created — the single `opengraph-image.png`
+  serves both cards (Twitter falls back to `og:image`).
 - **Indexing:** `robots.ts` + `sitemap.ts` — landing (and sign-in/up)
   indexed; every authenticated surface `noindex` (metadata robots) and
   disallowed in robots.txt.
@@ -160,7 +162,8 @@ serious SEO/AEO.
 - **Uniform 404** for foreign/missing on all new routes (edit, regenerate,
   switch, hide, restore).
 - **Rate limiting:** edit/regenerate ride the chat limiter (they are model
-  calls); hide/restore/switch ride a client-write limiter.
+  calls); conversation mutations (rename, move, hide, restore) and
+  active-leaf switching ride a client-write limiter.
 - **System-prompt total order unchanged;** crisis addendum last; notes
   never in prompt.
 
