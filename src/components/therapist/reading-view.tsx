@@ -244,6 +244,15 @@ export function ReadingView({
       });
       if (res.ok) {
         setBody("");
+        // The intervention appends onto the conversation's active leaf and
+        // becomes the new leaf itself. `viewLeafId` is view-local state seeded
+        // once at mount, so an in-place router.refresh() alone would leave the
+        // view resolving the OLD leaf's path — which excludes the freshly
+        // appended message (a descendant of it). Advance the local view to the
+        // new message so the therapist sees what they just sent; the refresh
+        // below then carries its data onto that path.
+        const created = (await res.json().catch(() => null)) as { id?: string } | null;
+        if (created?.id) setViewLeafId(created.id);
         router.refresh();
         return;
       }
