@@ -1,3 +1,5 @@
+import type { ChatStatus } from "ai";
+
 // Decide whether the on-screen thread must adopt the server's active path.
 //
 // ChatScreen's useChat Chat instance is created once and survives every
@@ -13,4 +15,18 @@ export function shouldAdoptServerMessages(
 ): boolean {
   if (localIds.length !== serverIds.length) return true;
   return localIds.some((id, i) => id !== serverIds[i]);
+}
+
+// Whether useChat's status is a RESTING state — one where the server owns the
+// thread and adoption is safe. "ready" is the obvious one; "error" matters just
+// as much: it is STICKY (nothing in this app calls clearError), so after any
+// failed send (e.g. the 429 path) the chat rests at "error" indefinitely.
+// Treating it as mid-stream would make the adoption effect consume a version
+// switch's new props without adopting — silently reviving the visual no-op.
+// Adopting at "error" is safe: the failure handler has already harvested the
+// failed exchange back into the composer, restoring local state to pre-send
+// server truth, so adoption is either a no-op (equal lists) or exactly the
+// branch swap the person asked for.
+export function isAtRest(status: ChatStatus): boolean {
+  return status === "ready" || status === "error";
 }

@@ -7,7 +7,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
 import { buildChatRequestBody } from "@/lib/chat-request";
-import { shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
+import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
 import { MessageBubble } from "./message-bubble";
 import { MessageEdit } from "./message-edit";
 import { MessageFlag } from "./message-flag";
@@ -273,9 +273,13 @@ export function ChatScreen({
   // mid-stream (e.g. an unrelated rail refresh while a reply streams) carries a
   // snapshot that predates the in-flight reply, so it is consumed without
   // adopting — otherwise it would overwrite the freshly settled thread.
+  //
+  // "At rest" means "ready" OR the sticky "error" state (see isAtRest) — after
+  // a failed send the chat rests at "error" forever, and a version switch from
+  // there must still land on screen.
   useEffect(() => {
     if (initialMessages === seenInitialRef.current) return;
-    if (status !== "ready") {
+    if (!isAtRest(status)) {
       seenInitialRef.current = initialMessages;
       return;
     }
