@@ -10,8 +10,9 @@ import { createConversation, isTitleCustomized, listConversations, loadMessages,
 import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
 import { auth } from "@/lib/auth";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { user } from "@/db/schema";
+import { messages, user } from "@/db/schema";
 import { acceptInvite, createInvite, getActiveLinkForClient, revokeLink } from "@/lib/therapist-links";
 import { getGrantStateForClient, grantConversation, revokeGrant } from "@/lib/sharing";
 import { createNote, getActiveAiInstruction } from "@/lib/therapist-notes";
@@ -990,6 +991,26 @@ describe("POST /api/chat", () => {
 
       // Reuse, not re-run: regenerate never invokes the classifier.
       expect(classifierSpy).not.toHaveBeenCalled();
+    });
+
+    it("regenerating a crisis turn keeps its crisis flag even when the parent body won't decrypt", async () => {
+      const clientId = `test-${randomUUID()}`;
+      const { id } = await createConversation(clientId, "Corrupt crisis parent");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "MOCK_CRISIS I can't keep going" });
+      const [m1, r1] = await loadMessages(id, clientId);
+      expect(m1.riskLevel).toBe("crisis");
+
+      // Corrupt the parent client message's ciphertext so its body can no longer
+      // decrypt — it drops out of the decrypted tree entirely. The stored risk
+      // level lives on the RAW row (a plaintext column), so the crisis signal
+      // must still survive: the x-risk-level header is what raises the client's
+      // crisis banner, and safety can't hinge on a body that failed to decrypt.
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, m1.id));
+
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, regenerateOf: r1.id }));
+      expect(res.headers.get("x-risk-level")).toBe("crisis");
+      await res.text();
     });
 
     it("regenerating a normal turn stays none — no crisis addendum, header none", async () => {

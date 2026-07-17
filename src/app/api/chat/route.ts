@@ -100,7 +100,10 @@ async function handlePost(req: Request): Promise<Response> {
       // ALREADY classified at (stored on its row): a regenerated reply to a
       // crisis-flagged message still gets the crisis addendum below and still
       // reports `x-risk-level: crisis`, without re-invoking the classifier.
-      riskLevel = byId.get(target.parentId)?.riskLevel ?? "none";
+      // Read it off the RAW row (riskById), not the decrypted tree: riskLevel
+      // is a plaintext column, so a parent whose body failed to decrypt (and is
+      // therefore absent from `byId`) must still carry its crisis flag forward.
+      riskLevel = tree.riskById.get(target.parentId) ?? "none";
       aiParentId = target.parentId; // the new reply is the old one's sibling
     } else {
       const { text, parentId } = parsed.data;

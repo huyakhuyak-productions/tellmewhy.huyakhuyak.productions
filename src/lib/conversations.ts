@@ -188,11 +188,14 @@ function decryptMessageRow(
 
 // Every message of a conversation, flat, in (createdAt, id) order, plus the
 // active leaf — the raw material the version switcher and the active-path
-// reader both build on.
+// reader both build on. `riskById` carries every message's stored risk level
+// off its RAW row (a plaintext column): it survives ciphertext corruption that
+// would drop a body from `messages`, so a safety decision keyed on a message's
+// risk can never be silently downgraded because that message failed to decrypt.
 export async function loadMessageTree(
   conversationId: string,
   userId: string,
-): Promise<{ messages: LoadedMessage[]; activeLeafId: string | null }> {
+): Promise<{ messages: LoadedMessage[]; riskById: Map<string, RiskLevel>; activeLeafId: string | null }> {
   const conversation = await requireOwnedConversation(conversationId, userId);
   const dek = await getOrCreateUserDek(userId);
   const rows = await db
@@ -200,7 +203,11 @@ export async function loadMessageTree(
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt), asc(messages.id));
-  return { messages: rows.flatMap((r) => decryptMessageRow(dek, r)), activeLeafId: conversation.activeLeafId };
+  return {
+    messages: rows.flatMap((r) => decryptMessageRow(dek, r)),
+    riskById: new Map(rows.map((r) => [r.id, r.riskLevel])),
+    activeLeafId: conversation.activeLeafId,
+  };
 }
 
 // The client's current view: the active leaf's root-to-leaf chain. Existing
