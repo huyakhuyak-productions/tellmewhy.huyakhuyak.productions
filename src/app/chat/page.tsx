@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { listConversations } from "@/lib/conversations";
+import { listConversations, listHiddenConversations } from "@/lib/conversations";
 import { listExercisesForClient } from "@/lib/exercises";
 import { listFolders } from "@/lib/folders";
 import { listGrantsForClient } from "@/lib/sharing";
@@ -13,20 +13,23 @@ import { HeroComposer } from "@/components/home/hero-composer";
 import { MoodCheckin } from "@/components/chat/mood-checkin";
 import { AssignmentCards } from "@/components/home/assignment-cards";
 import { FolderChips } from "@/components/home/folder-chips";
+import { HiddenConversations } from "@/components/chat/hidden-conversations";
 
 export default async function HomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
-  const [conversations, folders, grantIds, activeLink, recentMood, exercises] = await Promise.all([
-    listConversations(session.user.id),
-    listFolders(session.user.id),
-    listGrantsForClient(session.user.id),
-    getActiveLinkForClient(session.user.id),
-    // Just enough to know today's check-in (if any) so the row opens pre-set.
-    listMoodCheckins(session.user.id, 1),
-    listExercisesForClient(session.user.id),
-  ]);
+  const [conversations, hiddenConversations, folders, grantIds, activeLink, recentMood, exercises] =
+    await Promise.all([
+      listConversations(session.user.id),
+      listHiddenConversations(session.user.id),
+      listFolders(session.user.id),
+      listGrantsForClient(session.user.id),
+      getActiveLinkForClient(session.user.id),
+      // Just enough to know today's check-in (if any) so the row opens pre-set.
+      listMoodCheckins(session.user.id, 1),
+      listExercisesForClient(session.user.id),
+    ]);
 
   const today = moodTodayUTC();
   const todayCheckin = recentMood.find((c) => c.day === today) ?? null;
@@ -74,6 +77,17 @@ export default async function HomePage() {
           hasActiveLink={activeLink !== null}
         />
       )}
+
+      {/* The restore drawer for anything the person has hidden — renders nothing
+          at all until there's something to restore. */}
+      <HiddenConversations
+        conversations={hiddenConversations.map((c) => ({
+          id: c.id,
+          title: c.title,
+          hiddenAt: c.hiddenAt,
+        }))}
+        className="w-full max-w-[880px]"
+      />
 
       {/* Always reachable, assignment or not — the standalone thought record. */}
       <Link

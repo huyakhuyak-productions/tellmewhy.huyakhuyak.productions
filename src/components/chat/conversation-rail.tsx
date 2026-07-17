@@ -6,6 +6,7 @@ import Link from "next/link";
 import { relativeTime } from "@/lib/relative-time";
 import { setConversationDragData, useConversationDropTarget } from "@/lib/dnd";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
+import { HiddenConversations, type HiddenConversation } from "./hidden-conversations";
 
 export type RailConversation = {
   id: string;
@@ -26,6 +27,7 @@ export function ConversationRail({
   currentId,
   sharedIds = [],
   hasActiveLink = false,
+  hiddenConversations = [],
   className = "",
 }: {
   conversations: RailConversation[];
@@ -35,6 +37,8 @@ export function ConversationRail({
   sharedIds?: string[];
   /** Whether a share/stop-share action should appear in the row menu at all. */
   hasActiveLink?: boolean;
+  /** The client's hidden conversations, for the collapsed restore drawer. */
+  hiddenConversations?: HiddenConversation[];
   className?: string;
 }) {
   const router = useRouter();
@@ -58,6 +62,8 @@ export function ConversationRail({
   const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<{ id: string; message: string } | null>(null);
+  const [hidingId, setHidingId] = useState<string | null>(null);
+  const [hideError, setHideError] = useState<{ id: string; message: string } | null>(null);
 
   const currentFolderId = conversations.find((c) => c.id === currentId)?.folderId ?? null;
   const unsorted = conversations.filter((c) => c.folderId === null);
@@ -127,6 +133,29 @@ export function ConversationRail({
     }
   }
 
+  async function hide(conversationId: string) {
+    setHideError(null);
+    setHidingId(conversationId);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hidden: true }),
+      });
+      if (!res.ok) {
+        setHideError({ id: conversationId, message: "Couldn't hide — try again." });
+        return;
+      }
+      router.refresh();
+    } catch {
+      // Offline / network failure — surfaced the same way as a non-OK response
+      // so a hide never dies silently.
+      setHideError({ id: conversationId, message: "Couldn't hide — try again." });
+    } finally {
+      setHidingId(null);
+    }
+  }
+
   async function submitFolder(e: React.FormEvent) {
     e.preventDefault();
     const name = newName.trim();
@@ -179,6 +208,9 @@ export function ConversationRail({
           onRename={rename}
           renamingId={renamingId}
           renameError={renameError}
+          onHide={hide}
+          hidingId={hidingId}
+          hideError={hideError}
           sharedSet={sharedSet}
           hasActiveLink={hasActiveLink}
           onToggleShare={toggleShare}
@@ -203,6 +235,9 @@ export function ConversationRail({
           onRename={rename}
           renamingId={renamingId}
           renameError={renameError}
+          onHide={hide}
+          hidingId={hidingId}
+          hideError={hideError}
           sharedSet={sharedSet}
           hasActiveLink={hasActiveLink}
           onToggleShare={toggleShare}
@@ -255,6 +290,8 @@ export function ConversationRail({
         )}
       </div>
 
+      <HiddenConversations conversations={hiddenConversations} />
+
       <div className="mt-auto px-1 pt-3">
         <Link
           href="/chat"
@@ -295,6 +332,9 @@ function FolderGroup({
   onRename,
   renamingId,
   renameError,
+  onHide,
+  hidingId,
+  hideError,
   sharedSet,
   hasActiveLink,
   onToggleShare,
@@ -315,6 +355,9 @@ function FolderGroup({
   onRename: (conversationId: string, title: string) => Promise<boolean>;
   renamingId: string | null;
   renameError: { id: string; message: string } | null;
+  onHide: (conversationId: string) => void;
+  hidingId: string | null;
+  hideError: { id: string; message: string } | null;
   sharedSet: Set<string>;
   hasActiveLink: boolean;
   onToggleShare: (conversationId: string, currentlyShared: boolean) => void;
@@ -380,6 +423,9 @@ function FolderGroup({
                 onRename={onRename}
                 renaming={renamingId === c.id}
                 renameError={renameError?.id === c.id ? renameError.message : null}
+                onHide={onHide}
+                hiding={hidingId === c.id}
+                hideError={hideError?.id === c.id ? hideError.message : null}
                 shared={sharedSet.has(c.id)}
                 hasActiveLink={hasActiveLink}
                 onToggleShare={onToggleShare}
@@ -404,6 +450,9 @@ function ConversationRow({
   onRename,
   renaming,
   renameError,
+  onHide,
+  hiding,
+  hideError,
   shared,
   hasActiveLink,
   onToggleShare,
@@ -419,6 +468,9 @@ function ConversationRow({
   onRename: (conversationId: string, title: string) => Promise<boolean>;
   renaming: boolean;
   renameError: string | null;
+  onHide: (conversationId: string) => void;
+  hiding: boolean;
+  hideError: string | null;
   shared: boolean;
   hasActiveLink: boolean;
   onToggleShare: (conversationId: string, currentlyShared: boolean) => void;
@@ -431,6 +483,9 @@ function ConversationRow({
   const [renameMode, setRenameMode] = useState(false);
   const [draft, setDraft] = useState(item.title);
   const [dragging, setDragging] = useState(false);
+  // The "Hide" menuitem swaps the popover's contents for a calm confirm instead
+  // of closing it — the popover stays anchored to the row, no accordion reflow.
+  const [confirmingHide, setConfirmingHide] = useState(false);
 
   const menuOpen = menu !== null;
 
@@ -460,6 +515,8 @@ function ConversationRow({
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // Always open onto the action list, never a stale confirm from last time.
+    setConfirmingHide(false);
     setMenu({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
   }
 
@@ -487,7 +544,7 @@ function ConversationRow({
         // The row lifts onto folder headings; renaming turns it off so the
         // inline input stays selectable. A plain click still navigates — the
         // browser only starts a drag past its own movement threshold.
-        draggable={!renameMode && !moving}
+        draggable={!renameMode && !moving && !hiding}
         onDragStart={(e) => {
           setConversationDragData(e.dataTransfer, item.id);
           setDragging(true);
@@ -558,7 +615,7 @@ function ConversationRow({
             aria-label="Conversation actions"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            disabled={moving}
+            disabled={moving || hiding}
             onClick={() => (menuOpen ? setMenu(null) : openMenu())}
             className={`absolute right-1 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-[opacity,color] duration-150 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.96] group-hover/row:opacity-100 disabled:pointer-events-none disabled:opacity-40 ${
               menuOpen ? "opacity-100" : "opacity-0"
@@ -584,60 +641,102 @@ function ConversationRow({
             <div
               role="menu"
               style={{ top: menu.top, right: menu.right }}
-              className="animate-cp-pop fixed z-50 min-w-40 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)]"
+              className={`animate-cp-pop fixed z-50 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)] ${
+                confirmingHide ? "w-64" : "min-w-40"
+              }`}
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={startRename}
-                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
-              >
-                Rename
-              </button>
-              {hasActiveLink ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenu(null);
-                    onToggleShare(item.id, shared);
-                  }}
-                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
-                >
-                  {shared ? "Stop sharing" : "Share with therapist"}
-                </button>
-              ) : null}
-              <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
-              <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
-                Move to…
-              </div>
-              {folders.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="menuitem"
-                  disabled={f.id === currentFolderId}
-                  onClick={() => {
-                    setMenu(null);
-                    onMove(item.id, f.id);
-                  }}
-                  className="block w-full truncate rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
-                >
-                  {f.name}
-                </button>
-              ))}
-              <button
-                type="button"
-                role="menuitem"
-                disabled={currentFolderId === null}
-                onClick={() => {
-                  setMenu(null);
-                  onMove(item.id, null);
-                }}
-                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                Unsorted
-              </button>
+              {confirmingHide ? (
+                <div className="p-1.5">
+                  <p className="font-serif text-[12.5px] italic leading-relaxed text-muted-foreground">
+                    This hides it from your view. If it&apos;s shared, your trusted
+                    person can still see it. You can restore it any time.
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenu(null);
+                        setConfirmingHide(false);
+                        onHide(item.id);
+                      }}
+                      className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-foreground outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.97]"
+                    >
+                      Hide it
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingHide(false)}
+                      className="rounded-lg px-3 py-1.5 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+                    >
+                      Keep it
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={startRename}
+                    className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+                  >
+                    Rename
+                  </button>
+                  {hasActiveLink ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(null);
+                        onToggleShare(item.id, shared);
+                      }}
+                      className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+                    >
+                      {shared ? "Stop sharing" : "Share with therapist"}
+                    </button>
+                  ) : null}
+                  <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
+                  <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+                    Move to…
+                  </div>
+                  {folders.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      role="menuitem"
+                      disabled={f.id === currentFolderId}
+                      onClick={() => {
+                        setMenu(null);
+                        onMove(item.id, f.id);
+                      }}
+                      className="block w-full truncate rounded-md px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={currentFolderId === null}
+                    onClick={() => {
+                      setMenu(null);
+                      onMove(item.id, null);
+                    }}
+                    className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    Unsorted
+                  </button>
+                  <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setConfirmingHide(true)}
+                    className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+                  >
+                    Hide
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
@@ -646,6 +745,10 @@ function ConversationRow({
       {renameError ? (
         <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
           {renameError}
+        </p>
+      ) : hideError ? (
+        <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">
+          {hideError}
         </p>
       ) : error ? (
         <p role="alert" className="px-3 pb-1 font-serif text-[11px] italic text-accent">

@@ -33,6 +33,7 @@ export function CardMenu({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [confirmingHide, setConfirmingHide] = useState(false);
   const [draft, setDraft] = useState(title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,9 @@ export function CardMenu({
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  async function patch(body: { title: string } | { folderId: string | null }): Promise<boolean> {
+  async function patch(
+    body: { title: string } | { folderId: string | null } | { hidden: boolean },
+  ): Promise<boolean> {
     setError(null);
     setBusy(true);
     try {
@@ -96,6 +99,18 @@ export function CardMenu({
     await patch({ folderId });
   }
 
+  function startHide() {
+    setOpen(false);
+    setError(null);
+    setConfirmingHide(true);
+  }
+
+  async function hide() {
+    // patch refreshes on success, unmounting this menu with the card; on failure
+    // it drops back onto the confirm with the error shown beneath it.
+    await patch({ hidden: true });
+  }
+
   async function toggleShare() {
     setOpen(false);
     setError(null);
@@ -140,6 +155,40 @@ export function CardMenu({
           <span className="text-[11px] text-muted-foreground/80">Enter to save · Esc to cancel</span>
         )}
       </form>
+    );
+  }
+
+  if (confirmingHide) {
+    return (
+      <div className="absolute inset-0 z-40 flex flex-col justify-center gap-3 rounded-[18px] border border-accent/40 bg-card p-[18px] shadow-sm">
+        <p className="text-pretty font-serif text-[0.9rem] italic leading-relaxed text-muted-foreground">
+          This hides it from your view. If it&apos;s shared, your trusted person
+          can still see it. You can restore it any time.
+        </p>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={hide}
+            disabled={busy}
+            className="rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-foreground outline-none transition-[background-color,transform] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.97] disabled:opacity-50"
+          >
+            {busy ? "Hiding…" : "Hide it"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingHide(false)}
+            disabled={busy}
+            className="rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+          >
+            Keep it
+          </button>
+        </div>
+        {error ? (
+          <span role="alert" className="font-serif text-[11.5px] italic text-accent">
+            {error}
+          </span>
+        ) : null}
+      </div>
     );
   }
 
@@ -227,6 +276,15 @@ export function CardMenu({
               className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
             >
               Unsorted
+            </button>
+            <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={startHide}
+              className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+            >
+              Hide
             </button>
           </div>
         </>

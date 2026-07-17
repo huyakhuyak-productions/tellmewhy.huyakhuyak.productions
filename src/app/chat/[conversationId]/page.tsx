@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, listConversations, loadMessageTree } from "@/lib/conversations";
+import { NotFoundError, listConversations, listHiddenConversations, loadMessageTree } from "@/lib/conversations";
 import { projectMarkerOntoPath, resolveActivePath, versionInfo } from "@/lib/message-tree";
 import { listFolders } from "@/lib/folders";
 import { deriveChatStats } from "@/lib/chat-stats";
@@ -57,6 +57,7 @@ export default async function ConversationPage({
 
   const [
     conversationList,
+    hiddenList,
     folderList,
     activeLink,
     shared,
@@ -67,6 +68,9 @@ export default async function ConversationPage({
     notesList,
   ] = await Promise.all([
     listConversations(userId),
+    // The client's hidden conversations: the rail's restore drawer, and the
+    // check that tells us whether THIS conversation is itself hidden.
+    listHiddenConversations(userId),
     listFolders(userId),
     getActiveLinkForClient(userId),
     getGrantStateForClient(userId, conversationId),
@@ -80,6 +84,11 @@ export default async function ConversationPage({
     // list stays intact in scope rather than being reduced to just the Set.
     listNotes(userId),
   ]);
+
+  // The conversation page loads even for a hidden conversation (loadMessageTree
+  // never filters hiddenAt for the owner), so a direct link still opens — the
+  // chip just tells the reader it's hidden and offers a one-tap restore.
+  const hidden = hiddenList.some((c) => c.id === conversationId);
 
   // Which messages already have a kept note, so the affordance can show its
   // settled "kept" state instead of the invitation on first paint.
@@ -140,6 +149,12 @@ export default async function ConversationPage({
         folderId: c.folderId,
       }))}
       folders={folderList.map((f) => ({ id: f.id, name: f.name }))}
+      hiddenConversations={hiddenList.map((c) => ({
+        id: c.id,
+        title: c.title,
+        hiddenAt: c.hiddenAt,
+      }))}
+      hidden={hidden}
       stats={stats}
       activeLink={activeLink ? { therapistName: activeLink.therapistName } : null}
       shared={shared}

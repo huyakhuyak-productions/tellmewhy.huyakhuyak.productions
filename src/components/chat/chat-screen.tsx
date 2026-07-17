@@ -17,6 +17,7 @@ import { VersionSwitcher } from "./version-switcher";
 import { ShareControl } from "./share-control";
 import { CrisisBanner } from "./crisis-banner";
 import { ConversationRail, type RailConversation, type RailFolder } from "./conversation-rail";
+import type { HiddenConversation } from "./hidden-conversations";
 import { StatsRail, type ChatStats, type MoodTrend, type RailNote, type TherapistRailState } from "./stats-rail";
 import { ThoughtRecordAffordance } from "./thought-record-affordance";
 import { PublicNoteCard } from "@/components/public-note-card";
@@ -76,6 +77,8 @@ export function ChatScreen({
   versions,
   conversations,
   folders,
+  hiddenConversations,
+  hidden,
   stats,
   activeLink,
   shared,
@@ -94,6 +97,10 @@ export function ChatScreen({
   versions: Record<string, VersionEntry>;
   conversations: RailConversation[];
   folders: RailFolder[];
+  /** The client's hidden conversations, for the rail's collapsed restore drawer. */
+  hiddenConversations: HiddenConversation[];
+  /** Whether THIS conversation is itself hidden — drives the direct-nav chip. */
+  hidden: boolean;
   stats: ChatStats;
   /** The client's active trusted-person link, if any — gates every share affordance. */
   activeLink: ActiveLink | null;
@@ -123,6 +130,9 @@ export function ChatScreen({
   const therapistName = activeLink?.therapistName ?? null;
   const [crisis, setCrisis] = useState(false);
   const [sendFailure, setSendFailure] = useState<SendFailure | null>(null);
+  // Restoring THIS conversation from its own hidden chip (see the header chip).
+  const [restoringHidden, setRestoringHidden] = useState(false);
+  const [restoreHiddenError, setRestoreHiddenError] = useState(false);
   // Whether the most recent /api/chat response was the rate limiter's 429.
   // The transport surfaces failures as a thrown Error carrying only the raw
   // body text, so the custom fetch below (the established interception point,
@@ -190,6 +200,33 @@ export function ChatScreen({
   });
 
   const router = useRouter();
+
+  // Bring this conversation back into the list from its own hidden chip. A
+  // refresh re-runs the page load, which drops the chip once the row is visible
+  // again.
+  async function restoreHidden() {
+    setRestoreHiddenError(false);
+    setRestoringHidden(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hidden: false }),
+      });
+      if (!res.ok) {
+        setRestoreHiddenError(true);
+        return;
+      }
+      router.refresh();
+    } catch {
+      // Offline / network failure — surfaced like a non-OK response so a restore
+      // never dies silently.
+      setRestoreHiddenError(true);
+    } finally {
+      setRestoringHidden(false);
+    }
+  }
+
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -541,6 +578,7 @@ export function ChatScreen({
         currentId={conversationId}
         sharedIds={sharedIds}
         hasActiveLink={hasActiveLink}
+        hiddenConversations={hiddenConversations}
         className="hidden lg:flex"
       />
 
@@ -582,6 +620,29 @@ export function ChatScreen({
             ) : null}
           </div>
         </header>
+
+        {hidden ? (
+          <div className="cp-hairline border-b bg-muted/30 px-4 py-2.5 lg:px-10">
+            <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="flex-1 font-serif text-[0.85rem] italic leading-relaxed text-muted-foreground">
+                Hidden — only you can see your own hidden conversations.
+              </p>
+              <button
+                type="button"
+                onClick={restoreHidden}
+                disabled={restoringHidden}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-accent outline-none transition-[background-color,opacity] duration-150 hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.97] disabled:opacity-50"
+              >
+                {restoringHidden ? "Restoring…" : "Restore"}
+              </button>
+              {restoreHiddenError ? (
+                <p role="alert" className="w-full font-serif text-[11.5px] italic text-accent">
+                  Couldn&apos;t restore — try again.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex flex-1 flex-col overflow-y-auto px-4 py-5 lg:px-10 lg:py-8">
           <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-3 lg:gap-[22px]">

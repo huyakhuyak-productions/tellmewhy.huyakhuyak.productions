@@ -459,5 +459,20 @@ describe("encrypted conversations", () => {
       const { id } = await createConversation(userId, "Not yours");
       await expect(setConversationHidden(id, "someone-else", true)).rejects.toThrow(NotFoundError);
     });
+
+    // Pins the direct-nav contract: hiding only drops a conversation from the
+    // client's LIST — the owner's page load path (loadMessages / loadMessageTree)
+    // must still resolve it, so a direct link to a hidden conversation opens
+    // instead of 404-ing. requireOwnedConversation never filters hiddenAt.
+    it("still loads a hidden conversation for its owner via the page path", async () => {
+      const { id } = await createConversation(userId, "Hidden but reachable");
+      await saveMessage({ conversationId: id, userId, sender: "client", text: "still here" });
+      await setConversationHidden(id, userId, true);
+
+      const loaded = await loadMessages(id, userId);
+      expect(loaded.map((m) => m.text)).toEqual(["still here"]);
+      const tree = await loadMessageTree(id, userId);
+      expect(tree.messages.map((m) => m.text)).toContain("still here");
+    });
   });
 });
