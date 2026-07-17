@@ -1,3 +1,4 @@
+export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";

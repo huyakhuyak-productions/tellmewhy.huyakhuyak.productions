@@ -1,3 +1,4 @@
+export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { notFound } from "next/navigation";
 import { NotFoundError } from "@/lib/errors";
 import { listAssignmentsForTherapist } from "@/lib/exercises";

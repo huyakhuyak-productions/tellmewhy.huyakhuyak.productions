@@ -1,3 +1,4 @@
+export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { NotFoundError } from "@/lib/errors";

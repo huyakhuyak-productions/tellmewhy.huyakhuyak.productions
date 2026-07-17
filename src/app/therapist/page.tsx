@@ -1,3 +1,4 @@
+export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { listAttentionQueue, listClientOverviews } from "@/lib/therapist-desk";
 import { AttentionQueue } from "@/components/therapist/attention-queue";
 import { ClientList } from "@/components/therapist/client-list";

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PrivacySection } from "./privacy-section";
 import { TrustedPersonSection } from "./trusted-person-section";
 import { FaqSection } from "./faq-section";
+import { JsonLd } from "./json-ld";
 
 // The public front door, shown only to signed-out visitors. Server-rendered
 // with no client JavaScript: the hero's entrance uses the app's own CSS
@@ -11,6 +12,7 @@ import { FaqSection } from "./faq-section";
 export function LandingPage() {
   return (
     <div className="relative flex min-h-dvh flex-col">
+      <JsonLd />
       <div aria-hidden className="ambient-room" />
 
       <main className="mx-auto flex w-full max-w-[680px] flex-1 flex-col gap-24 px-6 pb-24 pt-24 md:gap-28 md:pt-32">

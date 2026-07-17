@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,8 +23,26 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "tellmewhy",
-  description: "A private place to talk about how you feel.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "tellmewhy — a private place to talk",
+    template: "%s · tellmewhy",
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: "tellmewhy",
+  openGraph: {
+    type: "website",
+    siteName: "tellmewhy",
+    title: "tellmewhy — a private place to talk",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "tellmewhy — a private place to talk",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
