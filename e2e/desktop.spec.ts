@@ -379,6 +379,34 @@ test("regenerating a reply branches an AI sibling reachable by the arrows", asyn
   await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
 });
 
+test("a follow-up reply gains its action row without any reload", async ({ page }) => {
+  await signUp(page);
+
+  // First exchange from the hero, streamed in.
+  await page.getByLabel("Start a conversation").fill("Let's think this through");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // A SECOND message, sent from inside the conversation. The title watcher only
+  // ever fires for the FIRST exchange (guarded on initialMessages.length), so
+  // nothing but the plain-send settle refresh can surface this follow-up reply's
+  // server id — and thus its Regenerate affordance. No reload, no goto here:
+  // this pins the settle-refresh path the action tests above work around by
+  // reloading (see startAndPersist).
+  await page.getByPlaceholder("What's on your mind?").fill("And another thought");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  // Both replies must carry a Regenerate control once the settle refresh adopts
+  // server truth — proving even the follow-up reply, which no title watcher ever
+  // touches, gains its actions without the person doing anything.
+  await expect(page.getByRole("button", { name: "Regenerate this reply" })).toHaveCount(2, {
+    timeout: 15_000,
+  });
+});
+
 test("copying a reply flashes a confirmation and lands the text on the clipboard", async ({
   page,
 }) => {

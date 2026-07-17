@@ -152,6 +152,15 @@ export function ChatScreen({
   // through this ref (synced in its own effect below, refs-not-written-in-render
   // like `conversationsRef`) so the transport always sees the freshest parents.
   const metaByIdRef = useRef(metaById);
+  // A turn just went out and, when it settles, the server's active path becomes
+  // the source of truth (new ids, version counts, a stopped partial gaining
+  // meta) — so re-sync once via the settle effect below rather than trusting the
+  // SDK's optimistic local state. Armed by edit / regenerate / stop at call
+  // time, AND by a plain send's clean finish (onFinish below): a freshly
+  // streamed reply carries no server id until this refresh + the adoption effect
+  // below adopt server truth, so without it a just-sent turn shows no Keep /
+  // Edit / Regenerate / Flag row until some unrelated refresh happens by.
+  const pendingRefresh = useRef(false);
   const { messages, sendMessage, setMessages, status, stop, regenerate } = useChat({
     // react-hooks/refs flags the rateLimited write inside the custom fetch
     // below: the rule cannot see when a render-created closure runs, so it
@@ -195,7 +204,16 @@ export function ChatScreen({
       // the same exchange — a first streamed token would be a false success
       // when the stream dies mid-way (onFinish then fires with isError set).
       // Waiting costs nothing: the key is only ever read on mount.
-      if (!isError && !isAbort) sessionStorage.removeItem(draftKey);
+      if (!isError && !isAbort) {
+        sessionStorage.removeItem(draftKey);
+        // Arm the settle refresh for a PLAIN send too (edit/regenerate/stop
+        // already arm it at call time). The just-streamed client turn + reply
+        // are SDK-only, with no server ids yet, so their action rows (Keep /
+        // Edit / Regenerate / Flag) can't mount until the refresh below adopts
+        // server truth. Idempotent: a branch op that already armed it, then
+        // finishes cleanly, still triggers exactly one refresh.
+        pendingRefresh.current = true;
+      }
     },
   });
 
@@ -262,11 +280,6 @@ export function ChatScreen({
 
   // Which of the person's own messages is currently open for editing, if any.
   const [editingId, setEditingId] = useState<string | null>(null);
-  // A branch operation (edit / regenerate / stop) just went out; after the
-  // stream settles the server's active path is the source of truth (new ids,
-  // version counts, a stopped partial gaining meta), so re-sync once via the
-  // settle effect below rather than trusting the SDK's optimistic local state.
-  const pendingRefresh = useRef(false);
 
   const isBusy = status === "submitted" || status === "streaming";
 
@@ -678,30 +691,33 @@ export function ChatScreen({
                   ) : (
                     <div className="group/msg flex flex-col">
                       <MessageBubble role="user" text={text} />
-                      {/* Edit, keep, and flag act on persisted messages only — a
-                          just-sent message has no server id yet. They live in the
-                          right-aligned action row under the person's own bubble. */}
+                      {/* Copy needs only the text, so it mounts on every render —
+                          even a just-sent message with no server id yet. Edit,
+                          keep, and flag act on persisted rows only; they join
+                          this right-aligned action row once server meta arrives. */}
+                      <div className="flex items-center justify-end gap-1">
+                        {meta ? (
+                          <HoverAction
+                            label="Edit this message"
+                            text="Edit"
+                            onClick={() => setEditingId(m.id)}
+                            disabled={isBusy}
+                            icon={
+                              <path
+                                d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5Z"
+                                stroke="currentColor"
+                                strokeWidth="1.3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            }
+                          />
+                        ) : null}
+                        <MessageCopy text={text} />
+                        {meta ? <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} /> : null}
+                      </div>
                       {meta ? (
                         <>
-                          <div className="flex items-center justify-end gap-1">
-                            <HoverAction
-                              label="Edit this message"
-                              text="Edit"
-                              onClick={() => setEditingId(m.id)}
-                              disabled={isBusy}
-                              icon={
-                                <path
-                                  d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3L11 2.5Z"
-                                  stroke="currentColor"
-                                  strokeWidth="1.3"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              }
-                            />
-                            <MessageCopy text={text} />
-                            <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
-                          </div>
                           {hasActiveLink ? (
                             <MessageFlag
                               conversationId={conversationId}
@@ -731,14 +747,15 @@ export function ChatScreen({
                   );
               } else {
                 // The group/msg wrapper is what reveals the hover affordance, so
-                // AI messages need it too (client bubbles already had it). Keep
-                // stays left-aligned here and only shows on persisted messages —
-                // a still-streaming reply has no server id yet.
+                // AI messages need it too (client bubbles already had it). Copy
+                // rides on the raw text and mounts even while the reply is still
+                // SDK-only; regenerate and keep need a server id, so they join
+                // the left-aligned row only once meta arrives.
                 bubble = (
                   <div className="group/msg flex flex-col">
                     <MessageBubble role="assistant" text={text} />
-                    {meta ? (
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1">
+                      {meta ? (
                         <HoverAction
                           label="Regenerate this reply"
                           text="Regenerate"
@@ -754,10 +771,10 @@ export function ChatScreen({
                             />
                           }
                         />
-                        <MessageCopy text={text} />
-                        <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} />
-                      </div>
-                    ) : null}
+                      ) : null}
+                      <MessageCopy text={text} />
+                      {meta ? <MessageKeep messageId={m.id} initialKept={keptIds.has(m.id)} /> : null}
+                    </div>
                     {/* A regenerated reply branches versions from the same user
                         turn — the arrows walk between them, always visible. */}
                     {meta && versions[m.id] ? (
