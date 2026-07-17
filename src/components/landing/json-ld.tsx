@@ -51,7 +51,9 @@ export function JsonLd() {
           key={graph["@type"] as string}
           type="application/ld+json"
           // Static, author-controlled copy only — no user input is interpolated.
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(graph) }}
+          // Still escape every `<` as a < unicode escape so a stray
+          // "</script>" in any future copy can't break out of the element.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(graph).replace(/</g, "\\u003c") }}
         />
       ))}
     </>
