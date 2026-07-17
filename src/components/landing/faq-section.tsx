@@ -15,7 +15,7 @@ export const LANDING_FAQ: { question: string; answer: string }[] = [
   {
     question: "Is this a crisis service?",
     answer:
-      "No. tellmewhy is not a medical device and not a substitute for professional care or emergency services. If it detects a crisis signal it surfaces hotline resources — 988 in the US, findahelpline.com internationally — and, if you've linked a trusted person, it can notify them. In an emergency, please contact your local emergency services.",
+      "No. tellmewhy is not a medical device and not a substitute for professional care or emergency services. If it detects a crisis signal it surfaces hotline resources — 988 in the US, findahelpline.com internationally — and crisis-flagged messages are surfaced to your trusted person's attention queue, in the conversations you've chosen to share with them, the next time they look. It doesn't push an alert. In an emergency, please contact your local emergency services.",
   },
   {
     question: "What happens to my data if there's a breach?",
@@ -25,12 +25,12 @@ export const LANDING_FAQ: { question: string; answer: string }[] = [
   {
     question: "How does deleting my account work?",
     answer:
-      "Deletion works by crypto-shredding: destroying the key that unwraps your data renders it permanently unreadable going forward, without touching any message row directly. One honest caveat — a database backup taken before that key is destroyed still holds the wrapped key, so it stays readable until it ages out of backup retention or the master key is rotated.",
+      "Deletion works by crypto-shredding: destroying the key that unwraps your data renders it permanently unreadable going forward, without touching any message row directly. Self-serve deletion isn't wired up yet — it ships with the account-management phase; until then, deletion is by request. One honest caveat — a database backup taken before that key is destroyed still holds the wrapped key, so it stays readable until it ages out of backup retention or the master key is rotated.",
   },
   {
     question: "Does the AI provider train on my conversations?",
     answer:
-      "Every AI call routes through OpenRouter with per-request data collection denied, and the account is configured to exclude logging and training providers before production use. Your conversations are used to write you a reply and nothing else.",
+      "Every AI call routes through OpenRouter with per-request data collection denied, and the account's data policy must be configured to exclude logging and training providers before anything real runs on it. Your conversations are used to write you a reply and nothing else.",
   },
 ];
 
@@ -56,7 +56,7 @@ export function FaqSection() {
         {LANDING_FAQ.map(({ question, answer }) => (
           <li key={question} className="border-t border-border/70 last:border-b">
             <details className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 outline-none [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm py-4 outline-none focus-visible:ring-2 focus-visible:ring-accent/40 [&::-webkit-details-marker]:hidden">
                 <span className="font-serif text-[1.05rem] leading-snug text-foreground transition-colors group-focus-within:text-accent">
                   {question}
                 </span>

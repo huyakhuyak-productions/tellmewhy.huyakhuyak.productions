@@ -13,7 +13,7 @@ const PROMISES: { lead: string; body: string }[] = [
   },
   {
     lead: "No-logging providers only.",
-    body: "Every AI call denies data collection per request, routed through providers configured to exclude logging and training.",
+    body: "Every AI call denies data collection per request; the account's data policy must be set to exclude logging and training providers before anything real runs on it.",
   },
   {
     lead: "Nothing is shared by default.",
@@ -21,7 +21,7 @@ const PROMISES: { lead: string; body: string }[] = [
   },
   {
     lead: "Deletion means crypto-shredding.",
-    body: "Deleting your account destroys the key that unlocks your data, rendering it permanently unreadable going forward.",
+    body: "Destroying the key that unlocks your data renders it permanently unreadable going forward. Self-serve deletion isn't wired up yet — it ships with account management; until then, deletion is by request.",
   },
 ];
 

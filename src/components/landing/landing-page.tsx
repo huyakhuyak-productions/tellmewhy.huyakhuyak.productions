@@ -36,7 +36,7 @@ export function LandingPage() {
           >
             Talk it through with an AI that answers now — and, if you ever want one, a single trusted
             person who can read only what you choose to share. Your words are encrypted the moment
-            they&apos;re stored, and nothing leaves your view unless you decide it should.
+            they&apos;re stored, and no one reads your words unless you decide they should.
           </p>
 
           <div
@@ -81,13 +81,13 @@ export function LandingPage() {
           <span className="font-serif text-[13px] italic text-muted-foreground">tellmewhy</span>
           <Link
             href="/sign-in"
-            className="text-[13px] text-muted-foreground outline-none transition-colors hover:text-accent focus-visible:text-accent"
+            className="rounded-sm text-[13px] text-muted-foreground outline-none transition-colors hover:text-accent focus-visible:text-accent focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             Sign in
           </Link>
           <Link
             href="/sign-up"
-            className="text-[13px] text-muted-foreground outline-none transition-colors hover:text-accent focus-visible:text-accent"
+            className="rounded-sm text-[13px] text-muted-foreground outline-none transition-colors hover:text-accent focus-visible:text-accent focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             Create your space
           </Link>
