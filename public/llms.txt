@@ -9,7 +9,8 @@ tellmewhy is a mobile-first web app for talking through your feelings with an AI
 - Message bodies, conversation titles, and folder names are encrypted at rest with a key that is yours. A database breach or backup leak exposes no content — only metadata (when conversations happened, which messages were crisis-flagged, who is linked to whom).
 - It is NOT end-to-end encrypted. The AI has to read your words to reply, so plaintext briefly exists in server memory during inference; it is discarded the moment the reply is done, and only the encrypted version is ever stored. The encryption protects against database breaches, not against the processing that makes a reply possible.
 - Nothing is shared by default. You share one conversation at a time and can revoke any share instantly — past and future messages alike.
-- AI calls route through OpenRouter with per-request data collection denied. Your conversations are used to write you a reply and nothing else — not for training.
+- AI calls route through OpenRouter with per-request data collection denied, and the account is restricted to providers that don't log or train on inputs. Your conversations are used to write you a reply and nothing else.
+- Deleting your account crypto-shreds your encryption key, making all stored content permanently unreadable. Self-serve deletion isn't wired up yet — until then, deletion is handled by request.
 
 ## What it is not
 

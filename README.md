@@ -1,6 +1,6 @@
 # tellmewhy
 
-A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com). This is not a medical device and not a replacement for professional care. You can link one trusted person — a therapist, or anyone else — to read conversations you choose to share, leave you notes, and guide how the AI responds; see [Linking a trusted person](#linking-a-trusted-person). On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
+A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com) and, in shared conversations, surfaces the message in the trusted person's attention queue the next time they look — it never pushes an alert. This is not a medical device and not a replacement for professional care. You can link one trusted person — a therapist, or anyone else — to read conversations you choose to share, leave you notes, and guide how the AI responds; see [Linking a trusted person](#linking-a-trusted-person). On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
 
 ## Local Setup
 
@@ -132,4 +132,4 @@ Loss of the master key means all user data is permanently unrecoverable. Back up
 Before going live, confirm that the OpenRouter account's data policy excludes logging and training providers. This policy is displayed on the OpenRouter dashboard under Account → Privacy Settings.
 
 **Crisis resources:**
-The app detects crisis signals and displays hotline resources (988 for the US, findahelpline.com for international). This is an automated signal detection system and not a substitute for professional mental health care.
+The app detects crisis signals and displays hotline resources (988 for the US, findahelpline.com for international). In a shared conversation, a crisis-flagged message is also surfaced in the trusted person's attention queue the next time they look — the app never pushes an alert. This is an automated signal detection system and not a substitute for professional mental health care.
