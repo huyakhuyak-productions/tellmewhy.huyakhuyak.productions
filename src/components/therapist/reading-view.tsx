@@ -6,10 +6,17 @@ import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
 import { useIsMac } from "@/lib/use-is-mac";
+import {
+  deepestDescendant,
+  projectMarkerOntoPath,
+  resolveActivePath,
+  versionInfo,
+} from "@/lib/message-tree";
 import type { ReadingMessage } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
 import { CrisisNavigator } from "./crisis-navigator";
 import { DigestPanel } from "./digest-panel";
+import { ReadingVersionSwitcher } from "./reading-version-switcher";
 
 // The therapist reads a client's shared conversation. Read-only — the same
 // bubbles/passages the client sees — with two deliberate acts layered on: a
@@ -20,12 +27,23 @@ export function ReadingView({
   conversationId,
   clientId,
   messages,
+  activeLeafId,
   markerMessageId,
+  focusMessageId = null,
 }: {
   conversationId: string;
   clientId: string;
+  /** The WHOLE tree, flat (createdAt, id) asc — every branch, not just one
+      path. The view resolves which path it shows from `viewLeafId` below. */
   messages: ReadingMessage[];
+  /** The client's own active leaf — the branch THEY currently see. It seeds the
+      therapist's initial view and anchors the digest's coverage math, but the
+      therapist's local navigation never writes it back. */
+  activeLeafId: string | null;
   markerMessageId: string | null;
+  /** From `?focus=` on the attention queue: a message to navigate-and-land on
+      at mount, on whichever branch it lives. */
+  focusMessageId?: string | null;
 }) {
   const router = useRouter();
   const isMac = useIsMac();
@@ -36,13 +54,60 @@ export function ReadingView({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
-  // Every message id in render order — the digest's stale-coverage math needs
-  // the full sequence, and the crisis navigator reads its own subset from it.
-  const orderedMessageIds = useMemo(() => messages.map((m) => m.id), [messages]);
+  // View-local branch selection. Seeded from the client's active leaf, moved
+  // ONLY by the version arrows and by landing on an off-path target — never
+  // pushed back to the server, so the client's leaf is untouched.
+  const [viewLeafId, setViewLeafId] = useState<string | null>(activeLeafId);
 
-  // The crisis navigator: the ordered ids of every crisis-flagged message, plus
-  // where the reader currently stands. `landed` gates the very first step —
-  // before it, there's nothing behind position 1.
+  // Constant-time lookup from id → message, over the whole tree.
+  const messagesById = useMemo(
+    () => new Map(messages.map((m) => [m.id, m] as const)),
+    [messages],
+  );
+
+  // The single root-to-leaf path the therapist is currently reading, and the
+  // messages along it in render order (root-first, matching the flat asc tree).
+  const displayedPathIds = useMemo(
+    () => resolveActivePath(messages, viewLeafId),
+    [messages, viewLeafId],
+  );
+  const displayedPathIdSet = useMemo(() => new Set(displayedPathIds), [displayedPathIds]);
+  const displayedMessages = useMemo(
+    () =>
+      displayedPathIds
+        .map((id) => messagesById.get(id))
+        .filter((m): m is ReadingMessage => m !== undefined),
+    [displayedPathIds, messagesById],
+  );
+
+  // Version sets for the displayed path only (entries exist where count > 1).
+  const versions = useMemo(
+    () => versionInfo(messages, displayedPathIds),
+    [messages, displayedPathIds],
+  );
+
+  // The review divider follows the marker PROJECTED onto the displayed path:
+  // the marker may sit on a branch the therapist isn't viewing, so we render
+  // the line after the deepest displayed message created at or before it.
+  const projectedMarkerId = useMemo(
+    () => projectMarkerOntoPath(messages, displayedPathIds, markerMessageId),
+    [messages, displayedPathIds, markerMessageId],
+  );
+
+  // Digest coverage math intentionally rides the CLIENT's active path, not the
+  // therapist's `viewLeafId`. The digest is computed server-side over the
+  // client's active path, and the "N newer" coverage line counts against these
+  // ids — so keeping them the client's path keeps coverage truthful no matter
+  // which branch the therapist happens to be reading.
+  const clientPathIds = useMemo(
+    () => resolveActivePath(messages, activeLeafId),
+    [messages, activeLeafId],
+  );
+
+  // The crisis navigator reaches crisis messages on ANY branch of the whole
+  // tree — not just the displayed path — because landing may itself switch
+  // branches. The pill's readout ("N crisis messages" / "i/N") still reads
+  // sensibly: it's a count of crisis messages in the conversation, unchanged.
   const crisisIds = useMemo(
     () => messages.filter((m) => m.riskLevel === "crisis").map((m) => m.id),
     [messages],
@@ -78,15 +143,69 @@ export function ReadingView({
     flashTimer.current = setTimeout(() => setFlashId(null), 1500);
   }, []);
 
+  // Land on a message that may live OFF the displayed path. If it's already on
+  // the path, scroll straight to it. Otherwise switch the view to the branch
+  // that carries it (its deepest-latest continuation) and remember to land once
+  // that path has re-rendered and re-registered its refs.
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const focusMessage = useCallback(
+    (id: string) => {
+      if (!messagesById.has(id)) return;
+      if (displayedPathIdSet.has(id)) {
+        landOn(id);
+        return;
+      }
+      setViewLeafId(deepestDescendant(messages, id));
+      setPendingFocusId(id);
+    },
+    [messagesById, displayedPathIdSet, messages, landOn],
+  );
+
+  // After a branch switch re-renders the path (and the ref for the target is
+  // registered), land on the pending target and clear it. Keyed on the new
+  // viewLeafId so it fires only once the path has actually moved; the land runs
+  // in an rAF so the freshly rendered layout is settled before we scroll.
+  useEffect(() => {
+    if (pendingFocusId === null) return;
+    const raf = requestAnimationFrame(() => {
+      landOn(pendingFocusId);
+      setPendingFocusId(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pendingFocusId, viewLeafId, landOn]);
+
+  // `?focus=` from the attention queue: navigate-and-land exactly once at mount.
+  // The rAF defers the (possibly branch-switching) focus until after the first
+  // paint, so the initial refs are registered before we try to land.
+  const focusedOnMount = useRef(false);
+  useEffect(() => {
+    if (focusedOnMount.current || !focusMessageId) return;
+    focusedOnMount.current = true;
+    requestAnimationFrame(() => focusMessage(focusMessageId));
+  }, [focusMessageId, focusMessage]);
+
   const jumpToCrisis = useCallback(
     (next: number) => {
       const id = crisisIds[next];
-      if (!id || !messageRefs.current.has(id)) return;
+      if (!id) return;
       setActiveCrisis(next);
       setLanded(true);
-      landOn(id);
+      // A crisis message may sit on another branch — focusMessage switches to
+      // it before landing, so the navigator reaches every crisis in the tree.
+      focusMessage(id);
     },
-    [crisisIds, landOn],
+    [crisisIds, focusMessage],
+  );
+
+  // Step to a sibling version, VIEW-LOCALLY: point the local view at that
+  // branch's deepest-latest continuation. No network, no client-leaf mutation.
+  const goToSibling = useCallback(
+    (siblings: string[], targetIndex: number) => {
+      const siblingId = siblings[targetIndex];
+      if (!siblingId) return;
+      setViewLeafId(deepestDescendant(messages, siblingId));
+    },
+    [messages],
   );
 
   async function markReadTo(messageId: string) {
@@ -145,8 +264,8 @@ export function ReadingView({
       {messages.length > 0 ? (
         <DigestPanel
           conversationId={conversationId}
-          orderedMessageIds={orderedMessageIds}
-          onJumpToMessage={landOn}
+          orderedMessageIds={clientPathIds}
+          onJumpToMessage={focusMessage}
         />
       ) : null}
       {crisisIds.length > 0 ? (
@@ -159,12 +278,12 @@ export function ReadingView({
         />
       ) : null}
       <div className="flex flex-col gap-[22px]">
-        {messages.length === 0 ? (
+        {displayedMessages.length === 0 ? (
           <p className="text-pretty font-serif text-[1.05rem] italic leading-relaxed text-muted-foreground">
             This conversation is empty so far.
           </p>
         ) : (
-          messages.map((m) => {
+          displayedMessages.map((m) => {
             if (m.sender === "system") {
               return (
                 <p
@@ -178,8 +297,9 @@ export function ReadingView({
             }
             const role = m.sender === "client" ? "user" : m.sender === "therapist" ? "therapist" : "assistant";
             const alignEnd = m.sender === "client";
-            const isMarked = m.id === markerMessageId;
+            const isMarked = m.id === projectedMarkerId;
             const isCrisis = m.riskLevel === "crisis";
+            const version = versions.get(m.id);
 
             // A crisis message reads as crisis at a glance: the Crisis pill rides
             // in a header line above the words (not floating below), the whole
@@ -210,6 +330,19 @@ export function ReadingView({
                     {isMarked ? "Reviewed to here" : "Mark read to here"}
                   </button>
                 </div>
+                {/* Always visible when the message branches — the therapist can
+                    walk every version locally, without ever moving the client's
+                    active leaf. */}
+                {version ? (
+                  <div className={`flex ${alignEnd ? "justify-end" : "justify-start"}`}>
+                    <ReadingVersionSwitcher
+                      index={version.index}
+                      count={version.count}
+                      onPrev={() => goToSibling(version.siblings, version.index - 1)}
+                      onNext={() => goToSibling(version.siblings, version.index + 1)}
+                    />
+                  </div>
+                ) : null}
               </div>
             );
             return (

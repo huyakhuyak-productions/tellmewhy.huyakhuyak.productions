@@ -8,14 +8,22 @@ import { requireTherapistPage } from "../../_lib/require-therapist-page";
 
 export default async function TherapistReadingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ conversationId: string }>;
+  searchParams: Promise<{ focus?: string }>;
 }) {
   const session = await requireTherapistPage();
   const { conversationId } = await params;
   // Reject non-UUID ids before Postgres would 500 on them — same 404 as an
   // ungranted conversation.
   if (!z.uuid().safeParse(conversationId).success) notFound();
+
+  // The attention queue links here with ?focus=<messageId> to land on a
+  // specific message. Validate it as a uuid or ignore it entirely — a bad
+  // focus never breaks the page, it just doesn't jump.
+  const { focus } = await searchParams;
+  const focusMessageId = focus && z.uuid().safeParse(focus).success ? focus : null;
 
   // Rendering the reading view IS a view — getReadingView goes through
   // loadSharedMessages, which audits a (deduped) conversation_viewed, exactly
@@ -47,7 +55,9 @@ export default async function TherapistReadingPage({
         conversationId={conversationId}
         clientId={view.clientId}
         messages={view.messages}
+        activeLeafId={view.activeLeafId}
         markerMessageId={view.markerMessageId}
+        focusMessageId={focusMessageId}
       />
     </DeskFrame>
   );
