@@ -7,6 +7,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
 import { buildChatRequestBody } from "@/lib/chat-request";
+import { shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
 import { MessageBubble } from "./message-bubble";
 import { MessageEdit } from "./message-edit";
 import { MessageFlag } from "./message-flag";
@@ -56,6 +57,18 @@ function resizeComposer(el: HTMLTextAreaElement) {
 // a fresh identity — consecutive identical failures must still re-run the
 // restore/focus effect below.
 type SendFailure = { kind: "rate-limit" | "generic" };
+
+// The single source of truth for turning server-loaded rows into the SDK's
+// message shape — used BOTH to seed useChat on mount AND to re-seed it when the
+// server's active path changes under a stationary Chat instance (see the
+// adoption effect below). Keeping one mapping guarantees the two stay identical.
+function seedFromInitialMessages(initialMessages: InitialMessage[]) {
+  return initialMessages.map((m) => ({
+    id: m.id,
+    role: m.sender === "client" ? ("user" as const) : ("assistant" as const),
+    parts: [{ type: "text" as const, text: m.text }],
+  }));
+}
 
 export function ChatScreen({
   conversationId,
@@ -164,11 +177,7 @@ export function ChatScreen({
         return res;
       },
     }),
-    messages: initialMessages.map((m) => ({
-      id: m.id,
-      role: m.sender === "client" ? ("user" as const) : ("assistant" as const),
-      parts: [{ type: "text" as const, text: m.text }],
-    })),
+    messages: seedFromInitialMessages(initialMessages),
     onError: () => failureHandlerRef.current(),
     onFinish: ({ isError, isAbort }) => {
       // Clear the stashed hero draft only on a confirmed clean finish. This
@@ -233,6 +242,53 @@ export function ChatScreen({
       router.refresh();
     }
   }, [status, router]);
+
+  // Tracks the last server render we've already reconciled against, by identity.
+  // A `router.refresh()` hands us a brand-new `initialMessages` array; a plain
+  // send mutates only the SDK's `messages` and leaves this prop's identity
+  // untouched. Comparing identities is how the adoption effect below tells "the
+  // server has new truth" apart from "the SDK is simply ahead of a stale server"
+  // — the distinction that keeps a just-sent exchange from being reverted.
+  const seenInitialRef = useRef(initialMessages);
+
+  // Adopt server truth into the rendered thread. The SDK owns `messages` during
+  // a stream; the server owns them at rest. useChat's Chat instance is created
+  // once and survives every `router.refresh()` (the `messages:` option is an
+  // initial seed only), so new server props — a switched branch, or a settled
+  // edit/regenerate/stop whose rows just gained their real ids — never reach the
+  // rendered SDK state on their own. When a genuinely new server render arrives
+  // AND we're at rest AND the ordered id lists diverge, re-seed from the active
+  // path with the exact mount mapping.
+  //
+  // This closes the version-switch no-op (the POST + refresh delivered new props
+  // that the on-screen bubbles ignored, so meta/version lookups missed and the
+  // switcher vanished) and reconciles Task 6's settle-refresh siblings (new AI
+  // rows gain their server ids, so their action rows appear). Because
+  // `router.refresh()` is async, adoption runs on the RE-RENDER that carries the
+  // new props, not the click — hence keying on the `initialMessages` identity.
+  //
+  // It cannot loop or clobber: the identity guard fires it only when a new
+  // server render actually landed (never on a plain send, whose props are
+  // unchanged), and adopting makes the id lists equal. A refresh that lands
+  // mid-stream (e.g. an unrelated rail refresh while a reply streams) carries a
+  // snapshot that predates the in-flight reply, so it is consumed without
+  // adopting — otherwise it would overwrite the freshly settled thread.
+  useEffect(() => {
+    if (initialMessages === seenInitialRef.current) return;
+    if (status !== "ready") {
+      seenInitialRef.current = initialMessages;
+      return;
+    }
+    seenInitialRef.current = initialMessages;
+    if (
+      shouldAdoptServerMessages(
+        messages.map((m) => m.id),
+        initialMessages.map((m) => m.id),
+      )
+    ) {
+      setMessages(seedFromInitialMessages(initialMessages));
+    }
+  }, [status, initialMessages, messages, setMessages]);
 
   function saveEdit(id: string, text: string) {
     setEditingId(null);

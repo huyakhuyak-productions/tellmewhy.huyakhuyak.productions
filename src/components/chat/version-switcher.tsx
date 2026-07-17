@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 // The version arrows under a branched message — ‹ n/m › between siblings.
@@ -30,12 +30,19 @@ export function VersionSwitcher({
   conversationId: string;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The refresh is async — its new props land a render later. Wrapping it in a
+  // transition keeps `isPending` true until they do, so the arrows stay disabled
+  // across the whole POST→refresh→adopt window. Without it the arrows re-enable
+  // the moment the POST resolves, and a fast second click would navigate off a
+  // stale index (the old sibling list) before the new branch has landed.
+  const [isPending, startTransition] = useTransition();
+  const busy = posting || isPending;
 
   async function switchTo(targetId: string) {
     if (busy) return;
-    setBusy(true);
+    setPosting(true);
     setError(null);
     try {
       const res = await fetch(`/api/conversations/${conversationId}/active-leaf`, {
@@ -53,11 +60,11 @@ export function VersionSwitcher({
       }
       // Server truth (the new active path) is the source of truth for what to
       // render — re-fetch it rather than guess the branch's continuation here.
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch {
       setError("Something went wrong — try again.");
     } finally {
-      setBusy(false);
+      setPosting(false);
     }
   }
 
