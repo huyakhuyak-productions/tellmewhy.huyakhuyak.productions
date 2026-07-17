@@ -229,8 +229,12 @@ test("keep a reply, find it on the rail and /notes, add one, then let it go", as
   // The confirmation now lives in two places under the reply: the always-mounted
   // sr-only live region (role=status) that a screen reader announces, and the
   // visible settled line. Assert the announcement via its role — the plain
-  // visible text alone would be a strict-mode duplicate.
-  await expect(replyGroup.getByRole("status")).toHaveText("Kept for your future self");
+  // visible text alone would be a strict-mode duplicate. Filter by text too:
+  // message-copy.tsx mounts its own always-on role=status sr-only span in the
+  // same reply group, so an unfiltered getByRole("status") now matches two nodes.
+  await expect(
+    replyGroup.getByRole("status").filter({ hasText: "Kept for your future self" }),
+  ).toHaveText("Kept for your future self");
 
   // The kept line only reaches the server-rendered rail on the next load —
   // keeping is optimistic and never refreshes the page under it.
