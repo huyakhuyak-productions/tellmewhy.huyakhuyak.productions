@@ -479,6 +479,7 @@ function ConversationRow({
   // The row lives inside the folder accordion's overflow-hidden clip, so the
   // menu is positioned `fixed` off the trigger's rect to escape that clip.
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const keepItRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
   const [renameMode, setRenameMode] = useState(false);
   const [draft, setDraft] = useState(item.title);
@@ -488,6 +489,12 @@ function ConversationRow({
   const [confirmingHide, setConfirmingHide] = useState(false);
 
   const menuOpen = menu !== null;
+
+  // When the confirm takes over the popover, land focus on "Keep it" (the safe
+  // action) so a keyboard user never fires "Hide it" by reflex.
+  useEffect(() => {
+    if (confirmingHide) keepItRef.current?.focus();
+  }, [confirmingHide]);
 
   // Escape dismisses the open menu whether it was reached by mouse or keyboard —
   // a single listener covers both the Move list and the Rename entry. Scrolling
@@ -639,7 +646,8 @@ function ConversationRow({
               className="fixed inset-0 z-40 cursor-default"
             />
             <div
-              role="menu"
+              role={confirmingHide ? "dialog" : "menu"}
+              aria-label={confirmingHide ? "Hide conversation?" : undefined}
               style={{ top: menu.top, right: menu.right }}
               className={`animate-cp-pop fixed z-50 overflow-hidden rounded-xl border bg-card p-1 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.25)] ${
                 confirmingHide ? "w-64" : "min-w-40"
@@ -664,6 +672,7 @@ function ConversationRow({
                       Hide it
                     </button>
                     <button
+                      ref={keepItRef}
                       type="button"
                       onClick={() => setConfirmingHide(false)}
                       className="rounded-lg px-3 py-1.5 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"

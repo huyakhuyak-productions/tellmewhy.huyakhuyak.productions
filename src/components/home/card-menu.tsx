@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
 
@@ -37,6 +37,13 @@ export function CardMenu({
   const [draft, setDraft] = useState(title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const keepItRef = useRef<HTMLButtonElement>(null);
+
+  // When the confirm takes over the card, land focus on "Keep it" (the safe
+  // action) so a keyboard user never fires "Hide it" by reflex.
+  useEffect(() => {
+    if (confirmingHide) keepItRef.current?.focus();
+  }, [confirmingHide]);
 
   // Escape dismisses the open menu whether it was reached by touch or keyboard.
   useEffect(() => {
@@ -160,7 +167,11 @@ export function CardMenu({
 
   if (confirmingHide) {
     return (
-      <div className="absolute inset-0 z-40 flex flex-col justify-center gap-3 rounded-[18px] border border-accent/40 bg-card p-[18px] shadow-sm">
+      <div
+        role="dialog"
+        aria-label="Hide conversation?"
+        className="absolute inset-0 z-40 flex flex-col justify-center gap-3 rounded-[18px] border border-accent/40 bg-card p-[18px] shadow-sm"
+      >
         <p className="text-pretty font-serif text-[0.9rem] italic leading-relaxed text-muted-foreground">
           This hides it from your view. If it&apos;s shared, your trusted person
           can still see it. You can restore it any time.
@@ -175,6 +186,7 @@ export function CardMenu({
             {busy ? "Hiding…" : "Hide it"}
           </button>
           <button
+            ref={keepItRef}
             type="button"
             onClick={() => setConfirmingHide(false)}
             disabled={busy}
