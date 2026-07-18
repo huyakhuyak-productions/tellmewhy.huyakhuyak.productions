@@ -3,7 +3,7 @@
 // no module keeps its own inline insert. Rows carry ids, an action enum, and
 // timestamps only: never content, never a title, never decrypted text.
 import { and, desc, eq, gte, isNull } from "drizzle-orm";
-import { db } from "@/db";
+import { db, type DbExecutor } from "@/db";
 import { auditActionEnum, auditEvents, user } from "@/db/schema";
 
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
@@ -25,8 +25,8 @@ export type AuditEvent = {
   createdAt?: Date;
 };
 
-export async function recordAudit(event: AuditEvent): Promise<void> {
-  await db.insert(auditEvents).values(event);
+export async function recordAudit(event: AuditEvent, executor: DbExecutor = db): Promise<void> {
+  await executor.insert(auditEvents).values(event);
 }
 
 const CONVERSATION_VIEWED_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
