@@ -108,3 +108,8 @@ export const noteRateLimiter = new RateLimiter({ capacity: 10, refillWindowMs: 5
 // regeneration), never normal review. Its own namespace, isolated from the
 // therapist-write bucket so reading never eats into interventions or notes.
 export const digestReadRateLimiter = new RateLimiter({ capacity: 30, refillWindowMs: 5 * 60 * 1000 });
+
+// Account deletion re-verifies the password, which makes the endpoint a
+// credential-guessing surface — the tightest bucket here, keyed by userId.
+// Three honest attempts per window is plenty for a human mistyping.
+export const accountDeleteRateLimiter = new RateLimiter({ capacity: 3, refillWindowMs: 15 * 60 * 1000 });
