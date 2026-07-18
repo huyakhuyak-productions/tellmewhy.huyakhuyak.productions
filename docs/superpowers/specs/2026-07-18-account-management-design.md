@@ -70,7 +70,11 @@ So deletion = **shred the key AND purge the rows**, in one transaction:
    stamped, all `sharing_grants` for the link deleted (the same mechanics as a manual
    revocation), plus the departure marker (next section). Link **rows are kept**: deleting
    them would cascade away the surviving partner's own notes — their writing, their DEK,
-   their record.
+   their record. **Only links still `invited`/`active` at deletion time receive the
+   departure marker and name snapshot** (decision, 2026-07-18): a long-revoked
+   ex-partner learns nothing of the deletion and keeps no name snapshot — their kept
+   notes fall back to "A client". Gone, not announced. This also means a survivor's own
+   later deletion never touches a departed partner's shredded key.
 4. **Purge owned rows:** `conversations` (messages, digests, grants, review markers
    cascade), `folders`, `mood_checkins`, `self_notes`, own `exercise_entries`; for a
    client, their `exercises`; for a deleting therapist, their `notes` rows (therapist-DEK:
