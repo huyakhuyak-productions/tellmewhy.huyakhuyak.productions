@@ -157,4 +157,95 @@ describe("deleteAccount", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].therapistId).toBeNull();
   });
+
+  it("lets the surviving therapist delete after the client, keeping the first marker", async () => {
+    await deleteAccount(clientId, password);
+
+    const [afterClient] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(afterClient.status).toBe("revoked");
+    expect(afterClient.departedAt).not.toBeNull();
+    const firstDepartedAt = afterClient.departedAt;
+    const firstCiphertext = afterClient.departedNameCiphertext;
+
+    // The partner's key is tombstoned now; the survivor's own deletion must
+    // still go through and must NOT touch the marker the first deletion wrote.
+    await expect(deleteAccount(therapistId, password)).resolves.toBeUndefined();
+    expect(await db.select().from(user).where(eq(user.id, therapistId))).toHaveLength(0);
+
+    const [afterTherapist] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(afterTherapist.departedAt).toEqual(firstDepartedAt);
+    expect(afterTherapist.departedNameCiphertext).toBe(firstCiphertext);
+  });
+
+  it("leaves a long-revoked link unmarked when a party later deletes", async () => {
+    const exClient = `test-${randomUUID()}`;
+    const exTherapist = `test-${randomUUID()}`;
+    await seedUser(exClient, "client", "Ex Client");
+    await seedUser(exTherapist, "therapist", "Ex Therapist");
+    await getOrCreateUserDek(exClient);
+    await getOrCreateUserDek(exTherapist);
+    const [revoked] = await db.insert(therapistLinks).values({
+      clientId: exClient, therapistId: exTherapist, initiatedBy: "client",
+      inviteTokenHash: randomUUID(), status: "revoked",
+      acceptedAt: new Date(Date.now() - 100_000), revokedAt: new Date(Date.now() - 50_000),
+    }).returning();
+
+    await deleteAccount(exClient, password);
+
+    const [link] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, revoked.id));
+    expect(link.status).toBe("revoked");
+    expect(link.departedAt).toBeNull();
+    expect(link.departedNameCiphertext).toBeNull();
+  });
+
+  it("lets a therapist with only a pending invite delete, closing it with no marker", async () => {
+    const pendingTherapist = `test-${randomUUID()}`;
+    await seedUser(pendingTherapist, "therapist", "Pending Therapist");
+    await getOrCreateUserDek(pendingTherapist);
+    const [invite] = await db.insert(therapistLinks).values({
+      clientId: null, therapistId: pendingTherapist, initiatedBy: "therapist",
+      inviteTokenHash: randomUUID(), status: "invited",
+    }).returning();
+
+    await expect(deleteAccount(pendingTherapist, password)).resolves.toBeUndefined();
+    const [link] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, invite.id));
+    expect(link.status).toBe("revoked");
+    expect(link.departedAt).toBeNull();
+    expect(link.departedNameCiphertext).toBeNull();
+  });
+
+  it("closes and marks both links for a user who is client here and therapist there", async () => {
+    const dual = `test-${randomUUID()}`;
+    const upstreamTherapist = `test-${randomUUID()}`;
+    const downstreamClient = `test-${randomUUID()}`;
+    await seedUser(dual, "therapist", "Dual Role");
+    await seedUser(upstreamTherapist, "therapist", "Upstream Therapist");
+    await seedUser(downstreamClient, "client", "Downstream Client");
+    await getOrCreateUserDek(dual);
+    const upstreamDek = await getOrCreateUserDek(upstreamTherapist);
+    const downstreamDek = await getOrCreateUserDek(downstreamClient);
+
+    // dual is a CLIENT of the upstream therapist...
+    const [asClientLink] = await db.insert(therapistLinks).values({
+      clientId: dual, therapistId: upstreamTherapist, initiatedBy: "client",
+      inviteTokenHash: randomUUID(), status: "active", acceptedAt: new Date(),
+    }).returning();
+    // ...and a THERAPIST of the downstream client.
+    const [asTherapistLink] = await db.insert(therapistLinks).values({
+      clientId: downstreamClient, therapistId: dual, initiatedBy: "client",
+      inviteTokenHash: randomUUID(), status: "active", acceptedAt: new Date(),
+    }).returning();
+
+    await deleteAccount(dual, password);
+
+    const [asClient] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, asClientLink.id));
+    expect(asClient.status).toBe("revoked");
+    expect(asClient.departedAt).not.toBeNull();
+    expect(decryptText(upstreamDek, asClient.departedNameCiphertext!)).toBe("Dual Role");
+
+    const [asTherapist] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, asTherapistLink.id));
+    expect(asTherapist.status).toBe("revoked");
+    expect(asTherapist.departedAt).not.toBeNull();
+    expect(decryptText(downstreamDek, asTherapist.departedNameCiphertext!)).toBe("Dual Role");
+  });
 });

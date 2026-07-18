@@ -35,7 +35,17 @@ export async function deleteAccount(userId: string, password: string): Promise<v
     .from(therapistLinks)
     .where(or(eq(therapistLinks.clientId, userId), eq(therapistLinks.therapistId, userId)));
   const linkIds = links.map((l) => l.id);
-  const partnered = links.filter((l) => l.clientId !== null && l.therapistId !== null);
+  // Only links STILL open (invited/active) with a real partner get closed with
+  // a departure marker + name snapshot. A long-revoked ex-partner learns
+  // nothing of this deletion and keeps no snapshot — and, crucially, their key
+  // may already be tombstoned (they deleted first), so sealing under it would
+  // throw KeyShreddedError and deadlock the survivor's own deletion forever.
+  const partnered = links.filter(
+    (l) =>
+      l.clientId !== null &&
+      l.therapistId !== null &&
+      (l.status === "invited" || l.status === "active"),
+  );
 
   // The departing name, sealed under each SURVIVOR's DEK before the
   // transaction — it is the survivor's record from here on (key-ownership
@@ -72,23 +82,32 @@ export async function deleteAccount(userId: string, password: string): Promise<v
 
     // Close every link but KEEP the rows — deleting them would cascade the
     // survivor's notes away. Grants die with the closure, like a manual revoke.
+    // The status guard makes the close idempotent against a link a partner
+    // revoked concurrently, and `returning` tells us exactly which rows THIS
+    // deletion closed — only those may receive a departure marker, so a
+    // concurrently-revoked (or concurrently-accepted) link can never end up
+    // with an inconsistent marker.
+    const now = new Date();
     if (linkIds.length > 0) {
-      await tx
+      const closed = await tx
         .update(therapistLinks)
-        .set({ status: "revoked", revokedAt: new Date() })
+        .set({ status: "revoked", revokedAt: now })
         .where(
           and(
             inArray(therapistLinks.id, linkIds),
             inArray(therapistLinks.status, ["invited", "active"]),
           ),
-        );
+        )
+        .returning({ id: therapistLinks.id });
+      const closedIds = new Set(closed.map((r) => r.id));
       await tx.delete(sharingGrants).where(inArray(sharingGrants.linkId, linkIds));
-    }
-    for (const snapshot of snapshots) {
-      await tx
-        .update(therapistLinks)
-        .set({ departedAt: new Date(), departedNameCiphertext: snapshot.ciphertext })
-        .where(eq(therapistLinks.id, snapshot.linkId));
+      for (const snapshot of snapshots) {
+        if (!closedIds.has(snapshot.linkId)) continue;
+        await tx
+          .update(therapistLinks)
+          .set({ departedAt: now, departedNameCiphertext: snapshot.ciphertext })
+          .where(eq(therapistLinks.id, snapshot.linkId));
+      }
     }
 
     // The purge. Messages, digests, grants and markers cascade off
