@@ -41,6 +41,17 @@ describe("describeAuditAction", () => {
     expect(describeAuditAction("link_revoked", "Marta", "unknown")).toBe("Your connection ended");
     expect(describeAuditAction("link_revoked", null, "unknown")).toBe("Your connection ended");
   });
+
+  it("phrases account_deleted for whichever party actually acted", () => {
+    expect(describeAuditAction("account_deleted", null, "client")).toBe("You deleted your account");
+    expect(describeAuditAction("account_deleted", "Marta", "therapist")).toBe("Marta deleted their account");
+    expect(describeAuditAction("account_deleted", null, "therapist")).toBe("Your trusted person deleted their account");
+  });
+
+  it("infers a legacy account_deleted row with no recorded actor is about the trusted person", () => {
+    expect(describeAuditAction("account_deleted", "Marta", "unknown")).toBe("Your trusted person's account was deleted");
+    expect(describeAuditAction("account_deleted", null, "unknown")).toBe("Your trusted person's account was deleted");
+  });
 });
 
 describe("resolveAuditActor", () => {
@@ -74,6 +85,15 @@ describe("resolveAuditActor", () => {
 
   it("has no reliable signal for a legacy link_revoked row — resolves unknown", () => {
     expect(resolveAuditActor("link_revoked", null, clientId, therapistId)).toBe("unknown");
+  });
+
+  it("resolves account_deleted from actorId when present", () => {
+    expect(resolveAuditActor("account_deleted", clientId, clientId, therapistId)).toBe("client");
+    expect(resolveAuditActor("account_deleted", therapistId, clientId, therapistId)).toBe("therapist");
+  });
+
+  it("has no reliable signal for a legacy account_deleted row — resolves unknown", () => {
+    expect(resolveAuditActor("account_deleted", null, clientId, therapistId)).toBe("unknown");
   });
 });
 

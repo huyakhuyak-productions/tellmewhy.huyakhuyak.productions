@@ -97,7 +97,10 @@ export function describeAuditAction(
     case "account_deleted":
       if (actor === "client") return "You deleted your account";
       if (actor === "therapist") return `${who} deleted their account`;
-      return "Your trusted person's account was deleted"; // actor unknown — stay neutral rather than guess
+      // Actor unknown (legacy row), but not ambiguous: a client viewing their
+      // own trust screen can't be reading about their own deletion, so this
+      // must be the trusted person's account.
+      return "Your trusted person's account was deleted";
   }
 }
 
