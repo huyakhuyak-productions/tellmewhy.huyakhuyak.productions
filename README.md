@@ -1,6 +1,22 @@
 # tellmewhy
 
+**A private place to talk about how you feel.** Message an AI that answers now, and — if you ever want one — a single trusted person who reads only what you choose to share.
+
 A mobile-first web app for talking with an AI about your feelings. Messages are encrypted at rest, and every conversation is encrypted before reaching the database. Conversations can be organized into folders, filterable from the home screen and grouped in the chat rail. Crisis signals trigger a detection system that shows crisis resources (988, findahelpline.com) and, in shared conversations, surfaces the message in the trusted person's attention queue the next time they look — it never pushes an alert. This is not a medical device and not a replacement for professional care. You can link one trusted person — a therapist, or anyone else — to read conversations you choose to share, leave you notes, and guide how the AI responds; see [Linking a trusted person](#linking-a-trusted-person). On desktop, the hero home page and chat view expand into a three-zone frame — a folder-grouped conversation rail on the left and a stats rail on the right flank the chat column.
+
+## Features
+
+- **Streaming AI chat** with markdown rendering, stop-generation that keeps the honest partial, and copy-to-clipboard.
+- **Branching conversations, ChatGPT-style** — edit any of your messages into a new version, regenerate any reply, and flip between versions with `‹ n/m ›` switchers. Nothing is ever destroyed; every branch stays reachable.
+- **Folders and hiding** — organize conversations into folders; hide a conversation from your own view and restore it any time.
+- **Mood check-ins** with a trendline, **thought records** (CBT-style, shareable per-entry), and **notes to your future self** (never shared, never read by the AI).
+- **The trusted-person layer** — invite one therapist (or anyone you trust), share conversations one at a time, see their review line in your chat, receive their messages always labeled as human, and read a full audit trail of everything they did.
+- **Crisis detection** that surfaces hotline resources in the moment and, in shared conversations, a grant-gated attention queue for your trusted person — pull, never push.
+- **Per-user envelope encryption at rest** for every message body, title, folder name, note, and check-in — see [Privacy Model](#privacy-model) for exactly what that does and doesn't protect.
+
+## Tech Stack
+
+Next.js 16 (App Router) · React 19 · TypeScript · Bun · Postgres 17 · Drizzle ORM · Better Auth (Argon2id) · Vercel AI SDK v6 + OpenRouter · Tailwind CSS v4 · Vitest + Playwright
 
 ## Local Setup
 
@@ -133,3 +149,11 @@ Before going live, confirm that the OpenRouter account's data policy excludes lo
 
 **Crisis resources:**
 The app detects crisis signals and displays hotline resources (988 for the US, findahelpline.com for international). In a shared conversation, a crisis-flagged message is also surfaced in the trusted person's attention queue the next time they look — the app never pushes an alert. This is an automated signal detection system and not a substitute for professional mental health care.
+
+## Deployment
+
+The app ships as a Dockerfile deploy (Bun build stage → Next standalone server on slim Node) with migrations run automatically before each release. See [docs/DEPLOY.md](docs/DEPLOY.md) for the full Dokku runbook: one-time setup, first deploy, TLS, and the launch checklist.
+
+## License
+
+[AGPL-3.0](LICENSE). If you run a modified copy of tellmewhy as a service, you must make your modified source available to its users.
