@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { sharingGrants, therapistLinks, user } from "@/db/schema";
 import { recordAudit } from "./audit";
+import { decryptText } from "@/lib/crypto/envelope";
+import { getOrCreateUserDek } from "@/lib/crypto/user-keys";
 import { NotFoundError, ValidationError } from "./errors";
 
 const TOKEN_BYTES = 32;
@@ -253,4 +255,55 @@ export async function getActiveLinksForTherapist(
   return rows
     .filter((r): r is typeof r & { clientId: string } => r.clientId !== null)
     .map((r) => ({ linkId: r.linkId, clientId: r.clientId, clientName: r.clientName }));
+}
+
+// A departure is a link whose other party deleted their account. The name
+// snapshot was sealed under the CALLER's DEK at deletion time (it's the
+// survivor's record); a decrypt failure degrades to a nameless card, never
+// a failed list — one bad ciphertext must never take the rest down.
+export type Departure = { linkId: string; name: string | null; departedAt: Date };
+
+export async function listDepartures(forUserId: string): Promise<Departure[]> {
+  const rows = await db
+    .select()
+    .from(therapistLinks)
+    .where(
+      and(
+        or(eq(therapistLinks.clientId, forUserId), eq(therapistLinks.therapistId, forUserId)),
+        isNotNull(therapistLinks.departedAt),
+        isNull(therapistLinks.departureAcknowledgedAt),
+      ),
+    );
+  if (rows.length === 0) return [];
+  const dek = await getOrCreateUserDek(forUserId);
+  return rows.map((row) => {
+    let name: string | null = null;
+    if (row.departedNameCiphertext) {
+      try {
+        name = decryptText(dek, row.departedNameCiphertext);
+      } catch {
+        name = null;
+      }
+    }
+    return { linkId: row.id, name, departedAt: row.departedAt! };
+  });
+}
+
+// Single-shot, like revokeLink: only an unacknowledged departure the caller
+// is party to has anything to acknowledge — anything else is the same
+// NotFoundError as an unknown link.
+export async function acknowledgeDeparture(linkId: string, byUserId: string): Promise<void> {
+  const updated = await db
+    .update(therapistLinks)
+    .set({ departureAcknowledgedAt: new Date() })
+    .where(
+      and(
+        eq(therapistLinks.id, linkId),
+        or(eq(therapistLinks.clientId, byUserId), eq(therapistLinks.therapistId, byUserId)),
+        isNotNull(therapistLinks.departedAt),
+        isNull(therapistLinks.departureAcknowledgedAt),
+      ),
+    )
+    .returning({ id: therapistLinks.id });
+  if (updated.length === 0) throw new NotFoundError("No departure to acknowledge");
 }

@@ -3,8 +3,19 @@ import { randomUUID } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { auditEvents, sharingGrants, therapistLinks, user } from "@/db/schema";
+import { encryptText } from "./crypto/envelope";
+import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError, ValidationError } from "./errors";
-import { acceptInvite, createInvite, getActiveLinkForClient, getActiveLinksForTherapist, getPendingInviteForClient, revokeLink } from "./therapist-links";
+import {
+  acceptInvite,
+  acknowledgeDeparture,
+  createInvite,
+  getActiveLinkForClient,
+  getActiveLinksForTherapist,
+  getPendingInviteForClient,
+  listDepartures,
+  revokeLink,
+} from "./therapist-links";
 
 async function insertUser(overrides: { name?: string; role?: string } = {}): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -425,5 +436,52 @@ describe("therapist link lifecycle", () => {
     await acceptInvite(token, therapistId);
     // Now active, not invited — the pending lookup must go quiet.
     expect(await getPendingInviteForClient(clientId)).toBeNull();
+  });
+
+  describe("departures", () => {
+    it("lists an unacknowledged departure with the name only the survivor can read", async () => {
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+
+      // Seed: active link, then simulate departure the way deleteAccount does:
+      const therapistDek = await getOrCreateUserDek(therapistId);
+      await db.update(therapistLinks).set({
+        status: "revoked", revokedAt: new Date(), departedAt: new Date(),
+        departedNameCiphertext: encryptText(therapistDek, "Departed Client"),
+      }).where(eq(therapistLinks.id, linkId));
+
+      const departures = await listDepartures(therapistId);
+      expect(departures).toHaveLength(1);
+      expect(departures[0]).toMatchObject({ linkId, name: "Departed Client" });
+
+      // The other party of some other link — or anyone else — sees nothing.
+      expect(await listDepartures(`test-${randomUUID()}`)).toHaveLength(0);
+    });
+
+    it("falls back to a null name on a corrupt snapshot instead of failing the list", async () => {
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+
+      await db.update(therapistLinks).set({
+        status: "revoked", departedAt: new Date(), departedNameCiphertext: "v1.not.real.ciphertext",
+      }).where(eq(therapistLinks.id, linkId));
+      const departures = await listDepartures(therapistId);
+      expect(departures).toHaveLength(1);
+      expect(departures[0].name).toBeNull();
+    });
+
+    it("acknowledging removes it from the list; repeats and strangers 404", async () => {
+      const { linkId, token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+
+      await db.update(therapistLinks).set({
+        status: "revoked", departedAt: new Date(),
+      }).where(eq(therapistLinks.id, linkId));
+
+      await expect(acknowledgeDeparture(linkId, `test-${randomUUID()}`)).rejects.toBeInstanceOf(NotFoundError);
+      await acknowledgeDeparture(linkId, therapistId);
+      expect(await listDepartures(therapistId)).toHaveLength(0);
+      await expect(acknowledgeDeparture(linkId, therapistId)).rejects.toBeInstanceOf(NotFoundError);
+    });
   });
 });
