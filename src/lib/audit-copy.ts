@@ -51,6 +51,9 @@ export function resolveAuditActor(
     case "link_revoked":
       if (actorId === null) return "unknown";
       return actorId === clientId ? "client" : "therapist";
+    case "account_deleted":
+      if (actorId === null) return "unknown";
+      return actorId === clientId ? "client" : "therapist";
   }
 }
 
@@ -91,6 +94,10 @@ export function describeAuditAction(
       return `${who} read an exercise entry`;
     case "mood_trend_viewed":
       return `${who} checked your mood history`;
+    case "account_deleted":
+      if (actor === "client") return "You deleted your account";
+      if (actor === "therapist") return `${who} deleted their account`;
+      return "Your trusted person's account was deleted"; // actor unknown — stay neutral rather than guess
   }
 }
 

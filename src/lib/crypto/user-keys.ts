@@ -18,14 +18,18 @@ export async function getOrCreateUserDek(userId: string): Promise<Buffer> {
 async function fetchOrCreateUserDek(userId: string): Promise<Buffer> {
   const provider = getKeyProvider();
   const existing = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
-  if (existing.length > 0) return provider.unwrapDek(existing[0].wrappedDek);
+  // wrappedDek is nullable in the schema (a shredded row tombstones it to
+  // null — see the userKeys comment), but shredUserKey still row-deletes
+  // instead of tombstoning until Task 2 wires up the guard, so no row
+  // reachable here has a null wrappedDek yet.
+  if (existing.length > 0) return provider.unwrapDek(existing[0].wrappedDek!);
 
   const dek = generateDek();
   const wrapped = await provider.wrapDek(dek);
   // Concurrent first-message race: the loser of the insert keeps the winner's key.
   await db.insert(userKeys).values({ userId, wrappedDek: wrapped }).onConflictDoNothing();
   const [row] = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
-  return provider.unwrapDek(row.wrappedDek);
+  return provider.unwrapDek(row.wrappedDek!);
 }
 
 export async function shredUserKey(userId: string): Promise<void> {

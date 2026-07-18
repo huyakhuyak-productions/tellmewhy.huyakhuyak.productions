@@ -19,10 +19,14 @@ export const riskLevelEnum = pgEnum("risk_level", ["none", "elevated", "crisis"]
 export const exerciseTypeEnum = pgEnum("exercise_type", ["thought_record"]);
 export const exerciseStatusEnum = pgEnum("exercise_status", ["active", "closed"]);
 
-// One wrapped DEK per user. Deleting the row = crypto-shredding all their data.
+// One wrapped DEK per user. Shredding NULLs wrapped_dek and stamps
+// shredded_at — the row becomes a tombstone that permanently blocks
+// re-creating a key for this user (see user-keys.ts). The tombstone, not
+// row deletion, is the crypto-shred.
 export const userKeys = pgTable("user_keys", {
   userId: text("user_id").primaryKey(),
-  wrappedDek: text("wrapped_dek").notNull(),
+  wrappedDek: text("wrapped_dek"),
+  shreddedAt: timestamp("shredded_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -104,6 +108,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "intervention_sent", "note_published",
   "attention_viewed",
   "exercise_assigned", "entry_shared", "entry_viewed", "mood_trend_viewed",
+  "account_deleted",
 ]);
 
 export const therapistLinks = pgTable(
@@ -119,6 +124,12 @@ export const therapistLinks = pgTable(
     acceptedAt: timestamp("accepted_at"),
     revokedAt: timestamp("revoked_at"),
     moodSharedAt: timestamp("mood_shared_at"),
+    // Set when a party deleted their account (vs. plain revocation). The
+    // name snapshot is encrypted under the SURVIVING party's DEK — from the
+    // moment of deletion it is the survivor's record, like their notes.
+    departedAt: timestamp("departed_at"),
+    departedNameCiphertext: text("departed_name_ciphertext"),
+    departureAcknowledgedAt: timestamp("departure_acknowledged_at"),
   },
   (t) => [
     // Structural enforcement of the one-therapist-per-client rule: Postgres
