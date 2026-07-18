@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { getOrCreateUserDek, shredUserKey } from "./user-keys";
+import { getOrCreateUserDek, shredUserKey, KeyShreddedError } from "./user-keys";
 import { getKeyProvider } from "./key-provider";
 import { withRequestScope } from "@/lib/request-scope";
 import { db } from "@/db";
@@ -27,11 +27,23 @@ describe("user key lifecycle", () => {
     expect(row.wrappedDek).not.toContain(dek.toString("base64"));
   });
 
-  it("shredding the key makes it unrecoverable", async () => {
+  it("shredding tombstones the key: wrapped DEK gone, shredded_at stamped", async () => {
     await getOrCreateUserDek(userId);
     await shredUserKey(userId);
-    const rows = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
-    expect(rows).toHaveLength(0);
+    const [row] = await db.select().from(userKeys).where(eq(userKeys.userId, userId));
+    expect(row.wrappedDek).toBeNull();
+    expect(row.shreddedAt).not.toBeNull();
+  });
+
+  it("never re-mints a DEK for a shredded user", async () => {
+    await getOrCreateUserDek(userId);
+    await shredUserKey(userId);
+    await expect(getOrCreateUserDek(userId)).rejects.toBeInstanceOf(KeyShreddedError);
+  });
+
+  it("tombstones even a user who never had a key", async () => {
+    await shredUserKey(userId);
+    await expect(getOrCreateUserDek(userId)).rejects.toBeInstanceOf(KeyShreddedError);
   });
 
   describe("per-request memoization", () => {
