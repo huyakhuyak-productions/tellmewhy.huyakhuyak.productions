@@ -1,0 +1,18 @@
+{
+  "scripts": {
+    "dokku": {
+      "predeploy": "node scripts/migrate.mjs"
+    }
+  },
+  "healthchecks": {
+    "web": [
+      {
+        "type": "startup",
+        "name": "landing answers",
+        "path": "/",
+        "attempts": 12,
+        "wait": 5
+      }
+    ]
+  }
+}

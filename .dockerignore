@@ -1,0 +1,14 @@
+.git
+node_modules
+.next
+.env*
+docs
+.superpowers
+.claude
+.playwright-mcp
+e2e
+playwright.config.ts
+playwright-report
+test-results
+README.md
+TODO.md
