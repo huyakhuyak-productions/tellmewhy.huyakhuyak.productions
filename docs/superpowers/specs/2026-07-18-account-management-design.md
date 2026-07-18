@@ -100,9 +100,15 @@ close). One code path, role-aware purge list.
 ### Mechanics guard: the re-keying trap
 
 `getOrCreateUserDek` mints a *fresh* DEK when no row exists — correct at sign-up, a
-disaster after a shred (a mid-flight request could quietly re-key a deleted user).
-`fetchOrCreateUserDek` gains a guard: it only **creates** a key when the `user` row exists;
-the read path is unchanged. Post-deletion there is no user row, so nothing can re-key.
+disaster after a shred (a mid-flight request could quietly re-key a deleted user). The
+guard is a **tombstone**: `shredUserKey` no longer deletes the `user_keys` row — it nulls
+`wrapped_dek` and stamps `shredded_at` (upserting the tombstone even for a user who never
+had a key). `fetchOrCreateUserDek` treats a tombstoned row as a hard stop
+(`KeyShreddedError`, which every resilient read path already absorbs), and the
+concurrent-create race resolves to the tombstone. Nothing can ever re-key a shredded user.
+(An amendment over the earlier "check the `user` row exists" idea, which would have broken
+the suite-wide synthetic `test-…` user-id convention — those ids intentionally have no
+`user` row.)
 
 ### API
 
