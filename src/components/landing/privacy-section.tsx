@@ -20,6 +20,10 @@ const PROMISES: { lead: string; body: string }[] = [
     body: "No one sees your conversations unless you choose to — one at a time, and revocable in an instant, to past and future messages alike.",
   },
   {
+    lead: "Analytics that can't read anything.",
+    body: "We count page views with our own self-hosted, cookieless analytics — paths and visits, kept on our own server, shared with no one. It sets no cookies and never sees a word you write.",
+  },
+  {
     lead: "Deletion means crypto-shredding.",
     body: "Delete your account from its settings and it happens at once — your key is destroyed, so nothing encrypted can ever be read again, by anyone, including us, and every row you own is purged. A linked therapist keeps the notes they wrote, plus a name-only marker that you left; those were always their record, not yours.",
   },
