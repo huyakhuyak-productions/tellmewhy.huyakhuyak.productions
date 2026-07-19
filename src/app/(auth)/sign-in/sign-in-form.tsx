@@ -67,6 +67,12 @@ export function SignInForm({ next }: { next?: string }) {
           autoComplete="current-password"
           required
         />
+        <Link
+          className="-mt-1 self-end text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground hover:decoration-accent"
+          href="/forgot-password"
+        >
+          Forgot your password?
+        </Link>
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {error}
