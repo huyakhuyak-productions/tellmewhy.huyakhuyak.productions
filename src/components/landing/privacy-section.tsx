@@ -21,11 +21,11 @@ const PROMISES: { lead: string; body: string }[] = [
   },
   {
     lead: "Deletion means crypto-shredding.",
-    body: "Delete your account from its settings and it happens at once — your key is destroyed, so nothing encrypted can ever be read again, by anyone, including us, and every row you own is purged. A linked therapist keeps the notes they wrote; those were always their record, not yours.",
+    body: "Delete your account from its settings and it happens at once — your key is destroyed, so nothing encrypted can ever be read again, by anyone, including us, and every row you own is purged. A linked therapist keeps the notes they wrote, plus a name-only marker that you left; those were always their record, not yours.",
   },
   {
     lead: "A forgotten password locks nothing away.",
-    body: "Reset it by email and you're back in — your conversations are still there, still yours. The reset restores access, not a backdoor: your key is wrapped by our server, not your password, so it never exposes your words to anyone else, and it's no way for us to read them either.",
+    body: "Reset it by email and you're back in — your conversations are still there, still yours. The reset restores access, not a backdoor: your key is wrapped by our server, not your password, so it never decrypts a word, and it's no way for us to read them either. Recovery trusts your inbox, so keep that address yours.",
   },
 ];
 
