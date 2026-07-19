@@ -7,6 +7,8 @@ import type { AuditAction } from "@/lib/audit";
 import { type AuditActor, describeAuditAction, isClientAction } from "@/lib/audit-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { stopSharingConversation } from "@/lib/sharing-client";
+import type { Departure } from "@/lib/therapist-links";
+import { DepartureNotices } from "@/components/departure-notices";
 import { PublicNoteCard } from "@/components/public-note-card";
 
 export type TrustLinkState =
@@ -55,12 +57,15 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 
 export function TrustScreen({
   link,
+  departures,
   shared,
   audit,
   notes,
   moodShared,
 }: {
   link: TrustLinkState;
+  /** Trusted people who deleted their account, unacknowledged. */
+  departures: Departure[];
   shared: SharedConversation[];
   audit: TrustAuditRow[];
   notes: TrustNote[];
@@ -205,8 +210,10 @@ export function TrustScreen({
         </p>
       </div>
 
-      {/* Zone 1 — the connection itself. */}
+      {/* Zone 1 — the connection itself. A departed trusted person is
+          farewelled here first, above whatever the link state now is. */}
       <Zone label="Your trusted person" delay={40}>
+        <DepartureNotices departures={departures} side="client" />
         {link.kind === "active" ? (
           <Card>
             <div className="flex items-start justify-between gap-4">

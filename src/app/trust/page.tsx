@@ -7,7 +7,7 @@ import { resolveAuditActor } from "@/lib/audit-copy";
 import { listConversations } from "@/lib/conversations";
 import { getMoodSharingState } from "@/lib/mood";
 import { listGrantsForClient } from "@/lib/sharing";
-import { getActiveLinkForClient, getPendingInviteForClient } from "@/lib/therapist-links";
+import { getActiveLinkForClient, getPendingInviteForClient, listDepartures } from "@/lib/therapist-links";
 import { listPublicNotesForClient } from "@/lib/therapist-notes";
 import { TrustScreen, type TrustLinkState } from "@/components/trust/trust-screen";
 
@@ -19,13 +19,14 @@ export default async function TrustPage() {
   if (!session) redirect("/sign-in?next=/trust");
   const userId = session.user.id;
 
-  const [conversations, activeLink, grantIds, audit, notes, moodShared] = await Promise.all([
+  const [conversations, activeLink, grantIds, audit, notes, moodShared, departures] = await Promise.all([
     listConversations(userId),
     getActiveLinkForClient(userId),
     listGrantsForClient(userId),
     listAuditEventsForClient(userId),
     listPublicNotesForClient(userId, null),
     getMoodSharingState(userId),
+    listDepartures(userId),
   ]);
 
   // Only look for a pending invite when there's no active link — the two are
@@ -65,6 +66,13 @@ export default async function TrustPage() {
   }));
 
   return (
-    <TrustScreen link={link} shared={shared} audit={auditRows} notes={noteRows} moodShared={moodShared} />
+    <TrustScreen
+      link={link}
+      departures={departures}
+      shared={shared}
+      audit={auditRows}
+      notes={noteRows}
+      moodShared={moodShared}
+    />
   );
 }

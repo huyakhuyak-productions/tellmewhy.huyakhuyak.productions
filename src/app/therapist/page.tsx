@@ -1,5 +1,6 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { listAttentionQueue, listClientOverviews } from "@/lib/therapist-desk";
+import { listDepartures } from "@/lib/therapist-links";
 import { AttentionQueue } from "@/components/therapist/attention-queue";
 import { ClientList } from "@/components/therapist/client-list";
 import { DeskFrame } from "@/components/therapist/desk-frame";
@@ -8,9 +9,10 @@ import { requireTherapistPage } from "./_lib/require-therapist-page";
 export default async function TherapistDashboardPage() {
   const session = await requireTherapistPage();
 
-  const [attention, clients] = await Promise.all([
+  const [attention, clients, departures] = await Promise.all([
     listAttentionQueue(session.user.id),
     listClientOverviews(session.user.id),
+    listDepartures(session.user.id),
   ]);
 
   const subtitle =
@@ -21,7 +23,7 @@ export default async function TherapistDashboardPage() {
   return (
     <DeskFrame title="Your practice" subtitle={subtitle}>
       <AttentionQueue entries={attention} />
-      <ClientList clients={clients} />
+      <ClientList clients={clients} departures={departures} />
     </DeskFrame>
   );
 }

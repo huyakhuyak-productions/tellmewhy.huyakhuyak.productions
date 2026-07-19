@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ClientOverview } from "@/lib/therapist-desk";
+import type { Departure } from "@/lib/therapist-links";
+import { DepartureNotices } from "@/components/departure-notices";
 import { AttentionBadge } from "./attention-badge";
 
 function since(linkedSince: Date | null): string {
@@ -16,12 +18,20 @@ function shared(count: number): string {
 // serif the journal reserves for people, with the badges that say what's
 // waiting inside. Ordered by need (crisis, then flags) upstream, so the ones
 // who need reading rise to the top.
-export function ClientList({ clients }: { clients: ClientOverview[] }) {
+export function ClientList({
+  clients,
+  departures,
+}: {
+  clients: ClientOverview[];
+  departures: Departure[];
+}) {
   return (
     <section aria-labelledby="clients-heading" className="flex flex-col gap-4">
       <h2 id="clients-heading" className="text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
         The people you&apos;re alongside
       </h2>
+
+      <DepartureNotices departures={departures} side="therapist" />
 
       {clients.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border/70 px-5 py-6">
