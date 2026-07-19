@@ -11,8 +11,9 @@ doesn't exist until the first deploy has succeeded.
 
 ## 1. One-time server setup
 
-Run these on the Dokku server (as a user with dokku access). The only value
-you must substitute is `<your OpenRouter key>`; everything else pastes as-is
+Run these on the Dokku server (as a user with dokku access). The values you
+must substitute are `<your OpenRouter key>` and `<your Resend API key>`, plus
+the `EMAIL_FROM` sender on your verified domain; everything else pastes as-is
 unless you renamed the app.
 
 ```bash
@@ -31,7 +32,9 @@ dokku config:set tellmewhy \
   MASTER_KEK="$(openssl rand -base64 32)" \
   BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
   BETTER_AUTH_URL="https://tellmewhy.huyakhuyak.productions" \
-  OPENROUTER_API_KEY="<your OpenRouter key>"
+  OPENROUTER_API_KEY="<your OpenRouter key>" \
+  RESEND_API_KEY="<your Resend API key>" \
+  EMAIL_FROM="tellmewhy <no-reply@tellmewhy.huyakhuyak.productions>"
 
 # The key was generated inline and exists ONLY in Dokku's config store so far.
 # Print it and copy it into your password manager NOW — if this server dies,
@@ -49,6 +52,16 @@ TLS issuance in phase 3 needs it resolving.
 Do NOT set `AI_MOCK` on the server — it swaps the real model for the
 deterministic dev mock. Optional model overrides if you ever want them:
 `OPENROUTER_MODEL`, `OPENROUTER_CLASSIFIER_MODEL`, `OPENROUTER_DIGEST_MODEL`.
+
+Password-reset emails go out through Resend. `RESEND_API_KEY` authenticates the
+API; `EMAIL_FROM` is the sender and must sit on a domain you've verified in
+Resend — add the SPF and DKIM DNS records Resend hands you (a TXT SPF record
+plus the DKIM CNAME/TXT records) and wait for them to verify, or Resend rejects
+the send. Production has no mock: without `RESEND_API_KEY` the email module
+throws instead of falling back (`src/lib/email.ts`), so a forgot-password
+request errors server-side and no reset mail is sent — set the key before
+anyone needs a reset. (In dev/test, with no key, it logs the email to the
+console instead of sending.)
 
 ## 2. First deploy (from your laptop)
 
@@ -104,8 +117,13 @@ dokku ports:set tellmewhy http:80:3000 https:443:3000
   Without a bucket, a nightly `dokku postgres:export tellmewhy-db > dump.sql`
   in cron plus off-server copy also works. Backups hold ciphertext only; the
   KEK in your password manager is the piece that must survive separately.
-- **Deletion by request**: the public copy promises account deletion on
-  request (crypto-shredding) — be ready to honor it until self-serve ships.
+- **Account deletion**: now self-serve from `/account` (crypto-shred + full
+  row purge, all sessions ended) — nothing to staff by hand, no by-request
+  queue to honor.
+- **Password reset**: confirm `RESEND_API_KEY` is set and `EMAIL_FROM` sits on
+  a Resend-verified domain (SPF/DKIM records live), or production refuses to
+  send and the forgot-password page errors — the reset path shares the account
+  surface and must work before real users arrive.
 
 ## Notes
 

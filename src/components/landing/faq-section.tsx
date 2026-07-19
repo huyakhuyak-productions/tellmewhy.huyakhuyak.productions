@@ -25,7 +25,12 @@ export const LANDING_FAQ: { question: string; answer: string }[] = [
   {
     question: "How does deleting my account work?",
     answer:
-      "Deletion works by crypto-shredding: destroying the key that unwraps your data renders it permanently unreadable going forward, without touching any message row directly. Self-serve deletion isn't wired up yet — it ships with the account-management phase; until then, deletion is by request. One honest caveat — a database backup taken before that key is destroyed still holds the wrapped key, so it stays readable until it ages out of backup retention or the master key is rotated.",
+      "It's self-serve from your account settings — password plus a clear acknowledgment — and it happens in one stroke, with no waiting period: your encryption key is destroyed, so nothing encrypted can ever be read again by anyone, including us, and every row you own is purged. Two things survive by design: an audit line of ids and timestamps (no content, ever), and, if you'd linked a therapist, the notes they wrote about you — those are encrypted with their key, not yours, and were always their record. One honest caveat — a database backup taken before the key is destroyed still holds the wrapped key, so it stays readable until it ages out of backup retention or the master key is rotated.",
+  },
+  {
+    question: "What if I forget my password?",
+    answer:
+      "Reset it by email. You'll get a link and nothing else — no name, no message content, nothing an inbox thief learns beyond the fact that this address has an account here — then you set a new password and every other session is signed out. A reset restores your access without losing any data: your conversations are still there, still yours to read. What it cannot do is hand your words to anyone else — your key is wrapped by our server, not your password, so recovery proves it's your inbox; it never decrypts your content for a stranger, or for us. One caveat: we don't verify email at sign-up, so use an address you actually control.",
   },
   {
     question: "Does the AI provider train on my conversations?",

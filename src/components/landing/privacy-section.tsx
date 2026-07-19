@@ -21,7 +21,11 @@ const PROMISES: { lead: string; body: string }[] = [
   },
   {
     lead: "Deletion means crypto-shredding.",
-    body: "Destroying the key that unlocks your data renders it permanently unreadable going forward. Self-serve deletion isn't wired up yet — it ships with account management; until then, deletion is by request.",
+    body: "Delete your account from its settings and it happens at once — your key is destroyed, so nothing encrypted can ever be read again, by anyone, including us, and every row you own is purged. A linked therapist keeps the notes they wrote; those were always their record, not yours.",
+  },
+  {
+    lead: "A forgotten password locks nothing away.",
+    body: "Reset it by email and you're back in — your conversations are still there, still yours. The reset restores access, not a backdoor: your key is wrapped by our server, not your password, so it never exposes your words to anyone else, and it's no way for us to read them either.",
   },
 ];
 

@@ -1,7 +1,8 @@
 # Road to "completed"
 
-Three bars, in order. Status as of 2026-07-18 (phase 5 gate-closed, repo
-public, deploy config shipped and reviewed — see `docs/DEPLOY.md`).
+Three bars, in order. Status as of 2026-07-19 (phase 5 gate-closed, repo
+public, deploy config shipped and reviewed — see `docs/DEPLOY.md`;
+account-management phase shipped — self-serve deletion + email password reset).
 
 ## Bar 1 — It's live
 
@@ -14,22 +15,29 @@ public, deploy config shipped and reviewed — see `docs/DEPLOY.md`).
         backstop for the public copy to be true).
   - [ ] Schedule Postgres backups; confirm `MASTER_KEK` is saved in the
         password manager (the runbook prints it).
-  - [ ] Be operationally ready to honor deletion-by-request.
+  - [ ] Set `RESEND_API_KEY` + a Resend-verified `EMAIL_FROM` (SPF/DKIM) so
+        password reset can send — production refuses to send without them.
+        Deletion is self-serve now, so there's no by-request queue to staff.
 
 ## Bar 2 — v1 is honestly complete
 
-- [ ] **Account-management phase** (spec → plan → build, the usual cycle):
-  - [ ] Self-serve account deletion — `shredUserKey` crypto-shredding is
-        implemented and tested; missing is the user-facing flow (confirm
-        UI, session teardown, therapist-side unlinking, audit line). This
-        is the one IOU the public copy admits.
-  - [ ] Password recovery — email+password auth has no reset path and no
-        email sending; a forgotten password is permanent lockout with no
-        admin workaround (crypto-shredding). Ship reset via an email
-        provider, or an explicit "there is no recovery" warning at
-        sign-up. Decide which during the phase brainstorm.
+- [x] **Account-management phase** (spec → plan → build, the usual cycle):
+  - [x] Self-serve account deletion — shipped at `/account`: password +
+        acknowledgment → one transaction that shreds the DEK (tombstoned, so
+        nothing can re-key), purges every owned row, writes ids-and-times
+        audit lines, closes still-active links with a survivor-encrypted
+        name-only departure marker, and ends all sessions. Entry points on
+        the chat rail, chat home footer, and therapist desk header; a
+        surviving partner sees a one-time farewell card. The IOU is off the
+        books — the public copy now says so.
+  - [x] Password recovery — shipped: email reset via better-auth + Resend
+        (`/forgot-password` → link → `/reset-password`). Restores access
+        only (DEK wrapped by the server KEK, not the password), revokes all
+        other sessions, is enumeration-free, and the email carries a link and
+        nothing else. Known gap, recorded: sign-up email is not verified.
 - [ ] **Hardening sweep** — the ledgered non-blocking findings
-      (`.superpowers/sdd/progress.md` holds the authoritative list).
+      (`.superpowers/sdd/progress.md` holds the authoritative list; the
+      account-management phase appended its own non-blocking findings there).
       Substantive: resolve message paths over raw rows on the chat page,
       therapist reading view, and regenerate context so a corrupt
       ciphertext row can't sever readable ancestors (the `riskById`
