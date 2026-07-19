@@ -32,16 +32,17 @@ export function DepartureNotices({
   const regionRef = useRef<HTMLDivElement>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null);
+  const hasDepartures = departures.length > 0;
 
   // When a farewell is present, land focus on the neutral region — not the
   // "Okay" button — so a keyboard user is oriented to it without acknowledging
   // it by reflex, and role="status" carries it to a screen reader. preventScroll
-  // keeps a busy roster from lurching to the card on every visit.
+  // keeps a busy roster from lurching to the card on every visit. Keyed on
+  // presence (not mount) so a late-arriving departure is focused too; pages
+  // with nothing to say never steal focus onto the empty container.
   useEffect(() => {
-    regionRef.current?.focus({ preventScroll: true });
-  }, []);
-
-  if (departures.length === 0) return null;
+    if (hasDepartures) regionRef.current?.focus({ preventScroll: true });
+  }, [hasDepartures]);
 
   async function acknowledge(linkId: string) {
     if (busyId) return;
@@ -53,8 +54,10 @@ export function DepartureNotices({
         setErrorId(linkId);
         return;
       }
-      // Move focus back to the neutral region before the acknowledged card
-      // unmounts on refresh, so it isn't dropped to the document body.
+      // Anchor focus on the persistent neutral region before the acknowledged
+      // card unmounts on refresh. The region div always renders (only its cards
+      // are conditional), so even acknowledging the SOLE departure keeps focus
+      // here instead of dropping to the document body.
       regionRef.current?.focus({ preventScroll: true });
       router.refresh();
     } catch {
