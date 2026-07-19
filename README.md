@@ -112,7 +112,7 @@ Message bodies exist as plaintext only during request handling and during AI inf
 All LLM calls route through OpenRouter with strict per-request `data_collection: "deny"` headers. The OpenRouter account's global data policy must be configured to exclude logging and training providers before production use.
 
 **Analytics, deliberately minimal:**
-Page views are counted with a self-hosted, cookieless Umami instance (`UMAMI_SCRIPT_URL` + `UMAMI_WEBSITE_ID`; with either unset, no analytics script renders at all). What it collects is paths and visit metadata on our own infrastructure — no cookies, no third party, never message content. Authenticated paths contain opaque ids only.
+Page views are counted with a self-hosted, cookieless Umami instance (`UMAMI_SCRIPT_URL` + `UMAMI_WEBSITE_ID`; with either unset, no analytics script renders at all). What it collects is paths and visit metadata on our own infrastructure — no cookies, no third party, never message content. Tracked URLs are scrubbed before anything leaves the page: query strings are never sent (`data-exclude-search` — a password-reset token rides in one), invite-link paths are redacted to `/link/redacted` by a `data-before-send` hook, and referrer query strings are dropped (an encoded token can ride in `?next=`). What reaches the analytics DB is paths with opaque ids only — the same only-hashes-never-raw-tokens rule the app database follows.
 
 **This is not end-to-end encryption:**
 We do not claim end-to-end encryption. The AI must read message bodies to reply, so plaintext exists on our servers during inference. The encryption protects against database breaches and backup leaks, not against server-side processing.

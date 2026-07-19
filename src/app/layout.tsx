@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import Script from "next/script";
 import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
-import { getUmamiConfig } from "@/lib/umami";
+import { getUmamiConfig, UMAMI_BEFORE_SEND_NAME, UMAMI_BEFORE_SEND_SNIPPET } from "@/lib/umami";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -72,7 +72,20 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col">
         {children}
         {umami && (
-          <Script src={umami.src} data-website-id={umami.websiteId} strategy="afterInteractive" />
+          <>
+            {/* Plain inline script (not next/script): it must execute during
+                HTML parse, guaranteed before the tracker loads, so the
+                before-send scrubber exists for the very first pageview. */}
+            {/* eslint-disable-next-line react/no-danger -- own compile-time constant, no data flows in */}
+            <script dangerouslySetInnerHTML={{ __html: UMAMI_BEFORE_SEND_SNIPPET }} />
+            <Script
+              src={umami.src}
+              data-website-id={umami.websiteId}
+              data-exclude-search="true"
+              data-before-send={UMAMI_BEFORE_SEND_NAME}
+              strategy="afterInteractive"
+            />
+          </>
         )}
       </body>
     </html>
