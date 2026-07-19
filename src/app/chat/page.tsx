@@ -123,6 +123,18 @@ export default async function HomePage() {
         {activeLink ? "Trust & sharing" : "Invite a trusted person"}
       </Link>
 
+      {/* Reachable on every viewport — the rail's Account link is desktop-only,
+          and this is the self-serve path to sign-out/change-password/deletion. */}
+      <Link
+        href="/account"
+        className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/80 outline-none transition-colors duration-150 hover:text-accent focus-visible:text-accent"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M8 8.2a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4ZM3 13.2c0-2.2 2.2-3.6 5-3.6s5 1.4 5 3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Account
+      </Link>
+
       {/* Roles aren't exclusive — a therapist may also write here. A quiet way
           across to the desk, shown only when this session actually is one. */}
       {session.user.role === "therapist" ? (

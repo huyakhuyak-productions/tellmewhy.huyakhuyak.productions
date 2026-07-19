@@ -259,19 +259,15 @@ function DeleteAccountSection() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const confirmHeadingRef = useRef<HTMLHeadingElement>(null);
   const keepRef = useRef<HTMLButtonElement>(null);
 
-  // On the acknowledgment step land focus on the safe action, so a keyboard
-  // user never fires the delete by reflex, and announce the heading.
+  // On the acknowledgment step land focus on the safe action in one hop, so a
+  // keyboard user never fires the delete by reflex. Focus lands directly here
+  // (no intermediate stop on the heading) so it doesn't clip the screen-reader
+  // announcement of the role="status" region's grave copy below — the delete
+  // button's aria-describedby covers that copy for anyone tabbing straight to it.
   useEffect(() => {
-    if (step === "confirm") {
-      confirmHeadingRef.current?.focus();
-      // Focus the heading first (for the announcement), then hand the cursor to
-      // "Keep my account" on the next frame so tabbing starts from safety.
-      const id = requestAnimationFrame(() => keepRef.current?.focus());
-      return () => cancelAnimationFrame(id);
-    }
+    if (step === "confirm") keepRef.current?.focus();
   }, [step]);
 
   function reset() {
@@ -307,6 +303,9 @@ function DeleteAccountSection() {
         setError("Slow down a little — wait a moment, then try again.");
       } else if (res.status === 400) {
         setError("That password doesn't match. Nothing has been deleted.");
+        // The rejected password must not ride back into the confirm step —
+        // clear it so a re-submit can't loop on a password already known wrong.
+        setPassword("");
       } else {
         setError("Something went wrong — nothing has been deleted. Try again in a moment.");
       }
@@ -375,14 +374,13 @@ function DeleteAccountSection() {
 
       {step === "confirm" ? (
         <div role="status" className="flex flex-col gap-3.5">
-          <h3
-            ref={confirmHeadingRef}
-            tabIndex={-1}
-            className="font-serif text-[1.15rem] leading-snug text-foreground outline-none"
-          >
+          <h3 className="font-serif text-[1.15rem] leading-snug text-foreground">
             Are you sure you want to leave for good?
           </h3>
-          <div className="flex flex-col gap-2.5 text-pretty font-serif text-[0.98rem] leading-relaxed text-muted-foreground">
+          <div
+            id="account-delete-acknowledgment"
+            className="flex flex-col gap-2.5 text-pretty font-serif text-[0.98rem] leading-relaxed text-muted-foreground"
+          >
             <p>
               Your conversations, notes, check-ins and records will be gone — we can&apos;t
               bring them back, and neither can anyone else.
@@ -410,6 +408,7 @@ function DeleteAccountSection() {
               type="button"
               onClick={remove}
               disabled={pending}
+              aria-describedby="account-delete-acknowledgment"
               className="rounded-xl border border-[color:var(--crisis-border)] px-4 py-2.5 text-[13px] text-muted-foreground outline-none transition-[color,background-color] duration-150 hover:bg-[color:var(--crisis)]/40 hover:text-[color:var(--crisis-foreground)] focus-visible:ring-2 focus-visible:ring-[color:var(--crisis-muted)]/50 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
             >
               {pending ? "Deleting…" : "Delete everything"}
