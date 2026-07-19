@@ -73,11 +73,13 @@ dokku config:set tellmewhy \
   UMAMI_WEBSITE_ID="<your Umami website id>"
 ```
 
-The Dockerfile declares matching build ARGs so Dokku bakes the values into
-the statically-prerendered pages at image build; dynamic pages read them at
-runtime. Changing the values takes effect on the next deploy (config:set
-alone restarts the app, which covers the dynamic pages; the static three
-need a rebuild).
+Both values are read at request time (they end up in the served HTML anyway,
+so neither is a secret). Every page that would otherwise be statically
+prerendered and carry the script — `/goodbye`, `/forgot-password` — is marked
+`force-dynamic` for exactly this reason, so a `config:set` alone (which
+restarts the app) is enough to turn analytics on or off; no rebuild or build
+arg is involved. (`/_not-found` stays static and carries no analytics — 404
+page views are not tracked.)
 
 ## 2. First deploy (from your laptop)
 
