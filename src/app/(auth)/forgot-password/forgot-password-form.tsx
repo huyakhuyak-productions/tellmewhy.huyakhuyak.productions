@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 
@@ -11,23 +11,43 @@ export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
+  const sentHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  // When the confirmation swaps in, pull focus to its heading so the screen
+  // reader announces the change and keyboard focus isn't stranded on a button
+  // that no longer exists.
+  useEffect(() => {
+    if (sent) sentHeadingRef.current?.focus();
+  }, [sent]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPending(true);
     // Fire the request and move on regardless of the result — we intentionally
     // ignore success vs. error so the confirmation cannot be used as an oracle.
-    await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
-    setPending(false);
-    setSent(true);
+    // A transport-level rejection (offline/DNS) must land on the SAME calm
+    // confirmation, so the enumeration-free contract holds even when the
+    // request never reaches the server — hence catch-and-continue.
+    try {
+      await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+    } catch {
+      // Swallow: the confirmation is identical for every outcome by design.
+    } finally {
+      setPending(false);
+      setSent(true);
+    }
   }
 
   return (
     <main className="relative mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-8 px-6 py-12">
       <div aria-hidden className="ambient-room" />
       {sent ? (
-        <div className="animate-message-rise flex flex-col gap-3">
-          <h1 className="text-pretty font-serif text-[2rem] font-medium leading-[1.15] tracking-[-0.01em]">
+        <div role="status" className="animate-message-rise flex flex-col gap-3">
+          <h1
+            ref={sentHeadingRef}
+            tabIndex={-1}
+            className="text-pretty font-serif text-[2rem] font-medium leading-[1.15] tracking-[-0.01em] outline-none"
+          >
             Check your inbox
           </h1>
           <p className="text-pretty text-[0.975rem] leading-relaxed text-muted-foreground">

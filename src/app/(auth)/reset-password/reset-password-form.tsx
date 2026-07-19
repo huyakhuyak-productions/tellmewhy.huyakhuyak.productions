@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 
@@ -13,18 +13,32 @@ export function ResetPasswordForm({ token }: { token?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
+  const doneHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  // When the success state swaps in, move focus to its heading so the change is
+  // announced and keyboard focus isn't left on the vanished submit button.
+  useEffect(() => {
+    if (done) doneHeadingRef.current?.focus();
+  }, [done]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) return;
     setPending(true);
     setError(null);
-    const { error } = await authClient.resetPassword({ newPassword: password, token });
-    setPending(false);
-    // A rejected token here means it expired or was already spent between the
-    // page load and the submit — send them back to ask for a fresh one.
-    if (error) return setError(error.message ?? "That reset link is no longer valid.");
-    setDone(true);
+    try {
+      const { error } = await authClient.resetPassword({ newPassword: password, token });
+      // A rejected token here means it expired or was already spent between the
+      // page load and the submit — send them back to ask for a fresh one.
+      if (error) return setError(error.message ?? "That reset link is no longer valid.");
+      setDone(true);
+    } catch {
+      // Transport-level rejection (offline/DNS): surface the calm failure copy
+      // rather than stranding "Saving…" — and never fake success here.
+      setError("That reset link is no longer valid.");
+    } finally {
+      setPending(false);
+    }
   }
 
   if (!token) {
@@ -56,8 +70,12 @@ export function ResetPasswordForm({ token }: { token?: string }) {
     <main className="relative mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-8 px-6 py-12">
       <div aria-hidden className="ambient-room" />
       {done ? (
-        <div className="animate-message-rise flex flex-col gap-3">
-          <h1 className="text-pretty font-serif text-[2rem] font-medium leading-[1.15] tracking-[-0.01em]">
+        <div role="status" className="animate-message-rise flex flex-col gap-3">
+          <h1
+            ref={doneHeadingRef}
+            tabIndex={-1}
+            className="text-pretty font-serif text-[2rem] font-medium leading-[1.15] tracking-[-0.01em] outline-none"
+          >
             Password updated
           </h1>
           <p className="text-pretty text-[0.975rem] leading-relaxed text-muted-foreground">
