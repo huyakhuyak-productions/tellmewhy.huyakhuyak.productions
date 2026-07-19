@@ -83,6 +83,7 @@ export function DepartureNotices({
       {departures.map((d, i) => (
         <div
           key={d.linkId}
+          data-e2e="departure-notice"
           className="animate-message-rise rounded-2xl border border-dashed border-border/70 px-5 py-5"
           style={{ animationDelay: `${i * 60}ms` }}
         >

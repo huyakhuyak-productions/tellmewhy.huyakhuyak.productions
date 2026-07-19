@@ -630,6 +630,64 @@ test("branching is view-local, the review line projects, and hiding is invisible
   }
 });
 
+// The farewell across the two sides: a linked client deletes their account, and
+// the therapist's desk answers with a quiet dashed farewell card carrying the
+// client's name — then acknowledges it away, leaving an empty roster and a desk
+// that still renders. Proves listDepartures surfaces the departure on the
+// therapist side and the acknowledgment tears the card down for good.
+test("a client's departure leaves a farewell on their therapist's desk, then clears", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+
+  const clientCtx = await browser.newContext();
+  const therapistCtx = await browser.newContext();
+  const client = await clientCtx.newPage();
+  const therapist = await therapistCtx.newPage();
+
+  try {
+    // --- Link a client and therapist. ---
+    await signUp(client, "Ada Client");
+    const invitePath = await createInvitePath(client);
+    await followInviteAndSignUp(therapist, invitePath, "Tom Therapist");
+
+    // --- The client closes their account for good, through the real /account
+    //     flow (the same two considered steps a person actually walks). ---
+    await client.goto("/account");
+    await client.getByRole("button", { name: "Delete my account" }).click();
+    await client.getByPlaceholder("Enter your password to continue").fill("longenough-pass");
+    await client.getByRole("button", { name: "Continue" }).click();
+    const clientDeleted = client.waitForResponse(
+      (res) =>
+        res.request().method() === "DELETE" && new URL(res.url()).pathname === "/api/account",
+    );
+    await client.getByRole("button", { name: "Delete everything" }).click();
+    await clientDeleted;
+    await expect(client).toHaveURL(/\/goodbye$/);
+
+    // --- The therapist reloads the desk: a farewell card, named. ---
+    await therapist.goto("/therapist");
+    const farewell = therapist.locator('[data-e2e="departure-notice"]');
+    await expect(farewell).toContainText("Ada Client");
+    await expect(farewell).toContainText("deleted their account");
+
+    // --- Acknowledging it away leaves an empty roster and a desk that still
+    //     renders — the client is gone, but the therapist's surface stands. ---
+    const acknowledged = therapist.waitForResponse(
+      (res) => res.request().method() === "POST" && res.url().includes("/acknowledge-departure"),
+    );
+    await farewell.getByRole("button", { name: "Okay" }).click();
+    await acknowledged;
+
+    await expect(therapist.locator('[data-e2e="departure-notice"]')).toHaveCount(0);
+    await expect(therapist.getByText("No one has linked with you yet.").first()).toBeVisible();
+    await expect(therapist.getByRole("heading", { name: "Asking for you" })).toBeVisible();
+  } finally {
+    await clientCtx.close();
+    await therapistCtx.close();
+  }
+});
+
 // Every path a hostile or merely mistaken party might try, refused the same
 // calm way the rest of the therapist layer refuses: 404 or an unremarkable
 // error, never a hint at what's actually being protected.

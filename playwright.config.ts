@@ -46,7 +46,13 @@ export default defineConfig({
         // of rejecting under the headless permission prompt.
         permissions: ["clipboard-read", "clipboard-write"],
       },
-      testMatch: [/desktop\.spec\.ts/, /therapist\.spec\.ts/, /landing\.spec\.ts/],
+      testMatch: [
+        /desktop\.spec\.ts/,
+        /therapist\.spec\.ts/,
+        /landing\.spec\.ts/,
+        /account-deletion\.spec\.ts/,
+        /password-reset\.spec\.ts/,
+      ],
     },
   ],
   webServer: {
