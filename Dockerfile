@@ -12,6 +12,15 @@ COPY . .
 ENV DATABASE_URL="postgres://build:build@localhost:5432/build" \
     MASTER_KEK="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
     BETTER_AUTH_SECRET="build-time-placeholder-secret"
+
+# Umami analytics: statically-prerendered pages bake env at build time, so the
+# script tag only reaches them if the values exist HERE. Dokku passes config
+# vars as build args for declared ARGs; dynamic pages read the same vars at
+# runtime. Empty defaults = no analytics (local builds without config).
+ARG UMAMI_SCRIPT_URL=""
+ARG UMAMI_WEBSITE_ID=""
+ENV UMAMI_SCRIPT_URL=$UMAMI_SCRIPT_URL \
+    UMAMI_WEBSITE_ID=$UMAMI_WEBSITE_ID
 RUN bun run build
 
 # Runtime stage: the traced standalone server on plain Node.

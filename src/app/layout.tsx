@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import Script from "next/script";
 import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
+import { getUmamiConfig } from "@/lib/umami";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -59,12 +61,20 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Self-hosted, cookieless page-view analytics (disclosed in the privacy
+  // copy). Renders nothing unless both env vars are set — see lib/umami.ts.
+  const umami = getUmamiConfig();
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        {children}
+        {umami && (
+          <Script src={umami.src} data-website-id={umami.websiteId} strategy="afterInteractive" />
+        )}
+      </body>
     </html>
   );
 }

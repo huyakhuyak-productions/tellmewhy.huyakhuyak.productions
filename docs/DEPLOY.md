@@ -63,6 +63,22 @@ request errors server-side and no reset mail is sent — set the key before
 anyone needs a reset. (In dev/test, with no key, it logs the email to the
 console instead of sending.)
 
+Optional analytics (self-hosted, cookieless Umami — disclosed in the privacy
+copy): set both or neither; with either missing the app renders no analytics
+script at all.
+
+```bash
+dokku config:set tellmewhy \
+  UMAMI_SCRIPT_URL="https://<your-umami-host>/script.js" \
+  UMAMI_WEBSITE_ID="<your Umami website id>"
+```
+
+The Dockerfile declares matching build ARGs so Dokku bakes the values into
+the statically-prerendered pages at image build; dynamic pages read them at
+runtime. Changing the values takes effect on the next deploy (config:set
+alone restarts the app, which covers the dynamic pages; the static three
+need a rebuild).
+
 ## 2. First deploy (from your laptop)
 
 ```bash
