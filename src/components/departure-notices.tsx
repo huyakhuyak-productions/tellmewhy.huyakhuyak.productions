@@ -68,7 +68,18 @@ export function DepartureNotices({
   }
 
   return (
-    <div ref={regionRef} role="status" tabIndex={-1} className="flex flex-col gap-3 outline-none">
+    // The region stays mounted even when empty (so acknowledging the last card
+    // never drops focus to the body), but must add zero layout when there's
+    // nothing to say: sr-only is position:absolute, so it leaves the parents'
+    // flex flow and their `gap` no longer fires a phantom space around it —
+    // while keeping the node (and its focus) alive. Never display:none, which
+    // would recreate the focus drop.
+    <div
+      ref={regionRef}
+      role="status"
+      tabIndex={-1}
+      className={hasDepartures ? "flex flex-col gap-3 outline-none" : "sr-only"}
+    >
       {departures.map((d, i) => (
         <div
           key={d.linkId}
