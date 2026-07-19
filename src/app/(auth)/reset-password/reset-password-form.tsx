@@ -33,9 +33,10 @@ export function ResetPasswordForm({ token }: { token?: string }) {
       if (error) return setError(error.message ?? "That reset link is no longer valid.");
       setDone(true);
     } catch {
-      // Transport-level rejection (offline/DNS): surface the calm failure copy
-      // rather than stranding "Saving…" — and never fake success here.
-      setError("That reset link is no longer valid.");
+      // Transport-level rejection (offline/DNS): the network dropped, not the
+      // token — say so honestly rather than blaming a link that may be fine, and
+      // never fake success here.
+      setError("We couldn't reach the server just now — check your connection and try again.");
     } finally {
       setPending(false);
     }
