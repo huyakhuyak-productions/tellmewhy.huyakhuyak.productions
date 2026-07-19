@@ -470,6 +470,39 @@ describe("therapist link lifecycle", () => {
       expect(departures[0].name).toBeNull();
     });
 
+    it("attributes each departure to the side that actually left for a dual-role user", async () => {
+      // One user who is both a client (of a departed therapist) and a therapist
+      // (of a departed client) — party to two departures from opposite sides.
+      const dualRoleId = `test-${randomUUID()}`;
+      const departedTherapistId = `test-${randomUUID()}`;
+      const departedClientId = `test-${randomUUID()}`;
+
+      // Link where the dual-role user is the CLIENT; their therapist departs.
+      const { linkId: clientSideLinkId, token: clientSideToken } = await createInvite(dualRoleId, "client");
+      await acceptInvite(clientSideToken, departedTherapistId);
+
+      // Link where the dual-role user is the THERAPIST; their client departs.
+      const { linkId: therapistSideLinkId, token: therapistSideToken } = await createInvite(dualRoleId, "therapist");
+      await acceptInvite(therapistSideToken, departedClientId);
+
+      const dek = await getOrCreateUserDek(dualRoleId);
+      await db.update(therapistLinks).set({
+        status: "revoked", revokedAt: new Date(), departedAt: new Date(),
+        departedNameCiphertext: encryptText(dek, "Departed Therapist"),
+      }).where(eq(therapistLinks.id, clientSideLinkId));
+      await db.update(therapistLinks).set({
+        status: "revoked", revokedAt: new Date(), departedAt: new Date(),
+        departedNameCiphertext: encryptText(dek, "Departed Client"),
+      }).where(eq(therapistLinks.id, therapistSideLinkId));
+
+      const departures = await listDepartures(dualRoleId);
+      const byLink = new Map(departures.map((d) => [d.linkId, d]));
+      // Caller was the client ⇒ the therapist side left; caller was the therapist
+      // ⇒ the client side left.
+      expect(byLink.get(clientSideLinkId)?.departedSide).toBe("therapist");
+      expect(byLink.get(therapistSideLinkId)?.departedSide).toBe("client");
+    });
+
     it("acknowledging removes it from the list; repeats and strangers 404", async () => {
       const { linkId, token } = await createInvite(clientId, "client");
       await acceptInvite(token, therapistId);

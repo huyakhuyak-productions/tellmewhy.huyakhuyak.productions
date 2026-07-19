@@ -20,10 +20,15 @@ export default async function TherapistDashboardPage() {
       ? "No one has linked with you yet."
       : `${clients.length} ${clients.length === 1 ? "person trusts" : "people trust"} you with what they've written.`;
 
+  // The desk speaks only to departed clients. A dual-role therapist may also be
+  // party to links where THEY are the client; those farewells belong to their
+  // Trust screen, not here.
+  const departedClients = departures.filter((d) => d.departedSide === "client");
+
   return (
     <DeskFrame title="Your practice" subtitle={subtitle}>
       <AttentionQueue entries={attention} />
-      <ClientList clients={clients} departures={departures} />
+      <ClientList clients={clients} departures={departedClients} />
     </DeskFrame>
   );
 }

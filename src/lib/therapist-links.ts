@@ -261,7 +261,13 @@ export async function getActiveLinksForTherapist(
 // snapshot was sealed under the CALLER's DEK at deletion time (it's the
 // survivor's record); a decrypt failure degrades to a nameless card, never
 // a failed list — one bad ciphertext must never take the rest down.
-export type Departure = { linkId: string; name: string | null; departedAt: Date };
+//
+// `departedSide` is the DEPARTED party's role in this link — the caller was the
+// therapist ⇒ a client left ("client"); the caller was the client ⇒ their
+// therapist/trusted-person left ("therapist"). A dual-role user (a therapist
+// who also has their own trusted person) is party to links from both sides, so
+// each surface must filter to the side it presents rather than assume one.
+export type Departure = { linkId: string; name: string | null; departedAt: Date; departedSide: "client" | "therapist" };
 
 export async function listDepartures(forUserId: string): Promise<Departure[]> {
   const rows = await db
@@ -285,7 +291,11 @@ export async function listDepartures(forUserId: string): Promise<Departure[]> {
         name = null;
       }
     }
-    return { linkId: row.id, name, departedAt: row.departedAt! };
+    // The caller is the surviving party (the where clause matched one of the two
+    // roles), so if they're the therapist the departed side is the client, and
+    // otherwise the caller is the client and the therapist side departed.
+    const departedSide = row.therapistId === forUserId ? "client" : "therapist";
+    return { linkId: row.id, name, departedAt: row.departedAt!, departedSide };
   });
 }
 

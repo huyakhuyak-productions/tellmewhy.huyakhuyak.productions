@@ -65,10 +65,15 @@ export default async function TrustPage() {
     createdAt: n.createdAt,
   }));
 
+  // The Trust screen speaks only to a departed trusted person. A dual-role user
+  // (a therapist with their own trusted person) may also be party to links where
+  // THEY are the therapist; those clients' farewells belong to their desk.
+  const departedTrustedPersons = departures.filter((d) => d.departedSide === "therapist");
+
   return (
     <TrustScreen
       link={link}
-      departures={departures}
+      departures={departedTrustedPersons}
       shared={shared}
       audit={auditRows}
       notes={noteRows}
