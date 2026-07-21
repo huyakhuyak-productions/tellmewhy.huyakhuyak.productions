@@ -204,6 +204,14 @@ export async function getOrRefreshDigest(
       // concurrent regeneration already advanced the row, our (older) result
       // must not roll it back. Our caller still gets the body we generated — it
       // was fresh at read time; the next open self-heals from the row.
+      //
+      // Deliberately NOT serialized with an advisory lock: the CAS already
+      // guarantees correctness (no rollback, no torn write — the losing writer
+      // simply no-ops). A lock would have to be held across the whole
+      // generateObject call above to prevent the duplicate work, pinning a DB
+      // connection for the multi-second model round-trip — a steep, always-on
+      // cost to save the rare, cheap case of two refreshes racing and one
+      // wasting its generation. We accept the occasional wasted generation.
       setWhere: existing ? eq(digests.coversUpToMessageId, existing.coversUpToMessageId) : undefined,
     });
 
