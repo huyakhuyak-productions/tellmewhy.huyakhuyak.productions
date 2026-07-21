@@ -196,6 +196,11 @@ describe("ReadingView crisis navigator on a `?focus=` arrival", () => {
   // could never step. The pill stays at the honest count until an arrow moves it.
   it("keeps the pre-landing count when the `?focus=` mount lands on the crisis", async () => {
     const messages = crisisTree();
+    // Spy on the landing itself. happy-dom's rAF is a macrotask, so the negative
+    // assertions must wait for the mount landing to ACTUALLY fire — a bare
+    // `waitFor("1 crisis message")` resolves at first paint, before the deferred
+    // landing runs, and would pass vacuously even against the broken code.
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     render(
       <ReadingView
         conversationId="conv-crisis"
@@ -208,11 +213,14 @@ describe("ReadingView crisis navigator on a `?focus=` arrival", () => {
       />,
     );
 
-    // Let the rAF-deferred mount landing run — it scrolls/flashes but must not
-    // touch the navigator.
-    await waitFor(() => expect(screen.getByText("1 crisis message")).toBeTruthy());
-    // Never claimed: the landed "1/1" readout must not appear from the arrival.
+    // The mount landing has now scrolled the crisis into view (it flashes too).
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+    // ...but it must NOT have claimed the navigator: the pill still reads the
+    // honest count, and the landed "1/1" readout never appears from the arrival.
+    expect(screen.getByText("1 crisis message")).toBeTruthy();
     expect(screen.queryByText("1/1")).toBeNull();
+
+    scrollSpy.mockRestore();
   });
 });
 
