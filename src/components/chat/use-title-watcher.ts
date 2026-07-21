@@ -146,6 +146,13 @@ export function useTitleWatcher({
   useEffect(() => {
     return () => {
       titleWatchControllerRef.current?.cancel();
+      // Re-arm on a genuine remount. A dev StrictMode double-mount reuses the
+      // SAME instance (refs persist), so without this reset the arm-once guard
+      // would still read `true` after the interleaved cleanup and the second
+      // mount would early-return forever — leaving the watcher permanently
+      // dead. Pairs with cancel above: the first mount's poll is torn down and
+      // the guard cleared, so the second mount arms a fresh one.
+      titleWatchStarted.current = false;
     };
   }, []);
 }

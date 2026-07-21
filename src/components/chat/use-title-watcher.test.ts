@@ -6,6 +6,7 @@
 // cancellation) exists to keep a fast follow-up send from killing the poll —
 // the historical bug pinned executably below for the first time.
 import "../../test/component-setup";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useTitleWatcher } from "./use-title-watcher";
@@ -88,6 +89,25 @@ describe("useTitleWatcher", () => {
 
     // The poll survives the re-arm re-run and still delivers the rename.
     await flush(1500);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms after a StrictMode double-mount", async () => {
+    // Dev StrictMode mounts, unmounts, then remounts the SAME instance — its
+    // refs persist. The mount-scoped cleanup must reset the arm-once guard, or
+    // the second mount early-returns forever and the watcher never arms (the
+    // first mount's poll was already cancelled by the interleaved cleanup).
+    const refresh = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(jsonRes([{ id: "c1", title: "Untitled" }])) // 1st mount (cancelled)
+      .mockResolvedValueOnce(jsonRes([{ id: "c1", title: "Untitled" }])) // re-arm baseline
+      .mockResolvedValueOnce(jsonRes([{ id: "c1", title: "Renamed" }])); // re-arm poll
+
+    renderHook(() => useTitleWatcher({ ...base, refresh }), { wrapper: StrictMode });
+
+    await flush();
+    await flush(1500);
+    // The re-armed poll delivers the rename — proof the guard was reset.
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
