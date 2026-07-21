@@ -6,7 +6,7 @@
 // the client's own active leaf never moved. Previously pinned only by e2e.
 import "../../test/component-setup";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -159,6 +159,55 @@ describe("ReadingView corrupt-row resilience", () => {
     // Both readable ancestors survive; only the unreadable middle is omitted.
     expect(screen.getByText(rootText)).toBeTruthy();
     expect(screen.getByText(leafText)).toBeTruthy();
+  });
+});
+
+describe("ReadingView crisis navigator sync on focus landing", () => {
+  it("syncs the navigator readout when a `?focus=` landing hits a crisis message", async () => {
+    // A short path whose leaf is a crisis message. It's on the displayed path
+    // (seeded from activeLeafId), so the `?focus=` landing scrolls straight to
+    // it — no branch switch — exercising focusMessage's direct-land path.
+    const messages: ReadingMessage[] = [
+      {
+        id: "root",
+        parentId: null,
+        createdAt: new Date("2026-07-20T10:00:00Z"),
+        sender: "client",
+        text: "How the week opened.",
+        riskLevel: "none",
+        flagged: false,
+        authorName: null,
+      },
+      {
+        id: "crisis-msg",
+        parentId: "root",
+        createdAt: new Date("2026-07-20T10:00:05Z"),
+        sender: "client",
+        text: "A line that reads as crisis.",
+        riskLevel: "crisis",
+        flagged: false,
+        authorName: null,
+      },
+    ];
+
+    render(
+      <ReadingView
+        conversationId="conv-crisis"
+        clientId="client-1"
+        messages={messages}
+        nodes={nodesFrom(messages)}
+        activeLeafId="crisis-msg"
+        markerMessageId={null}
+        focusMessageId="crisis-msg"
+      />,
+    );
+
+    // Before the (rAF-deferred) mount landing fires, the pill shows the count.
+    expect(screen.getByText("1 crisis message")).toBeTruthy();
+
+    // Once the landing lands on the crisis message, the navigator reads its
+    // position — i/N, landed — even though jumpToCrisis was never called.
+    await waitFor(() => expect(screen.getByText("1/1")).toBeTruthy());
   });
 });
 

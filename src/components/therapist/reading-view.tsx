@@ -161,6 +161,16 @@ export function ReadingView({
   const focusMessage = useCallback(
     (id: string) => {
       if (!messagesById.has(id)) return;
+      // Landing on a crisis message — from the navigator, a digest anchor, or
+      // the `?focus=` mount — syncs the navigator's readout to it, so its i/N
+      // never goes stale behind a landing jumpToCrisis didn't drive. Guarded by
+      // `messagesById` above: a body-less crisis (absent here) can't scroll-land
+      // in the first place, so it deliberately never claims the navigator.
+      const crisisIndex = crisisIds.indexOf(id);
+      if (crisisIndex !== -1) {
+        setActiveCrisis(crisisIndex);
+        setLanded(true);
+      }
       if (displayedPathIdSet.has(id)) {
         landOn(id);
         return;
@@ -168,7 +178,7 @@ export function ReadingView({
       setViewLeafId(deepestDescendant(nodes, id));
       setPendingFocusId(id);
     },
-    [messagesById, displayedPathIdSet, nodes, landOn],
+    [messagesById, crisisIds, displayedPathIdSet, nodes, landOn],
   );
 
   // After a branch switch re-renders the path (and the ref for the target is
@@ -198,10 +208,10 @@ export function ReadingView({
     (next: number) => {
       const id = crisisIds[next];
       if (!id) return;
-      setActiveCrisis(next);
-      setLanded(true);
       // A crisis message may sit on another branch — focusMessage switches to
       // it before landing, so the navigator reaches every crisis in the tree.
+      // focusMessage also owns the activeCrisis/landed sync now (a crisis id in
+      // `crisisIds`), so stepping and landing agree from one place.
       focusMessage(id);
     },
     [crisisIds, focusMessage],
