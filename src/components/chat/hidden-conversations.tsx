@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { relativeTime } from "@/lib/relative-time";
 
 export type HiddenConversation = {
@@ -45,7 +46,10 @@ export function HiddenConversations({
         body: JSON.stringify({ hidden: false }),
       });
       if (!res.ok) {
-        setError({ id: conversationId, message: "Couldn't restore — try again." });
+        setError({
+          id: conversationId,
+          message: res.status === 429 ? GENTLE_PACE : "Couldn't restore — try again.",
+        });
         return;
       }
       router.refresh();

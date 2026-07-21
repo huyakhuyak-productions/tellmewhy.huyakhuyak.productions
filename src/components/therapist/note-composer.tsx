@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { GENTLE_PACE_WORDS_SAFE_HERE } from "@/lib/pacing-copy";
 import { useIsMac } from "@/lib/use-is-mac";
 import type { NoteKind } from "@/lib/therapist-notes";
 
@@ -74,7 +75,7 @@ export function NoteComposer({
       }
       setError(
         res.status === 429
-          ? "A gentle pace — give it a moment, then try again. Your words are safe here."
+          ? GENTLE_PACE_WORDS_SAFE_HERE
           : "That didn't save. Your words are still here — try again.",
       );
     } catch {

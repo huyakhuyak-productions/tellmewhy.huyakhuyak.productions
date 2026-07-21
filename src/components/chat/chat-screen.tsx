@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { partsToText } from "@/lib/send-recovery";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { buildChatRequestBody } from "@/lib/chat-request";
 import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
 import { useTitleWatcher } from "./use-title-watcher";
@@ -129,7 +130,7 @@ export function ChatScreen({
   const [sendFailure, setSendFailure] = useState<SendFailure | null>(null);
   // Restoring THIS conversation from its own hidden chip (see the header chip).
   const [restoringHidden, setRestoringHidden] = useState(false);
-  const [restoreHiddenError, setRestoreHiddenError] = useState(false);
+  const [restoreHiddenError, setRestoreHiddenError] = useState<string | null>(null);
   // Whether the most recent /api/chat response was the rate limiter's 429.
   // The transport surfaces failures as a thrown Error carrying only the raw
   // body text, so the custom fetch below (the established interception point,
@@ -241,7 +242,7 @@ export function ChatScreen({
   // refresh re-runs the page load, which drops the chip once the row is visible
   // again.
   async function restoreHidden() {
-    setRestoreHiddenError(false);
+    setRestoreHiddenError(null);
     setRestoringHidden(true);
     try {
       const res = await fetch(`/api/conversations/${conversationId}`, {
@@ -250,14 +251,14 @@ export function ChatScreen({
         body: JSON.stringify({ hidden: false }),
       });
       if (!res.ok) {
-        setRestoreHiddenError(true);
+        setRestoreHiddenError(res.status === 429 ? GENTLE_PACE : "Couldn't restore — try again.");
         return;
       }
       router.refresh();
     } catch {
       // Offline / network failure — surfaced like a non-OK response so a restore
       // never dies silently.
-      setRestoreHiddenError(true);
+      setRestoreHiddenError("Couldn't restore — try again.");
     } finally {
       setRestoringHidden(false);
     }
@@ -562,7 +563,7 @@ export function ChatScreen({
               </button>
               {restoreHiddenError ? (
                 <p role="alert" className="w-full font-serif text-[11.5px] italic text-accent">
-                  Couldn&apos;t restore — try again.
+                  {restoreHiddenError}
                 </p>
               ) : null}
             </div>

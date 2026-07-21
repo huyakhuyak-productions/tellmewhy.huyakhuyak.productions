@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
 
 export type CardFolder = { id: string; name: string };
@@ -74,7 +75,7 @@ export function CardMenu({
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        setError("Couldn't save — try again.");
+        setError(res.status === 429 ? GENTLE_PACE : "Couldn't save — try again.");
         return false;
       }
       router.refresh();

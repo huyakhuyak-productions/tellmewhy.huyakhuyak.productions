@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { GENTLE_PACE_WORDS_STILL_HERE } from "@/lib/pacing-copy";
 import { relativeTime } from "@/lib/relative-time";
 import type { SelfNote } from "@/lib/notes";
 import { useIsMac } from "@/lib/use-is-mac";
@@ -53,7 +54,7 @@ export function NotesScreen({ notes }: { notes: SelfNote[] }) {
       if (!res.ok) {
         setError(
           res.status === 429
-            ? "A gentle pace — give it a moment, then try again. Your words are still here."
+            ? GENTLE_PACE_WORDS_STILL_HERE
             : "Couldn't save that just now — your words are still here. Try again.",
         );
         return;

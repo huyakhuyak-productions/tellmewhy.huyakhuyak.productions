@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { focusAfterDestructive } from "@/components/ui/destructive-focus";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { GENTLE_PACE, GENTLE_PACE_WORDS_STILL_HERE } from "@/lib/pacing-copy";
 import { useIsMac } from "@/lib/use-is-mac";
 import { relativeTime } from "@/lib/relative-time";
 import { entryCountLabel } from "@/lib/exercise-engagement";
@@ -61,7 +62,7 @@ export function ExercisePanel({
       }
       setAssignError(
         res.status === 429
-          ? "A gentle pace — give it a moment, then try again. Your words are still here."
+          ? GENTLE_PACE_WORDS_STILL_HERE
           : "That didn't send. Your words are still here — try again.",
       );
     } catch {
@@ -90,9 +91,7 @@ export function ExercisePanel({
         router.refresh();
         return null;
       }
-      return res.status === 429
-        ? "A gentle pace — give it a moment, then try again."
-        : "Couldn't close that just now — try again.";
+      return res.status === 429 ? GENTLE_PACE : "Couldn't close that just now — try again.";
     } catch {
       return "Couldn't close that just now — try again.";
     } finally {

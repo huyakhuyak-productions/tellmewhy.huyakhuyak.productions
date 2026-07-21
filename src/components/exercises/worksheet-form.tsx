@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { GENTLE_PACE_WORDS_STILL_HERE } from "@/lib/pacing-copy";
 import { useIsMac } from "@/lib/use-is-mac";
 import {
   draftToPayload,
@@ -148,7 +149,7 @@ export function WorksheetForm({
       if (!res.ok) {
         setError(
           res.status === 429
-            ? "A gentle pace — give it a moment, then try again. Your words are still here."
+            ? GENTLE_PACE_WORDS_STILL_HERE
             : "Couldn't save that just now — your words are still here. Try again.",
         );
         return;

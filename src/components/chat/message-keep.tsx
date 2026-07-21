@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 
 const KEPT_LABEL = "Kept for your future self";
 
@@ -28,9 +29,7 @@ export function MessageKeep({ messageId, initialKept }: { messageId: string; ini
         // gentle-pace copy the rest of the app uses. A keep has no draft to
         // reassure about, so the "your words are still here" tail is omitted.
         setError(
-          res.status === 429
-            ? "A gentle pace — give it a moment, then try again."
-            : "Couldn't keep that just now — try again.",
+          res.status === 429 ? GENTLE_PACE : "Couldn't keep that just now — try again.",
         );
         return;
       }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { relativeTime } from "@/lib/relative-time";
 import { setConversationDragData, useConversationDropTarget } from "@/lib/dnd";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
@@ -144,7 +145,10 @@ export function ConversationRail({
         body: JSON.stringify({ hidden: true }),
       });
       if (!res.ok) {
-        setHideError({ id: conversationId, message: "Couldn't hide — try again." });
+        setHideError({
+          id: conversationId,
+          message: res.status === 429 ? GENTLE_PACE : "Couldn't hide — try again.",
+        });
         return;
       }
       router.refresh();

@@ -72,3 +72,29 @@ describe("CardMenu hide confirm focus", () => {
     );
   });
 });
+
+describe("CardMenu hide rate-limit copy", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows the gentle-pace copy when a hide is rate-limited", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: false, status: 429 } as Response)),
+    );
+    renderMenu();
+    openHideConfirm();
+    fireEvent.click(screen.getByRole("button", { name: "Hide it" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/A gentle pace/));
+  });
+
+  it("shows the generic copy on any other failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: false, status: 500 } as Response)),
+    );
+    renderMenu();
+    openHideConfirm();
+    fireEvent.click(screen.getByRole("button", { name: "Hide it" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Couldn't save/));
+  });
+});

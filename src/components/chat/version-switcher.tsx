@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { GENTLE_PACE } from "@/lib/pacing-copy";
 
 // The version arrows under a branched message — ‹ n/m › between siblings.
 // A message gains siblings when the person edits it (or regenerates an AI
@@ -52,9 +53,7 @@ export function VersionSwitcher({
       });
       if (!res.ok) {
         setError(
-          res.status === 429
-            ? "A gentle pace — give it a moment, then try again."
-            : "Couldn't switch versions just now — try again.",
+          res.status === 429 ? GENTLE_PACE : "Couldn't switch versions just now — try again.",
         );
         return;
       }

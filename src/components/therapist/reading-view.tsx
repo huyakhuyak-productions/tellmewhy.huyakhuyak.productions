@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
+import { GENTLE_PACE_WORDS_SAFE_HERE } from "@/lib/pacing-copy";
 import { useIsMac } from "@/lib/use-is-mac";
 import {
   deepestDescendant,
@@ -267,7 +268,7 @@ export function ReadingView({
       }
       setSendError(
         res.status === 429
-          ? "A gentle pace — give it a moment, then try again. Your words are safe here."
+          ? GENTLE_PACE_WORDS_SAFE_HERE
           : "That didn't send. Your words are still here — try again.",
       );
     } catch {

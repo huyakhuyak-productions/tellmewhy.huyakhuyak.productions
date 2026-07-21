@@ -5,7 +5,7 @@
 // this asserts the attribute is present while collapsed and gone once open.
 import "../../test/component-setup";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -47,5 +47,34 @@ describe("HiddenConversations collapsed drawer inertness", () => {
     expect(container.querySelector("[inert]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Hidden/ }));
     expect(container.querySelector("[inert]")).toBeNull();
+  });
+});
+
+describe("HiddenConversations restore rate-limit copy", () => {
+  function stubFetch(status: number) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: false, status } as Response)),
+    );
+  }
+
+  it("shows the gentle-pace copy on a 429", async () => {
+    stubFetch(429);
+    render(<HiddenConversations conversations={[conv()]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Hidden/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/A gentle pace/),
+    );
+  });
+
+  it("shows the generic copy on any other failure", async () => {
+    stubFetch(500);
+    render(<HiddenConversations conversations={[conv()]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Hidden/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/Couldn't restore/),
+    );
   });
 });
