@@ -1,7 +1,24 @@
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
+import { errorCause } from "@/lib/errors";
 
 export type RiskLevel = "none" | "elevated" | "crisis";
+
+// A verdict is one enum word wrapped in a tiny JSON object. Without an
+// explicit cap the AI SDK sends no max_tokens at all, so the provider reserves
+// the model's ENTIRE output window (65535 tokens on the default classifier) —
+// and OpenRouter refuses the request upfront whenever the key's remaining
+// credit can't cover a completion that large. That failure mode disabled this
+// whole raise-only layer in production, invisibly, for every message.
+//
+// Sized with headroom rather than to the byte — a truncated completion fails
+// `generateObject`'s JSON parse outright, dropping us back to the regex floor,
+// the very outage this cap exists to end. For the full sizing rationale
+// (reservation-ceiling semantics, reasoning-model thinking budgets, the
+// env-swappable model) see TITLE_MAX_OUTPUT_TOKENS in lib/title.ts; the same
+// reasoning applies here and both deliberately match the 1024 every other
+// capped call site uses.
+export const RISK_MAX_OUTPUT_TOKENS = 1024;
 
 const RANK: Record<RiskLevel, number> = { none: 0, elevated: 1, crisis: 2 };
 
@@ -31,6 +48,7 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
     const { object } = await generateObject({
       model,
       schema: riskSchema,
+      maxOutputTokens: RISK_MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(2500),
       system:
         "You are a safety classifier for a mental-health support chat. " +
@@ -40,7 +58,14 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
       prompt: text,
     });
     return RANK[object.risk] > RANK[floor] ? object.risk : floor;
-  } catch {
-    return floor; // model unavailable — the regex floor still stands
+  } catch (error) {
+    // The regex floor still stands, so the chat is never blocked — but a
+    // classifier that fails on EVERY message silently downgrades crisis
+    // detection to patterns alone, which is precisely what happened before
+    // the token cap above. Log it (never the raw error object: AI SDK errors
+    // carry the request body — the classified message itself — as enumerable
+    // own properties) so a dead safety layer is visible instead of invisible.
+    console.error(`Failed to classify risk (${errorCause(error)})`);
+    return floor;
   }
 }
