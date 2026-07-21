@@ -161,6 +161,13 @@ type LoadedMessage = {
   createdAt: Date;
 };
 
+// A raw row's plaintext columns — never any ciphertext. Path resolution and
+// regenerate-target validation run over THESE, so a body that fails to decrypt
+// (and is therefore absent from the decrypted `messages` list) can neither
+// sever the chain above it nor make an AI reply unregenerable. Shaped as a
+// superset of message-tree's TreeNode, so the tree helpers consume it directly.
+export type MessageNode = { id: string; parentId: string | null; createdAt: Date; sender: Sender };
+
 function decryptMessageRow(
   dek: Awaited<ReturnType<typeof getOrCreateUserDek>>,
   r: typeof messages.$inferSelect,
@@ -195,7 +202,12 @@ function decryptMessageRow(
 export async function loadMessageTree(
   conversationId: string,
   userId: string,
-): Promise<{ messages: LoadedMessage[]; riskById: Map<string, RiskLevel>; activeLeafId: string | null }> {
+): Promise<{
+  messages: LoadedMessage[];
+  nodes: MessageNode[];
+  riskById: Map<string, RiskLevel>;
+  activeLeafId: string | null;
+}> {
   const conversation = await requireOwnedConversation(conversationId, userId);
   const dek = await getOrCreateUserDek(userId);
   const rows = await db
@@ -205,6 +217,9 @@ export async function loadMessageTree(
     .orderBy(asc(messages.createdAt), asc(messages.id));
   return {
     messages: rows.flatMap((r) => decryptMessageRow(dek, r)),
+    // Every row's plaintext columns, corrupt bodies included — the raw material
+    // callers resolve the active path (and validate a regenerate target) over.
+    nodes: rows.map((r) => ({ id: r.id, parentId: r.parentId, createdAt: r.createdAt, sender: r.sender })),
     riskById: new Map(rows.map((r) => [r.id, r.riskLevel])),
     activeLeafId: conversation.activeLeafId,
   };

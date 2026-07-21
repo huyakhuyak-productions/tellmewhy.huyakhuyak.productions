@@ -16,6 +16,7 @@ import {
 } from "./conversations";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
+import { resolveActivePath } from "./message-tree";
 import { encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
@@ -343,6 +344,35 @@ describe("encrypted conversations", () => {
       expect(tree.activeLeafId).toBe(m3.id);
       // Flat order is (createdAt, id) asc, so the abandoned branch is still present.
       expect(tree.messages.map((m) => m.text)).toContain("reply a");
+    });
+
+    // The whole point of `nodes`: path resolution over RAW rows (id/parentId/
+    // createdAt/sender — plaintext columns, no decryption) can't be severed by a
+    // mid-chain body that fails to decrypt. The decrypted `messages` list drops
+    // that body, so resolving the path over IT orphans the ancestors above it;
+    // resolving over `nodes` keeps the chain whole.
+    it("loadMessageTree exposes raw nodes that keep ancestors above a corrupt mid-chain row", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { id } = await createConversation(userId, "Raw nodes survive corruption");
+      const root = await saveMessage({ conversationId: id, userId, sender: "client", text: "root msg" });
+      const middle = await saveMessage({ conversationId: id, userId, sender: "ai", text: "middle msg" });
+      const leaf = await saveMessage({ conversationId: id, userId, sender: "client", text: "leaf msg" });
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, middle.id));
+
+      const tree = await loadMessageTree(id, userId);
+
+      // Resolving over the DECRYPTED list severs root from leaf — the leaf's
+      // parent (the corrupt middle) is missing, so the walk stops at the leaf.
+      const decryptedNodes = tree.messages.map((m) => ({ id: m.id, parentId: m.parentId, createdAt: m.createdAt }));
+      expect(resolveActivePath(decryptedNodes, tree.activeLeafId)).toEqual([leaf.id]);
+
+      // Resolving over the RAW nodes keeps the whole chain, corrupt body and all.
+      expect(resolveActivePath(tree.nodes, tree.activeLeafId)).toEqual([root.id, middle.id, leaf.id]);
+      // The raw node carries the plaintext columns regenerate validation reads
+      // (sender/parentId), surviving a body that will not decrypt.
+      expect(tree.nodes.find((n) => n.id === middle.id)).toMatchObject({ sender: "ai", parentId: root.id });
+
+      consoleErrorSpy.mockRestore();
     });
 
     it("setActiveLeaf flips paths and lands on the deepest descendant of the target", async () => {
