@@ -317,7 +317,7 @@ test("editing a message branches a new version and the arrows walk both ways", a
   // The edited words replace the original on the active path, and the version
   // arrows appear — this is version 2 of 2, so Next is disabled and Previous open.
   await expect(page.getByText(edited)).toBeVisible();
-  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByTestId("version-switcher").getByText("2/2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous version" })).toBeEnabled();
 
@@ -329,7 +329,7 @@ test("editing a message branches a new version and the arrows walk both ways", a
   await switchedBack;
   await expect(page.getByText(original)).toBeVisible();
   await expect(page.getByText(edited)).toHaveCount(0);
-  await expect(page.getByText("1/2")).toBeVisible();
+  await expect(page.getByTestId("version-switcher").getByText("1/2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Previous version" })).toBeDisabled();
 
   // Step forward again: the edited branch is back on screen.
@@ -355,7 +355,7 @@ test("regenerating a reply branches an AI sibling reachable by the arrows", asyn
   await regenerated;
 
   // The regenerated reply is version 2 of 2 on the AI message: Next is disabled.
-  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByTestId("version-switcher").getByText("2/2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous version" })).toBeEnabled();
 
@@ -367,7 +367,7 @@ test("regenerating a reply branches an AI sibling reachable by the arrows", asyn
   );
   await page.getByRole("button", { name: "Previous version" }).click();
   await back;
-  await expect(page.getByText("1/2")).toBeVisible();
+  await expect(page.getByTestId("version-switcher").getByText("1/2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Previous version" })).toBeDisabled();
 
   const forward = page.waitForResponse(
@@ -375,7 +375,7 @@ test("regenerating a reply branches an AI sibling reachable by the arrows", asyn
   );
   await page.getByRole("button", { name: "Next version" }).click();
   await forward;
-  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByTestId("version-switcher").getByText("2/2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Next version" })).toBeDisabled();
 });
 
@@ -497,10 +497,12 @@ test("hiding a conversation moves it to the rail's Hidden drawer, then restores 
   await hidePersisted;
 
   // The row leaves the rail's groups: its ONLY remaining copy now lives inside
-  // the Hidden drawer (scoped by the drawer's own `group/hidden` row wrapper),
-  // and the Hidden disclosure appears in its place.
+  // the Hidden drawer (scoped by the drawer's own `hidden-conversation-row`
+  // testid), and the Hidden disclosure appears in its place.
   await expect(page.locator(`a[href="${hiddenHref}"]`)).toHaveCount(1);
-  await expect(page.locator(`.group\\/hidden a[href="${hiddenHref}"]`)).toHaveCount(1);
+  await expect(
+    page.getByTestId("hidden-conversation-row").locator(`a[href="${hiddenHref}"]`),
+  ).toHaveCount(1);
   const hiddenDrawer = page.getByRole("button", { name: /^Hidden/ });
   await expect(hiddenDrawer).toBeVisible();
 
@@ -515,7 +517,9 @@ test("hiding a conversation moves it to the rail's Hidden drawer, then restores 
 
   // The conversation returns to the rail (no longer in the drawer), and the
   // now-empty Hidden section is gone entirely.
-  await expect(page.locator(`.group\\/hidden a[href="${hiddenHref}"]`)).toHaveCount(0);
+  await expect(
+    page.getByTestId("hidden-conversation-row").locator(`a[href="${hiddenHref}"]`),
+  ).toHaveCount(0);
   await expect(page.locator(`a[href="${hiddenHref}"]`)).toBeVisible();
   await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
 });

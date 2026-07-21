@@ -63,7 +63,7 @@ export function HiddenConversations({
   }
 
   return (
-    <div className={className}>
+    <div className={className} data-testid="hidden-conversations">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
@@ -97,7 +97,7 @@ export function HiddenConversations({
         <div inert={collapsed} className="min-h-0 overflow-hidden">
           {conversations.map((c) => (
             <div key={c.id}>
-              <div className="group/hidden relative flex items-center">
+              <div data-testid="hidden-conversation-row" className="relative flex items-center">
                 <Link
                   href={`/chat/${c.id}`}
                   className="min-w-0 flex-1 rounded-lg px-3 py-2 outline-none transition-colors duration-150 hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-accent/40"

@@ -291,8 +291,9 @@ describe("digests — get-or-refresh behind the gate", () => {
       const convId = await grantedConversation("Truncated generation");
       await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "first" });
       // Well-formed body, but the model reports a non-`stop` finish: v6's
-      // Output.object hands back an undefined object instead of throwing, and
-      // the digest path must reject it exactly like an outright failure.
+      // Output.object won't hand it back — reading the result's `output` getter
+      // throws NoOutputGeneratedError — and the digest path must reject it
+      // exactly like an outright failure.
       vi.mocked(getDigestModel).mockReturnValueOnce(
         truncatedObjectModel({ overview: "half a digest", themes: [], anchors: [] }),
       );

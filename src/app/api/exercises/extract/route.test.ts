@@ -120,8 +120,9 @@ describe("POST /api/exercises/extract", () => {
     await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: "I froze again" });
 
     // A well-formed record, but the model ran out of budget mid-object: v6's
-    // Output.object returns an undefined object instead of throwing, and the
-    // route must surface that as a 502 rather than send back a partial draft.
+    // Output.object won't hand it back — reading the result's `output` getter
+    // throws NoOutputGeneratedError — and the route must surface that as a 502
+    // rather than send back a partial draft.
     vi.mocked(getExtractorModel).mockReturnValueOnce(
       truncatedObjectModel({
         situation: "half",

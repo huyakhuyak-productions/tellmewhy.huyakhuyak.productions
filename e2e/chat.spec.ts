@@ -196,10 +196,12 @@ test("hiding a conversation from its home card, then restoring it", async ({ pag
   await hidePersisted;
 
   // The card leaves the grid: its ONLY remaining copy now lives inside the
-  // Hidden drawer (scoped by the drawer's own `group/hidden` row wrapper), and
-  // the Hidden disclosure appears with it.
+  // Hidden drawer (scoped by the drawer's own `hidden-conversation-row` testid),
+  // and the Hidden disclosure appears with it.
   await expect(page.locator(`a[href="${conversationHref}"]`)).toHaveCount(1);
-  await expect(page.locator(`.group\\/hidden a[href="${conversationHref}"]`)).toHaveCount(1);
+  await expect(
+    page.getByTestId("hidden-conversation-row").locator(`a[href="${conversationHref}"]`),
+  ).toHaveCount(1);
   const hiddenDrawer = page.getByRole("button", { name: /^Hidden/ });
   await expect(hiddenDrawer).toBeVisible();
 
@@ -214,7 +216,9 @@ test("hiding a conversation from its home card, then restoring it", async ({ pag
 
   // The conversation returns to the home cards (no longer in the drawer), and
   // the now-empty Hidden section is gone entirely.
-  await expect(page.locator(`.group\\/hidden a[href="${conversationHref}"]`)).toHaveCount(0);
+  await expect(
+    page.getByTestId("hidden-conversation-row").locator(`a[href="${conversationHref}"]`),
+  ).toHaveCount(0);
   await expect(page.locator(`a[href="${conversationHref}"]`)).toBeVisible();
   await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
 });

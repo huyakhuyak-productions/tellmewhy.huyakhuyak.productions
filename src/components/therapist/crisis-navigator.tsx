@@ -24,7 +24,7 @@ export function CrisisNavigator({
   const nextDisabled = landed ? index === total - 1 : false;
 
   return (
-    <div className="sticky top-4 z-20 -mt-1 flex justify-center">
+    <div data-testid="crisis-navigator" className="sticky top-4 z-20 -mt-1 flex justify-center">
       <div className="inline-flex items-center gap-1 rounded-full border border-crisis-border bg-crisis/95 px-1.5 py-1 text-crisis-foreground shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_14px_-6px_var(--crisis-glow)] backdrop-blur-sm">
         <StepButton label="Previous crisis message" ariaDisabled={prevDisabled} onClick={onPrev} direction="up" />
         <StepButton label="Next crisis message" ariaDisabled={nextDisabled} onClick={onNext} direction="down" />

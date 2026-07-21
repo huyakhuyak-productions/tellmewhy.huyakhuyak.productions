@@ -43,9 +43,10 @@ export function mockObjectModel(body: unknown): LanguageModel {
 
 // A model whose `doGenerate` returns well-formed content but reports a non-`stop`
 // finish (the model ran out of its token budget mid-object, or a content filter
-// cut it off). v6's `generateText` + `Output.object` does NOT throw on this — it
-// leaves `output` undefined — so every structured-output call site must treat it
-// as a failed generation rather than let a partial masquerade as a full result.
+// cut it off). v6's `generateText` + `Output.object` refuses to hand this back as
+// a result — reading the returned `output` getter throws `NoOutputGeneratedError`
+// — so every structured-output call site must treat it as a failed generation
+// rather than let a partial masquerade as a full result.
 export function truncatedObjectModel(body: unknown): LanguageModel {
   return new MockLanguageModelV3({
     doGenerate: async () => ({

@@ -73,7 +73,10 @@ export function VersionSwitcher({
     "flex size-6 items-center justify-center rounded-md text-muted-foreground/70 outline-none transition-[color,transform] duration-150 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-[0.94] disabled:pointer-events-none disabled:opacity-30";
 
   return (
-    <div className="mt-1 flex items-center gap-1 pr-1 text-[11px] text-muted-foreground/70">
+    <div
+      data-testid="version-switcher"
+      className="mt-1 flex items-center gap-1 pr-1 text-[11px] text-muted-foreground/70"
+    >
       <button
         type="button"
         aria-label="Previous version"

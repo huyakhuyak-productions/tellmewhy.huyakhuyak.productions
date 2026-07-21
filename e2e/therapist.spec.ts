@@ -270,7 +270,7 @@ test("the reading view frames crisis messages and offers a crisis navigator", as
     // and — being both first and last — disables both arrows without ever wrapping.
     await next.click();
     await expect(crisisMessage).toBeInViewport();
-    await expect(therapist.getByText("1/1")).toBeVisible();
+    await expect(therapist.getByTestId("crisis-navigator").getByText("1/1")).toBeVisible();
     await expect(next).toHaveAttribute("aria-disabled", "true");
     await expect(prev).toHaveAttribute("aria-disabled", "true");
   } finally {
@@ -390,16 +390,20 @@ test("the enrichment journey: assign, complete, share, read, digest, and mood tr
     // two distinct entries always land exactly two "read an exercise entry"
     // lines in the client's trust feed — never one merged "they looked" event.
     await therapist.goto(clientDeskUrl);
-    await expect(therapist.getByRole("button", { name: "Read shared record" })).toHaveCount(2);
+    // Address each record toggle by its stable `aria-controls` body id rather
+    // than the "Read shared record" accessible name — reading relabels a toggle
+    // to "Hide shared record", so a name-based `.first()` would depend on that
+    // relabel to keep picking a fresh entry. `nth(i)` on the DOM-stable set
+    // reads both entries deterministically, order-independent.
+    const recordToggles = therapist.locator('button[aria-controls^="entry-"]');
+    await expect(recordToggles).toHaveCount(2);
     for (let i = 0; i < 2; i++) {
       const entryRead = therapist.waitForResponse(
         (res) =>
           res.request().method() === "GET" &&
           /^\/api\/therapist\/entries\/[^/]+$/.test(new URL(res.url()).pathname),
       );
-      // Each click takes the first still-collapsed toggle — a read one relabels
-      // to "Hide shared record", so this always opens a fresh, unread entry.
-      await therapist.getByRole("button", { name: "Read shared record" }).first().click();
+      await recordToggles.nth(i).click();
       await entryRead;
     }
     await expect(therapist.getByText("It happened again the next week")).toBeVisible();
@@ -611,10 +615,11 @@ test("branching is view-local, the review line projects, and hiding is invisible
     await client.getByRole("button", { name: "Hide it" }).click();
     await hideLanded;
     // The client's own rail no longer surfaces the row in its groups — its only
-    // copy now lives inside the Hidden drawer (scoped by its `group/hidden` row).
+    // copy now lives inside the Hidden drawer (scoped by its
+    // `hidden-conversation-row` testid).
     await expect(client.locator(`a[href="${conversationHref}"]`)).toHaveCount(1);
     await expect(
-      client.locator(`.group\\/hidden a[href="${conversationHref}"]`),
+      client.getByTestId("hidden-conversation-row").locator(`a[href="${conversationHref}"]`),
     ).toHaveCount(1);
 
     // The therapist's desk still lists the shared conversation...
