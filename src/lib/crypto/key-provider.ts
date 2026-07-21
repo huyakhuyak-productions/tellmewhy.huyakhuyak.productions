@@ -1,4 +1,4 @@
-import { decryptText, encryptText } from "./envelope";
+import { CryptoError, decryptText, encryptText } from "./envelope";
 
 export interface KeyProvider {
   wrapDek(dek: Buffer): Promise<string>;
@@ -9,9 +9,9 @@ export class EnvKeyProvider implements KeyProvider {
   private readonly kek: Buffer;
 
   constructor(kekBase64: string | undefined = process.env.MASTER_KEK) {
-    if (!kekBase64) throw new Error("MASTER_KEK env variable is not set");
+    if (!kekBase64) throw new CryptoError("MASTER_KEK env variable is not set");
     const kek = Buffer.from(kekBase64, "base64");
-    if (kek.length !== 32) throw new Error("MASTER_KEK must decode to exactly 32 bytes");
+    if (kek.length !== 32) throw new CryptoError("MASTER_KEK must decode to exactly 32 bytes");
     this.kek = kek;
   }
 

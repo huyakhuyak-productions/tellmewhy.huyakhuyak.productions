@@ -18,7 +18,9 @@ export async function getOrCreateUserDek(userId: string): Promise<Buffer> {
 // Thrown when a caller asks for the DEK of a crypto-shredded user. Every
 // resilient read path (per-row try/catch) absorbs it like any decrypt
 // failure; nothing may catch it just to mint a fresh key.
-export class KeyShreddedError extends Error {}
+export class KeyShreddedError extends Error {
+  override readonly name = "KeyShreddedError";
+}
 
 type UserKeyRow = typeof userKeys.$inferSelect;
 

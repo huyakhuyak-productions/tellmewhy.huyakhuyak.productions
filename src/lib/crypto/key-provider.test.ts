@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EnvKeyProvider } from "./key-provider";
-import { generateDek } from "./envelope";
+import { CryptoError, generateDek } from "./envelope";
 
 describe("EnvKeyProvider", () => {
   const kek = Buffer.alloc(32, 7).toString("base64");
@@ -19,13 +19,18 @@ describe("EnvKeyProvider", () => {
     await expect(other.unwrapDek(wrapped)).rejects.toThrow();
   });
 
-  it("rejects a missing or malformed KEK", () => {
+  it("rejects a missing or malformed KEK as a CryptoError", () => {
+    // A KEK misconfiguration is a crypto-domain failure, so it must surface as
+    // CryptoError (not a bare Error) — every resilient path that already
+    // absorbs decrypt failures then treats it uniformly.
     vi.stubEnv("MASTER_KEK", "");
     try {
+      expect(() => new EnvKeyProvider()).toThrow(CryptoError);
       expect(() => new EnvKeyProvider()).toThrow(/MASTER_KEK/);
     } finally {
       vi.unstubAllEnvs();
     }
+    expect(() => new EnvKeyProvider("dG9vLXNob3J0")).toThrow(CryptoError);
     expect(() => new EnvKeyProvider("dG9vLXNob3J0")).toThrow(/32 bytes/);
   });
 });

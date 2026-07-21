@@ -4,7 +4,11 @@ const VERSION = "v1";
 const ALGO = "aes-256-gcm";
 const IV_BYTES = 12;
 
-export class CryptoError extends Error {}
+export class CryptoError extends Error {
+  // Keep .name accurate so errorCause logs it as "CryptoError", never the
+  // default "Error" — the resilient decrypt paths log by name.
+  override readonly name = "CryptoError";
+}
 
 export function generateDek(): Buffer {
   return randomBytes(32);
