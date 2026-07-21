@@ -23,10 +23,17 @@ export function SignInForm({ next }: { next?: string }) {
     e.preventDefault();
     setPending(true);
     setError(null);
-    const { error } = await authClient.signIn.email({ email, password });
-    setPending(false);
-    if (error) return setError(error.message ?? "Something went wrong");
-    router.push(destination);
+    try {
+      const { error } = await authClient.signIn.email({ email, password });
+      if (error) return setError(error.message ?? "Something went wrong");
+      router.push(destination);
+    } catch {
+      // Transport-level rejection (offline/DNS): without this the throw would
+      // skip setPending(false) and strand the disabled "Signing in…" button.
+      setError("We couldn't reach the server just now — check your connection and try again.");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
