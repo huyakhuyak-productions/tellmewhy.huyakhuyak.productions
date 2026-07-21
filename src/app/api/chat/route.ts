@@ -295,8 +295,18 @@ async function handlePost(req: Request): Promise<Response> {
         // or a client-cancel, not on an error — so that path persists nothing
         // and titles nothing, which is fine: there is no honest reply to name.)
         //
+        // "First exchange" honestly means "no AI has replied in this thread
+        // yet" — NOT "the active path is exactly one message long". A first send
+        // whose earlier attempt already persisted a client row (a failed send,
+        // or a reworded retry) leaves the path several client turns deep with
+        // still zero AI turns; that is the SAME first exchange and must still be
+        // titled, which a `history.length === 1` test would wrongly skip. The
+        // predicate below is the robust form of that intent. `history` is loaded
+        // right after the client turn is saved and before the AI reply persists,
+        // so a genuine first exchange carries no AI message here.
+        //
         // An explicit `parentId: null` root edit collapses the active path back
-        // to a single message (history.length === 1) — this branch then runs
+        // to a single client message with no AI reply — this branch then runs
         // again and DELIBERATELY re-titles the conversation from the new root
         // exchange, unless the user has customized the title. That re-title is
         // intended, not accidental (pinned in route.test.ts).
@@ -304,7 +314,7 @@ async function handlePost(req: Request): Promise<Response> {
           !isAborted &&
           finishReason !== "error" &&
           clientText !== null &&
-          history.length === 1 &&
+          !history.some((m) => m.sender === "ai") &&
           riskLevel !== "crisis"
         ) {
           try {

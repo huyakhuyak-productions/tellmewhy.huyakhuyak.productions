@@ -1245,6 +1245,30 @@ describe("POST /api/chat", () => {
       expect(await isTitleCustomized(id, clientId)).toBe(false);
     });
 
+    it("titles the first exchange even when an earlier attempt already left a client row (no AI reply yet)", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "July 6");
+      // A failed first send: the client row persisted, but its stream died before
+      // any AI reply — so the conversation holds a client turn and zero AI turns.
+      await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: "first attempt, never answered" });
+
+      // A reworded retry appends a SECOND client row (a fresh key, not a dedupe).
+      // When onFinish decides the title, history is two client turns and still no
+      // AI turn: the honest "first exchange" is "no AI has replied yet", which the
+      // old `history.length === 1` gate would miss (length 2 → wrongly skipped).
+      const tree = await postAndAwaitReply(clientId, {
+        conversationId: id,
+        text: "second attempt, reworded",
+        clientMessageId: randomUUID(),
+      });
+      expect(tree.messages.filter((m) => m.sender === "client")).toHaveLength(2);
+
+      await vi.waitFor(async () => {
+        const [conversation] = (await listConversations(clientId)).filter((c) => c.id === id);
+        expect(conversation?.title).toBe("A quiet mock title");
+      });
+    });
+
     it("a first exchange whose stream ends in a model error keeps its neutral title (partial still persisted)", async () => {
       const clientId = await seedUser();
       const { id } = await createConversation(clientId, "July 6");
