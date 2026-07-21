@@ -524,6 +524,51 @@ test("hiding a conversation moves it to the rail's Hidden drawer, then restores 
   await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
 });
 
+test("opening a hidden conversation by direct link shows its chip and restores from it", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  // Start a conversation and let its reply settle (a clean finish clears the
+  // hero draft, so the later direct navigation never re-sends the message).
+  await page.getByLabel("Start a conversation").fill("A thread to reopen from its own page");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  const hiddenHref = new URL(page.url()).pathname;
+  const conversationId = hiddenHref.split("/").pop()!;
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // Hide it straight through the API — the surface under test is the
+  // conversation view's own chip, not the rail's hide path.
+  const hidden = await page.request.patch(`/api/conversations/${conversationId}`, {
+    data: { hidden: true },
+  });
+  expect(hidden.ok()).toBeTruthy();
+
+  // A direct link to a hidden conversation still opens for its owner (the loader
+  // never hides it from them); the header wears a quiet chip that says so and
+  // offers a one-tap restore. The rail's Hidden drawer is collapsed and inert,
+  // so the only reachable "Restore" is the chip's own.
+  await page.goto(hiddenHref);
+  await expect(
+    page.getByText("Hidden — only you can see your own hidden conversations."),
+  ).toBeVisible();
+
+  // Restoring from the chip round-trips the same PATCH the drawer uses, then
+  // refreshes: the chip clears and the now-empty Hidden drawer disappears.
+  const restored = page.waitForResponse(
+    (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
+  );
+  await page.getByRole("button", { name: "Restore" }).click();
+  await restored;
+  await expect(
+    page.getByText("Hidden — only you can see your own hidden conversations."),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Hidden/ })).toHaveCount(0);
+});
+
 test("rename a conversation from the rail menu", async ({ page }) => {
   await signUp(page);
 
