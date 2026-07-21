@@ -14,6 +14,11 @@
 */
 
 :root {
+  /* The palette below follows the OS scheme; this makes the browser's own
+     widgets (scrollbars, form controls) follow it too — without it the
+     browser paints light widgets over the dark palette. */
+  color-scheme: light dark;
+
   --background: #f7f5fa;
   --foreground: #201e29;
   --muted: #eceaf3;
