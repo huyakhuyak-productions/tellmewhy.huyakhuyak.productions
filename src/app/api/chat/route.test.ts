@@ -1024,6 +1024,35 @@ describe("POST /api/chat", () => {
       expect(clientRows.map((m) => m.text).sort()).toEqual(["edited words", "original words"]);
     });
 
+    it("regenerates an AI reply that sits OFF the active path — off-path versions are deliberately regenerable", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Off-path regenerate");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "first thought" });
+      await postAndAwaitReply(clientId, { conversationId: id, text: "second thought" });
+      const [, r1, m2, r2] = await loadMessages(id, clientId);
+      expect([r1.sender, m2.sender, r2.sender]).toEqual(["ai", "client", "ai"]);
+
+      // Edit m2 (branch at its parent r1). The active path swings to the edited
+      // version, so the original m2 and its reply r2 are now OFF the active path.
+      await postAndAwaitReply(clientId, { conversationId: id, text: "second thought, edited", parentId: m2.parentId });
+      const activePathIds = new Set((await loadMessages(id, clientId)).map((m) => m.id));
+      expect(activePathIds.has(r2.id)).toBe(false); // r2 really is off-path now
+
+      // Regenerating the off-path r2 must SUCCEED (no active-path gate): the
+      // version switcher shows off-path siblings, so re-running one grows a fresh
+      // sibling under its OWN parent (m2) and brings that branch onto the path.
+      const classifierSpy = vi.mocked(getClassifierModel);
+      classifierSpy.mockClear();
+      const tree = await postAndAwaitReply(clientId, { conversationId: id, regenerateOf: r2.id });
+
+      const aiUnderM2 = tree.messages.filter((m) => m.parentId === m2.id && m.sender === "ai");
+      const fresh = aiUnderM2.find((m) => m.id !== r2.id);
+      expect(fresh).toBeDefined();
+      expect(tree.activeLeafId).toBe(fresh!.id);
+      // Still a regenerate: no new client turn, no risk classification.
+      expect(classifierSpy).not.toHaveBeenCalled();
+    });
+
     it("aborting the stream persists exactly the streamed prefix", async () => {
       const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Stopped mid-reply");

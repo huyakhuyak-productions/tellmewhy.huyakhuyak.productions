@@ -92,6 +92,15 @@ async function handlePost(req: Request): Promise<Response> {
       // Only an AI reply can be regenerated, and a root AI message cannot
       // exist (every reply answers some client turn) — a missing, non-AI, or
       // parentless target is indistinguishable from "not found".
+      //
+      // DELIBERATELY no active-path check: an AI reply that sits OFF the current
+      // active path is still a valid regenerate target. The version switcher
+      // legitimately surfaces off-path siblings, so a client can re-run any of
+      // them; the context is resolved from the target's OWN parent (below), not
+      // from the conversation's active leaf, so an off-path regenerate re-runs
+      // the right chain and simply brings that branch back onto the active path.
+      // Gating on "must be on the active path" would break that affordance for
+      // no safety gain — ownership is already enforced by loadMessageTree.
       if (!target || target.sender !== "ai" || target.parentId === null) {
         throw new NotFoundError("Message not found");
       }
