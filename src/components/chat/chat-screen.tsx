@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { harvestFailedSend, mergeRestoredDraft, partsToText, resendMessageId } from "@/lib/send-recovery";
+import { partsToText } from "@/lib/send-recovery";
 import { buildChatRequestBody } from "@/lib/chat-request";
 import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
+import { useTitleWatcher } from "./use-title-watcher";
+import { useSendRecovery, type SendFailure } from "./use-send-recovery";
 import { MessageBubble } from "./message-bubble";
 import { MessageEdit } from "./message-edit";
 import { MessageFlag } from "./message-flag";
@@ -53,11 +55,6 @@ function resizeComposer(el: HTMLTextAreaElement) {
   el.style.height = "auto";
   el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
 }
-
-// A failed send, kept as an object (not a plain string) so every failure gets
-// a fresh identity — consecutive identical failures must still re-run the
-// restore/focus effect below.
-type SendFailure = { kind: "rate-limit" | "generic" };
 
 // The single source of truth for turning server-loaded rows into the SDK's
 // message shape — used BOTH to seed useChat on mount AND to re-seed it when the
@@ -273,25 +270,6 @@ export function ChatScreen({
   const composerFormRef = useRef<HTMLFormElement>(null);
   const isFirstRender = useRef(true);
   const sentDraft = useRef(false);
-  const titleWatchStarted = useRef(false);
-  // Owns the running poll's lifetime (timers + fetch loop) once armed below.
-  // Cancelled ONLY by the mount-scoped unmount effect, never by re-runs of
-  // the arming effect — see both effects for why that split matters.
-  const titleWatchControllerRef = useRef<{ cancel: () => void } | null>(null);
-
-  // The rail/home re-render (and hand this component a brand-new
-  // `conversations` array) on every `router.refresh()` — including ones
-  // triggered by DnD, rename, or folder actions on OTHER rows that have
-  // nothing to do with this conversation. The title watcher below must
-  // survive those refreshes, so it reads `conversations` through this ref
-  // instead of depending on the prop directly (see the effect for why). The
-  // sync happens in its own effect (declared ahead of the watcher, so it
-  // always commits first) rather than inline during render, since refs must
-  // not be written while rendering (react-hooks/refs).
-  const conversationsRef = useRef(conversations);
-  useEffect(() => {
-    conversationsRef.current = conversations;
-  });
 
   // Keep the transport's parent lookup fresh (see metaByIdRef above). Its own
   // effect so the ref is never written during render (react-hooks/refs).
@@ -409,32 +387,21 @@ export function ChatScreen({
     }
   }, [draftKey, sendMessage]);
 
-  // A failed send must never cost the writer their words. When the SDK
-  // reports an error, move the failed message (and any partial reply the
-  // dying stream left behind) out of the thread and back into the composer,
-  // then surface a calm notice. sendMessage always appends a fresh user
-  // message, so leaving the failed copy in the thread would duplicate it on
-  // retry. The thread read is safe: sendMessage pushes the user message and
-  // React commits (re-syncing this ref) before the request can possibly fail.
-  useEffect(() => {
-    failureHandlerRef.current = () => {
-      const failure = harvestFailedSend(messages);
-      if (failure) {
-        // Remember the key this attempt POSTed with, paired to its words, so an
-        // unedited retry can reuse it (server dedupe → one row) while an edited
-        // retry mints fresh. Only a real client-text attempt stashes a key —
-        // clientMessageIdRef is always set by the send path that just failed.
-        if (clientMessageIdRef.current) {
-          failedSendRef.current = { id: clientMessageIdRef.current, text: failure.failedText };
-        }
-        setDraft((current) => mergeRestoredDraft(failure.failedText, current));
-        setMessages(failure.messagesWithoutFailure);
-        // The words now live in the composer — the stashed hero draft (if
-        // any) is recovered and must not auto-resend on a later remount.
-        sessionStorage.removeItem(draftKey);
-      }
-      setSendFailure({ kind: rateLimited.current ? "rate-limit" : "generic" });
-    };
+  // Send-failure recovery: fill the SDK's onError handler (harvest the failed
+  // words back into the composer, drop the failed tail, stash the key for an
+  // unedited retry) and resolve the resend idempotency key. The two refs are
+  // owned here because useChat's onError/onFinish (defined above) close over
+  // them; the hook does the wiring.
+  const { resolveResendId } = useSendRecovery({
+    messages,
+    setMessages,
+    setDraft,
+    setSendFailure,
+    rateLimited,
+    draftKey,
+    clientMessageIdRef,
+    failedSendRef,
+    failureHandlerRef,
   });
 
   // The crisis card docks just above the composer, but the composer's height
@@ -468,108 +435,16 @@ export function ChatScreen({
     el.focus();
   }, [sendFailure]);
 
-  // The auto-title lands server-side some time after the stream closes (a
-  // fire-and-forget classify+rename call — see /api/chat). Rather than hold
-  // the response stream open (which would keep the composer disabled), watch
-  // for it client-side: once THIS session's first exchange finishes, poll
-  // GET /api/conversations for a title change and refresh exactly once.
-  //
-  // ARMING is the only thing this effect reacts to — it must NOT own the
-  // poll's cancellation. It used to: the poll's timers were cleared by this
-  // effect's own cleanup, which runs on every re-run, including the one
-  // triggered by a fast follow-up send (`messages.length`/`status` are both
-  // deps, so sending a second message before the poll finished re-ran this
-  // effect, whose cleanup cancelled the in-flight timer — then the
-  // `titleWatchStarted` guard immediately blocked any restart, killing the
-  // watcher for good). Now this effect only ever arms once (guarded below)
-  // and stashes a cancel() for the poll in a ref; the poll's actual lifetime
-  // is owned by the mount-scoped effect further down, whose cleanup fires
-  // ONLY on unmount.
-  useEffect(() => {
-    if (titleWatchStarted.current) return;
-    if (initialMessages.length > 1) return;
-    if (messages.length < 2 || status !== "ready") return;
-    titleWatchStarted.current = true;
-
-    // What the rail/home are currently showing for this conversation (from
-    // the server render before this exchange). A fast rename can land before
-    // this effect even gets to run its own baseline fetch below — in that
-    // case the "baseline" would already be the new title and would never
-    // appear to change on its own, so this is the reference a real change
-    // must diverge from. Read via the ref, not the `conversations` prop
-    // directly: this effect intentionally does NOT depend on `conversations`
-    // (see below), so the prop binding here would otherwise be stale.
-    const displayedTitle = conversationsRef.current.find(
-      (c) => c.id === conversationId,
-    )?.title;
-
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    titleWatchControllerRef.current = {
-      cancel: () => {
-        cancelled = true;
-        if (timer) clearTimeout(timer);
-      },
-    };
-
-    async function currentTitle(): Promise<string | undefined> {
-      try {
-        const res = await fetch("/api/conversations");
-        if (!res.ok) return undefined;
-        const list = (await res.json()) as { id: string; title: string }[];
-        return list.find((c) => c.id === conversationId)?.title;
-      } catch {
-        return undefined;
-      }
-    }
-
-    function poll(baseline: string | undefined, attempt: number) {
-      timer = setTimeout(async () => {
-        if (cancelled) return;
-        const latest = await currentTitle();
-        if (cancelled) return;
-        if (latest !== undefined && latest !== baseline) {
-          router.refresh();
-          return;
-        }
-        if (attempt < 6) poll(baseline, attempt + 1);
-      }, 1500);
-    }
-
-    void (async () => {
-      const baseline = await currentTitle();
-      if (cancelled) return;
-      if (baseline !== undefined && baseline !== displayedTitle) {
-        router.refresh();
-        return;
-      }
-      poll(baseline, 1);
-    })();
-
-    // Deliberately no cleanup returned here — see the mount-scoped effect
-    // below, which owns cancellation instead.
-    // `conversations` is deliberately excluded from the deps below: the rail
-    // hands us a fresh array identity on every `router.refresh()` (including
-    // refreshes from unrelated rows — a drag, rename, or folder move
-    // elsewhere), which would re-run this effect on every such refresh. A
-    // re-run is now harmless (the `titleWatchStarted` guard just returns
-    // early), but there is still no reason to depend on a prop this effect
-    // never reads directly — read the latest value via `conversationsRef`
-    // instead (exhaustive-deps doesn't flag this: the ref read isn't a
-    // reactive dependency).
-  }, [initialMessages.length, messages.length, status, conversationId, router]);
-
-  // Owns the title poll's cancellation. Mount-scoped ([] deps) on purpose:
-  // this cleanup must run ONLY when ChatScreen actually unmounts (navigating
-  // away mid-poll) — never when the arming effect above re-runs. That split
-  // is the fix for the fast-follow-up-send bug described there: the poll's
-  // lifetime is no longer coupled to `messages.length`/`status` churn.
-  useEffect(() => {
-    return () => {
-      titleWatchControllerRef.current?.cancel();
-    };
-  }, []);
+  // Watch for the auto-title that lands server-side after this session's first
+  // exchange, then refresh once so the rail/home pick it up (see the hook).
+  useTitleWatcher({
+    conversationId,
+    conversations,
+    initialMessageCount: initialMessages.length,
+    messageCount: messages.length,
+    status,
+    refresh: router.refresh,
+  });
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
@@ -586,7 +461,7 @@ export function ChatScreen({
     // Reuse the failed attempt's key on an untouched retry (server dedupe onto
     // the one persisted row); any edit or fresh send mints a new key. The
     // unedited-vs-edited decision lives in one pure, unit-tested place.
-    clientMessageIdRef.current = resendMessageId(failedSendRef.current, draft);
+    clientMessageIdRef.current = resolveResendId(draft);
     sendMessage({ text: draft });
     setDraft("");
     if (textareaRef.current) {
