@@ -10,6 +10,7 @@ import { decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { errorCause, NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
+import { truncateToCodePoints } from "./text";
 
 const ATTENTION_EXCERPT_CODE_POINTS = 140;
 
@@ -185,11 +186,6 @@ export type AttentionItem = {
   kind: "crisis" | "flag";
   createdAt: Date;
 };
-
-export function truncateToCodePoints(text: string, max: number): string {
-  const codePoints = Array.from(text);
-  return codePoints.length <= max ? text : codePoints.slice(0, max).join("");
-}
 
 // Crisis-flagged and client-flagged messages across every GRANTED
 // conversation for this therapist — never a hint of an ungranted one. This
