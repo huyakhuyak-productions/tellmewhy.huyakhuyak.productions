@@ -3,9 +3,13 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
-import { simulateReadableStream } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
-import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
+import {
+  MOCK_FINISH_REASON,
+  MOCK_USAGE,
+  MockLanguageModelV3,
+  payloadCarryingFailureModel,
+  simulateReadableStream,
+} from "@/test/ai-fixtures";
 import { TITLE_MAX_OUTPUT_TOKENS } from "@/lib/title";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
@@ -270,15 +274,7 @@ describe("POST /api/chat", () => {
     // AI SDK errors carry the request body (the title prompt — message
     // plaintext) as enumerable own properties; the sentinel stands in for it.
     const sentinel = "SENTINEL_PLAINTEXT";
-    vi.mocked(getTitleModel).mockReturnValueOnce(
-      new MockLanguageModelV3({
-        doGenerate: async () => {
-          const error = new Error("Bad Request");
-          Object.assign(error, { requestBodyValues: { prompt: sentinel }, responseBody: sentinel });
-          throw error;
-        },
-      }),
-    );
+    vi.mocked(getTitleModel).mockReturnValueOnce(payloadCarryingFailureModel(sentinel));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));

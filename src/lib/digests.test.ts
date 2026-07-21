@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { eq } from "drizzle-orm";
-import type { LanguageModel } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { digests, messages } from "@/db/schema";
-import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
+import {
+  MOCK_FINISH_REASON,
+  MOCK_USAGE,
+  MockLanguageModelV3,
+  mockObjectModel,
+  payloadCarryingFailureModel,
+  throwingModel,
+} from "@/test/ai-fixtures";
 import { createConversation, saveMessage, setActiveLeaf } from "./conversations";
 import { CryptoError, decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
@@ -22,42 +27,13 @@ import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 // or failing model, or read the prompt the model actually received.
 vi.mock("./ai/models", { spy: true });
 
-function digestModelReturning(body: unknown): LanguageModel {
-  return new MockLanguageModelV3({
-    doGenerate: async () => ({
-      finishReason: MOCK_FINISH_REASON,
-      usage: MOCK_USAGE,
-      content: [{ type: "text", text: JSON.stringify(body) }],
-      warnings: [],
-    }),
-  });
-}
+// Fixed digest body serialized as the model's single text part (see
+// mockObjectModel), for the anchor-filtering and CAS tests below.
+const digestModelReturning = mockObjectModel;
 
-function throwingDigestModel(): LanguageModel {
-  return new MockLanguageModelV3({
-    doGenerate: async () => {
-      throw new Error("model boom");
-    },
-  });
-}
-
-// AI SDK errors (APICallError, NoObjectGeneratedError) carry the request
-// body / generated text as enumerable own properties — exactly the shape a
-// real OpenRouter failure would have. The sentinel stands in for decrypted
-// client plaintext embedded in the prompt.
-function payloadCarryingFailureModel(sentinel: string): LanguageModel {
-  return new MockLanguageModelV3({
-    doGenerate: async () => {
-      const error = new Error("Bad Request");
-      Object.assign(error, {
-        requestBodyValues: { prompt: sentinel },
-        text: sentinel,
-        responseBody: sentinel,
-      });
-      throw error;
-    },
-  });
-}
+// `throwingModel` supplies the provider-down failure the digest fallback tests
+// need; a distinct message keeps the intent legible in the trace.
+const throwingDigestModel = () => throwingModel("model boom");
 
 function lastDigestPrompt(): string {
   const results = vi.mocked(getDigestModel).mock.results;

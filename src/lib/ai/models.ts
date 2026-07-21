@@ -1,7 +1,6 @@
 import { createOpenRouter, type OpenRouterChatSettings } from "@openrouter/ai-sdk-provider";
-import { simulateReadableStream, type LanguageModel } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
-import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
+import type { LanguageModel } from "ai";
+import { MOCK_FINISH_REASON, MOCK_USAGE, MockLanguageModelV3, simulateReadableStream } from "@/test/ai-fixtures";
 
 // A misconfigured production deploy must never serve canned empathy instead
 // of a real model — fail loudly at import time rather than silently mocking.

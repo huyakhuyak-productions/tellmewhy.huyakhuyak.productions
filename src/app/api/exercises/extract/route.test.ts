@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
-import { MockLanguageModelV3 } from "ai/test";
+import { payloadCarryingFailureModel } from "@/test/ai-fixtures";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { exerciseEntries } from "@/db/schema";
@@ -100,17 +100,9 @@ describe("POST /api/exercises/extract", () => {
     const sentinel = "SENTINEL_TRANSCRIPT_PLAINTEXT";
     await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: sentinel });
 
-    vi.mocked(getExtractorModel).mockReturnValueOnce(
-      new MockLanguageModelV3({
-        doGenerate: async () => {
-          const error = new Error("Bad Gateway");
-          // AI SDK errors carry the request body (the transcript) as enumerable
-          // own properties — the sentinel stands in for it.
-          Object.assign(error, { requestBodyValues: { prompt: sentinel }, responseBody: sentinel });
-          throw error;
-        },
-      }),
-    );
+    // AI SDK errors carry the request body (the transcript) as enumerable own
+    // properties — the sentinel stands in for it.
+    vi.mocked(getExtractorModel).mockReturnValueOnce(payloadCarryingFailureModel(sentinel, "Bad Gateway"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await POST(extractRequest({ conversationId: id }));

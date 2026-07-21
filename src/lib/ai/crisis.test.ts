@@ -1,8 +1,14 @@
 import { inspect } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { MockLanguageModelV3 } from "ai/test";
 import { assessRisk, RISK_MAX_OUTPUT_TOKENS, screenText } from "./crisis";
-import { MOCK_FINISH_REASON, MOCK_USAGE, mockClassifier } from "@/test/ai-fixtures";
+import {
+  MOCK_FINISH_REASON,
+  MOCK_USAGE,
+  MockLanguageModelV3,
+  mockClassifier,
+  payloadCarryingFailureModel,
+  throwingModel,
+} from "@/test/ai-fixtures";
 
 describe("screenText", () => {
   it.each([
@@ -35,11 +41,7 @@ describe("assessRisk", () => {
   });
 
   it("falls back to the regex result when the model fails", async () => {
-    const broken = new MockLanguageModelV3({
-      doGenerate: async () => {
-        throw new Error("provider down");
-      },
-    });
+    const broken = throwingModel();
     // Each failing call now logs (by design, tested below) — keep it off stderr.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -51,11 +53,7 @@ describe("assessRisk", () => {
   });
 
   it("logs when the model fails, so a dead classifier is never silent", async () => {
-    const broken = new MockLanguageModelV3({
-      doGenerate: async () => {
-        throw new Error("provider down");
-      },
-    });
+    const broken = throwingModel();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await assessRisk("rough week", broken);
@@ -67,15 +65,9 @@ describe("assessRisk", () => {
 
   it("never logs the message plaintext carried on a classifier error", async () => {
     const sentinel = "SENTINEL_PLAINTEXT";
-    const broken = new MockLanguageModelV3({
-      doGenerate: async () => {
-        // AI SDK errors carry the request body (the classified message itself)
-        // as enumerable own properties; the sentinel stands in for it.
-        const error = new Error("Bad Request");
-        Object.assign(error, { requestBodyValues: { prompt: sentinel }, responseBody: sentinel });
-        throw error;
-      },
-    });
+    // AI SDK errors carry the request body (the classified message itself) as
+    // enumerable own properties; the sentinel stands in for it.
+    const broken = payloadCarryingFailureModel(sentinel);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await assessRisk(sentinel, broken);

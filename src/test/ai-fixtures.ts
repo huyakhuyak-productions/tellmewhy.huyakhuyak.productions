@@ -6,9 +6,14 @@ import { z } from "zod";
 // `MockLanguageModelV3` (not `MockLanguageModelV2`), and its
 // `LanguageModelV3GenerateResult` / stream `finish` part require nested
 // `finishReason: { unified, raw }` and nested `usage: { inputTokens: {...},
-// outputTokens: {...} }` shapes instead of the v5-era flat shapes. Shared here
-// so src/lib/ai/models.ts, crisis.test.ts, and models.test.ts don't each
-// redeclare the same v6 mock scaffolding.
+// outputTokens: {...} }` shapes instead of the v5-era flat shapes. This module
+// is the single home for that v6 mock scaffolding — every caller (models.ts,
+// crisis.test.ts, digests.test.ts, chat/route.test.ts, extract/route.test.ts)
+// imports the class, the finish/usage constants, and the shared model factories
+// from here instead of re-reaching into `ai/test` (or re-declaring the shapes).
+export { MockLanguageModelV3 } from "ai/test";
+export { simulateReadableStream } from "ai";
+
 export const MOCK_FINISH_REASON = { unified: "stop", raw: "stop" } as const;
 export const MOCK_USAGE = {
   inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
@@ -17,7 +22,8 @@ export const MOCK_USAGE = {
 
 export const riskSchema = z.object({ risk: z.enum(["none", "elevated", "crisis"]) });
 
-// A classifier mock that always answers with a fixed reply, regardless of prompt.
+// A model whose `doGenerate` answers with a fixed text reply, regardless of the
+// prompt — the workhorse behind the classifier and object-generation mocks.
 export function mockClassifier(reply: string): LanguageModel {
   return new MockLanguageModelV3({
     doGenerate: async () => ({
@@ -26,5 +32,40 @@ export function mockClassifier(reply: string): LanguageModel {
       content: [{ type: "text", text: reply }],
       warnings: [],
     }),
+  });
+}
+
+// A model whose `doGenerate` returns a fixed object serialized as its single
+// text part — the shape structured-output callers (digest, extractor) parse.
+export function mockObjectModel(body: unknown): LanguageModel {
+  return mockClassifier(JSON.stringify(body));
+}
+
+// A model whose `doGenerate` rejects — the provider-down / generation-failure
+// path. Default message stands in for any plain transport error.
+export function throwingModel(message = "provider down"): LanguageModel {
+  return new MockLanguageModelV3({
+    doGenerate: async () => {
+      throw new Error(message);
+    },
+  });
+}
+
+// A model whose `doGenerate` throws an AI-SDK-shaped error that carries the
+// request body / generated text as enumerable own properties — exactly how a
+// real OpenRouter failure (APICallError, NoObjectGeneratedError) leaks the
+// decrypted prompt. `sentinel` stands in for that client plaintext, so the
+// leak-prevention tests can assert it never reaches a log.
+export function payloadCarryingFailureModel(sentinel: string, message = "Bad Request"): LanguageModel {
+  return new MockLanguageModelV3({
+    doGenerate: async () => {
+      const error = new Error(message);
+      Object.assign(error, {
+        requestBodyValues: { prompt: sentinel },
+        text: sentinel,
+        responseBody: sentinel,
+      });
+      throw error;
+    },
   });
 }
