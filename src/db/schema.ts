@@ -13,6 +13,7 @@ import {
   uuid,
   boolean,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
 
 export const senderEnum = pgEnum("sender", ["client", "ai", "therapist", "system"]);
 export const riskLevelEnum = pgEnum("risk_level", ["none", "elevated", "crisis"]);
@@ -23,6 +24,12 @@ export const exerciseStatusEnum = pgEnum("exercise_status", ["active", "closed"]
 // shredded_at — the row becomes a tombstone that permanently blocks
 // re-creating a key for this user (see user-keys.ts). The tombstone, not
 // row deletion, is the crypto-shred.
+//
+// Deliberately NO FK to user.id (unlike every other user-owned table, which
+// cascades): account-deletion.ts writes this tombstone in the SAME transaction
+// that deletes the user row (shredUserKey then delete(user)). An ON DELETE
+// cascade would erase the tombstone the moment the user row goes — destroying
+// the very proof the shred exists. The tombstone must outlive the user.
 export const userKeys = pgTable("user_keys", {
   userId: text("user_id").primaryKey(),
   wrappedDek: text("wrapped_dek"),
@@ -36,7 +43,7 @@ export const folders = pgTable(
   "folders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     nameCiphertext: text("name_ciphertext").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -47,11 +54,7 @@ export const conversations = pgTable(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Intentionally no FK to `user.id`: existing rows include orphaned
-    // smoke-test user ids not present in the `user` table, so a FK add
-    // fails against real data (verified against the dev database).
-    // Indexed for lookup performance regardless.
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     titleCiphertext: text("title_ciphertext").notNull(),
     // null = unsorted. Deleting a folder unsorts its conversations.
     folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
@@ -200,7 +203,7 @@ export const auditEvents = pgTable("audit_events", {
 // client's DEK. A repeat check-in on the same day updates the row.
 export const moodCheckins = pgTable("mood_checkins", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   day: date("day").notNull(),
   payloadCiphertext: text("payload_ciphertext").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -224,7 +227,7 @@ export const digests = pgTable("digests", {
 export const exercises = pgTable("exercises", {
   id: uuid("id").primaryKey().defaultRandom(),
   linkId: uuid("link_id").notNull().references(() => therapistLinks.id, { onDelete: "cascade" }),
-  clientId: text("client_id").notNull(),
+  clientId: text("client_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   type: exerciseTypeEnum("type").notNull(),
   instructionCiphertext: text("instruction_ciphertext").notNull(),
   status: exerciseStatusEnum("status").notNull().default("active"),
@@ -235,7 +238,7 @@ export const exercises = pgTable("exercises", {
 // = private forever unless the client shares this one entry.
 export const exerciseEntries = pgTable("exercise_entries", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
   exerciseId: uuid("exercise_id").references(() => exercises.id, { onDelete: "set null" }),
   payloadCiphertext: text("payload_ciphertext").notNull(),
   sharedAt: timestamp("shared_at"),
@@ -250,13 +253,13 @@ export const exerciseEntries = pgTable("exercise_entries", {
 // therapist path by design: this is the one content type nobody else can
 // ever read. source_message_id records provenance for a line kept from
 // chat (null = written by hand) and survives message deletion via set-null.
-// user_id carries no FK, like every user-id column here (see conversations);
-// deletion is crypto-shredding, which turns orphaned rows into noise.
+// user_id cascades on user deletion; deletion is crypto-shredding, and the
+// FK is the backstop that guarantees no owned row outlives the user.
 export const selfNotes = pgTable(
   "self_notes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     bodyCiphertext: text("body_ciphertext").notNull(),
     sourceMessageId: uuid("source_message_id").references(() => messages.id, {
       onDelete: "set null",
