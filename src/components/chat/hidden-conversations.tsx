@@ -87,7 +87,10 @@ export function HiddenConversations({
         className="grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
       >
-        <div className="min-h-0 overflow-hidden">
+        {/* The 0fr collapse hides the rows visually but leaves them tabbable;
+            `inert` takes them out of the tab order (and off the a11y tree)
+            until the drawer is opened. */}
+        <div inert={collapsed} className="min-h-0 overflow-hidden">
           {conversations.map((c) => (
             <div key={c.id}>
               <div className="group/hidden relative flex items-center">

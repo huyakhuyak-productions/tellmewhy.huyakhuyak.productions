@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
 
 export type CardFolder = { id: string; name: string };
@@ -37,13 +38,19 @@ export function CardMenu({
   const [draft, setDraft] = useState(title);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const keepItRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // When the confirm takes over the card, land focus on "Keep it" (the safe
   // action) so a keyboard user never fires "Hide it" by reflex.
-  useEffect(() => {
-    if (confirmingHide) keepItRef.current?.focus();
-  }, [confirmingHide]);
+  const keepItRef = useConfirmFocus<HTMLButtonElement>(confirmingHide);
+
+  // Dismissing the confirm (Keep it / Escape) unmounts the whole confirm card;
+  // hand focus back to the actions trigger it opened from so it never drops to
+  // <body> and a keyboard user stays where they were.
+  function dismissConfirm() {
+    setConfirmingHide(false);
+    focusAfterDestructive(triggerRef);
+  }
 
   // Escape dismisses the open menu whether it was reached by touch or keyboard.
   useEffect(() => {
@@ -170,6 +177,12 @@ export function CardMenu({
       <div
         role="dialog"
         aria-label="Hide conversation?"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            dismissConfirm();
+          }
+        }}
         className="absolute inset-0 z-40 flex flex-col justify-center gap-3 rounded-[18px] border border-accent/40 bg-card p-[18px] shadow-sm"
       >
         <p className="text-pretty font-serif text-[0.9rem] italic leading-relaxed text-muted-foreground">
@@ -188,7 +201,7 @@ export function CardMenu({
           <button
             ref={keepItRef}
             type="button"
-            onClick={() => setConfirmingHide(false)}
+            onClick={dismissConfirm}
             disabled={busy}
             className="rounded-lg px-3 py-2 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
           >
@@ -207,6 +220,7 @@ export function CardMenu({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         aria-label="Conversation actions"
         aria-haspopup="menu"

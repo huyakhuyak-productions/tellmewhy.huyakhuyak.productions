@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
 import { relativeTime } from "@/lib/relative-time";
 import { setConversationDragData, useConversationDropTarget } from "@/lib/dnd";
 import { shareConversation, stopSharingConversation } from "@/lib/sharing-client";
@@ -416,7 +417,10 @@ function FolderGroup({
         className="grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         style={{ gridTemplateRows: collapsed ? "0fr" : "1fr" }}
       >
-        <div className="min-h-0 overflow-hidden">
+        {/* The 0fr collapse hides the rows visually but leaves them tabbable;
+            `inert` takes a collapsed group's rows out of the tab order (and off
+            the a11y tree) until it reopens. */}
+        <div inert={collapsed} className="min-h-0 overflow-hidden">
           {items.length === 0 ? (
             <p className="px-3 py-1.5 font-serif text-[12px] italic text-muted-foreground/60">
               Nothing here yet.
@@ -491,7 +495,7 @@ function ConversationRow({
   // The row lives inside the folder accordion's overflow-hidden clip, so the
   // menu is positioned `fixed` off the trigger's rect to escape that clip.
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const keepItRef = useRef<HTMLButtonElement>(null);
+  const hideItemRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
   const [renameMode, setRenameMode] = useState(false);
   const [draft, setDraft] = useState(item.title);
@@ -504,9 +508,14 @@ function ConversationRow({
 
   // When the confirm takes over the popover, land focus on "Keep it" (the safe
   // action) so a keyboard user never fires "Hide it" by reflex.
-  useEffect(() => {
-    if (confirmingHide) keepItRef.current?.focus();
-  }, [confirmingHide]);
+  const keepItRef = useConfirmFocus<HTMLButtonElement>(confirmingHide);
+
+  // Dismissing the confirm swaps the popover back to the action list; hand focus
+  // to the "Hide" item it opened from so focus never drops to <body>.
+  function dismissConfirm() {
+    setConfirmingHide(false);
+    focusAfterDestructive(hideItemRef);
+  }
 
   // Escape dismisses the open menu whether it was reached by mouse or keyboard —
   // a single listener covers both the Move list and the Rename entry. Scrolling
@@ -516,7 +525,12 @@ function ConversationRow({
   useEffect(() => {
     if (!menuOpen) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenu(null);
+      // Escape closes the whole menu (confirm included) and hands focus back to
+      // the row's trigger so it never drops to <body>.
+      if (e.key === "Escape") {
+        setMenu(null);
+        focusAfterDestructive(triggerRef);
+      }
     }
     function onScroll() {
       setMenu(null);
@@ -686,7 +700,7 @@ function ConversationRow({
                     <button
                       ref={keepItRef}
                       type="button"
-                      onClick={() => setConfirmingHide(false)}
+                      onClick={dismissConfirm}
                       className="rounded-lg px-3 py-1.5 text-[12.5px] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
                     >
                       Keep it
@@ -749,6 +763,7 @@ function ConversationRow({
                   </button>
                   <div role="separator" className="mx-1 my-1 h-px bg-border/60" />
                   <button
+                    ref={hideItemRef}
                     type="button"
                     role="menuitem"
                     onClick={() => setConfirmingHide(true)}
