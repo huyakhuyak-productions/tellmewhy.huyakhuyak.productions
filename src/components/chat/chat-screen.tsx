@@ -779,6 +779,7 @@ export function ChatScreen({
           <ThoughtRecordAffordance
             conversationId={conversationId}
             canExtract={messages.length >= 2}
+            draftEmpty={draft.trim().length === 0}
             onSeed={seedComposer}
           />
           <div className="mx-auto flex w-full max-w-[760px] items-end gap-2">

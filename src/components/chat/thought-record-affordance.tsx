@@ -20,11 +20,14 @@ const WALK_THROUGH_LINE = "Can you walk me through a thought record?";
 export function ThoughtRecordAffordance({
   conversationId,
   canExtract,
+  draftEmpty,
   onSeed,
 }: {
   conversationId: string;
   /** True once there's an exchange worth extracting a record from. */
   canExtract: boolean;
+  /** Whether the composer is currently empty — re-arms the walk-through latch. */
+  draftEmpty: boolean;
   /** Drop the fixed walk-through line into the composer and focus it. */
   onSeed: (text: string) => void;
 }) {
@@ -41,6 +44,15 @@ export function ThoughtRecordAffordance({
   useEffect(() => {
     seededRef.current = false;
   }, [conversationId]);
+
+  // And re-arm whenever the composer empties again: seeding fills it (so the
+  // double-tap right after stays latched — the composer is non-empty), but once
+  // the person sends or clears that line the walk-through is worth offering
+  // afresh. Deps on `draftEmpty` alone so a re-render that doesn't change it
+  // (e.g. mid-typing) never re-arms out from under a just-seeded line.
+  useEffect(() => {
+    if (draftEmpty) seededRef.current = false;
+  }, [draftEmpty]);
 
   function seedWalkThrough() {
     if (seededRef.current) return;

@@ -274,7 +274,10 @@ function AssignmentCard({
           <button
             type="button"
             onClick={() => void handleClose()}
-            disabled={closing}
+            // Held while THIS card closes and while ANY other card's close is in
+            // flight — the panel serializes closes one at a time, so a second
+            // close can't race the first.
+            disabled={closing || busy}
             aria-label="Close this assignment"
             className="rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium text-muted-foreground outline-none transition-[color,background-color] duration-150 hover:bg-accent/10 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
           >
