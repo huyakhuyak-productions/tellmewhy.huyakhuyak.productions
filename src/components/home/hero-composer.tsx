@@ -39,7 +39,7 @@ export function HeroComposer() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent) {
     e.preventDefault();
     const text = draft.trim();
     if (!text || pending) return;

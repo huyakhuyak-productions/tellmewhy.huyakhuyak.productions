@@ -131,7 +131,7 @@ function ChangePasswordSection() {
     if (done) doneHeadingRef.current?.focus();
   }, [done]);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     if (pending) return;
     if (next.length < MIN_PASSWORD) {
@@ -270,7 +270,7 @@ function DeleteAccountSection() {
     setError(null);
   }
 
-  function toConfirm(e: React.FormEvent) {
+  function toConfirm(e: React.SubmitEvent) {
     e.preventDefault();
     if (password.length === 0) return;
     setError(null);

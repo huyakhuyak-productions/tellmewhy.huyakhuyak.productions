@@ -97,7 +97,7 @@ export function CardMenu({
     setRenaming(true);
   }
 
-  async function submitRename(e: React.FormEvent) {
+  async function submitRename(e: React.SubmitEvent) {
     e.preventDefault();
     const next = draft.trim();
     if (!next || busy) return;

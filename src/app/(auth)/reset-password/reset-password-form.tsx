@@ -22,7 +22,7 @@ export function ResetPasswordForm({ token }: { token?: string }) {
     if (done) doneHeadingRef.current?.focus();
   }, [done]);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     if (!token) return;
     setPending(true);

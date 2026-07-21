@@ -20,7 +20,7 @@ export function ForgotPasswordForm() {
     if (sent) sentHeadingRef.current?.focus();
   }, [sent]);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     setPending(true);
     // Fire the request and move on regardless of the result — we intentionally

@@ -161,7 +161,7 @@ export function ConversationRail({
     }
   }
 
-  async function submitFolder(e: React.FormEvent) {
+  async function submitFolder(e: React.SubmitEvent) {
     e.preventDefault();
     const name = newName.trim();
     if (!name || busy) return;
@@ -563,7 +563,7 @@ function ConversationRow({
     setRenameMode(true);
   }
 
-  async function submitRename(e: React.FormEvent) {
+  async function submitRename(e: React.SubmitEvent) {
     e.preventDefault();
     const title = draft.trim();
     if (!title || renaming) return;

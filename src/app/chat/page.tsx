@@ -10,6 +10,7 @@ import { listGrantsForClient } from "@/lib/sharing";
 import { listMoodCheckins } from "@/lib/mood";
 import { moodTodayUTC } from "@/lib/mood-sparkline";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
+import { withRequestScope } from "@/lib/request-scope";
 import { HeroComposer } from "@/components/home/hero-composer";
 import { MoodCheckin } from "@/components/chat/mood-checkin";
 import { AssignmentCards } from "@/components/home/assignment-cards";
@@ -20,17 +21,22 @@ export default async function HomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
 
+  // Scope the whole home fetch so the reader's DEK is unwrapped once for every
+  // decrypting read below (titles, folder names, mood, homework) instead of
+  // per-call — and never held past this request (see request-scope.ts).
   const [conversations, hiddenConversations, folders, grantIds, activeLink, recentMood, exercises] =
-    await Promise.all([
-      listConversations(session.user.id),
-      listHiddenConversations(session.user.id),
-      listFolders(session.user.id),
-      listGrantsForClient(session.user.id),
-      getActiveLinkForClient(session.user.id),
-      // Just enough to know today's check-in (if any) so the row opens pre-set.
-      listMoodCheckins(session.user.id, 1),
-      listExercisesForClient(session.user.id),
-    ]);
+    await withRequestScope(() =>
+      Promise.all([
+        listConversations(session.user.id),
+        listHiddenConversations(session.user.id),
+        listFolders(session.user.id),
+        listGrantsForClient(session.user.id),
+        getActiveLinkForClient(session.user.id),
+        // Just enough to know today's check-in (if any) so the row opens pre-set.
+        listMoodCheckins(session.user.id, 1),
+        listExercisesForClient(session.user.id),
+      ]),
+    );
 
   const today = moodTodayUTC();
   const todayCheckin = recentMood.find((c) => c.day === today) ?? null;

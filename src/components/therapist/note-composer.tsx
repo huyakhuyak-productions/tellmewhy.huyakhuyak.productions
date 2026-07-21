@@ -56,7 +56,7 @@ export function NoteComposer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent) {
     e.preventDefault();
     const text = body.trim();
     if (!text || busy) return;

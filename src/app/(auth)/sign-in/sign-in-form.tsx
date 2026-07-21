@@ -20,7 +20,7 @@ export function SignInForm({ next }: { next?: string }) {
   const destination = next ?? "/chat";
   const signUpHref = next ? `/sign-up?next=${encodeURIComponent(next)}` : "/sign-up";
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     setPending(true);
     setError(null);

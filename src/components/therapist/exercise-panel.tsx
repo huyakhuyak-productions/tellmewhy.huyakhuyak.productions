@@ -43,7 +43,7 @@ export function ExercisePanel({
   const [closedOverride, setClosedOverride] = useState<Set<string>>(new Set());
   const [closingId, setClosingId] = useState<string | null>(null);
 
-  async function assign(e: React.FormEvent) {
+  async function assign(e: React.SubmitEvent) {
     e.preventDefault();
     const text = instruction.trim();
     if (!text || assigning) return;

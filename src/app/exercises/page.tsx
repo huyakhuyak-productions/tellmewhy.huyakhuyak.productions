@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { listEntriesForClient, listExercisesForClient } from "@/lib/exercises";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
+import { withRequestScope } from "@/lib/request-scope";
 import { ExercisesScreen } from "@/components/exercises/exercises-screen";
 
 // The client's thought-record home: their therapist's active assignments, the
@@ -24,12 +25,17 @@ export default async function ExercisesPage({
   if (!session) redirect("/sign-in?next=/exercises");
   const userId = session.user.id;
 
-  const [{ start }, exercises, entries, activeLink] = await Promise.all([
-    searchParams,
-    listExercisesForClient(userId),
-    listEntriesForClient(userId),
-    getActiveLinkForClient(userId),
-  ]);
+  // Both listExercisesForClient and listEntriesForClient decrypt with the same
+  // DEK — one request scope collapses their two unwraps into one, and never
+  // outlives this request (see request-scope.ts).
+  const [{ start }, exercises, entries, activeLink] = await withRequestScope(() =>
+    Promise.all([
+      searchParams,
+      listExercisesForClient(userId),
+      listEntriesForClient(userId),
+      getActiveLinkForClient(userId),
+    ]),
+  );
 
   // Actionable homework = status active AND its link still live. Therapist
   // steering dies with the relationship, so once the link is revoked the ask

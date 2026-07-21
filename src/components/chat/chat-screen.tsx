@@ -474,7 +474,7 @@ export function ChatScreen({
     }
   }
 
-  function onSend(e: React.FormEvent) {
+  function onSend(e: React.SubmitEvent) {
     e.preventDefault();
     submit();
   }

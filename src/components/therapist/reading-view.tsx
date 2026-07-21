@@ -258,7 +258,7 @@ export function ReadingView({
     }
   }
 
-  async function send(e: React.FormEvent) {
+  async function send(e: React.SubmitEvent) {
     e.preventDefault();
     const text = body.trim();
     if (!text || sending) return;
