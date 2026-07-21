@@ -451,6 +451,14 @@ describe("exercise entries — private until each is shared", () => {
       expect(events).toHaveLength(1);
       expect(events[0].actorId).toBe(therapistId);
       expect(events[0].therapistId).toBe(therapistId);
+      // Symmetry with the entry-content-absence guard on listAssignments: the
+      // entry_viewed row records THAT the entry was read (ids + subject + action)
+      // but never a syllable of WHAT was in it.
+      const serialized = JSON.stringify(events);
+      expect(serialized).not.toContain(SAMPLE.situation);
+      expect(serialized).not.toContain(SAMPLE.thoughts);
+      expect(serialized).not.toContain(SAMPLE.emotions);
+      expect(serialized).not.toContain(SAMPLE.behavior);
     });
 
     it("reading two different shared entries writes two entry_viewed lines", async () => {

@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { deleteAccount } from "./account-deletion";
 import { hashPassword } from "./password";
 import { ValidationError, NotFoundError } from "./errors";
+import * as userKeysModule from "@/lib/crypto/user-keys";
 import { getOrCreateUserDek, KeyShreddedError } from "@/lib/crypto/user-keys";
 import { decryptText, encryptText } from "@/lib/crypto/envelope";
 import { db } from "@/db";
@@ -69,6 +70,38 @@ describe("deleteAccount", () => {
     await db.insert(notes).values({
       linkId, kind: "private", bodyCiphertext: encryptText(therapistDek, "my note"),
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("surfaces a retriable KeyShreddedError when the partner's key is tombstoned mid-snapshot (mutual-deletion race)", async () => {
+    // The mutual-deletion race: this survivor has already filtered the active
+    // link into `partnered`, but before its snapshot seals the departing name
+    // under the partner's DEK, the partner's OWN concurrent deletion tombstones
+    // that key. We land the race exactly at the seam the code exposes — the
+    // getOrCreateUserDek(partner) call inside the snapshot step — by shredding
+    // the partner's key at the moment it's fetched, then delegating to the real
+    // fetch, which now hits the tombstone.
+    const realGet = userKeysModule.getOrCreateUserDek;
+    vi.spyOn(userKeysModule, "getOrCreateUserDek").mockImplementation(async (uid: string) => {
+      if (uid === therapistId) await userKeysModule.shredUserKey(therapistId);
+      return realGet(uid);
+    });
+
+    // The error must propagate UNCAUGHT — nothing absorbs it into a fresh key.
+    await expect(deleteAccount(clientId, password)).rejects.toBeInstanceOf(KeyShreddedError);
+
+    // Self-healing 500: the throw happened before the transaction, so the
+    // survivor's account and data are fully intact and the link is untouched —
+    // a retry (by when the partner's deletion has revoked the link, filtering it
+    // out) goes through cleanly.
+    expect(await db.select().from(user).where(eq(user.id, clientId))).toHaveLength(1);
+    expect(await db.select().from(conversations).where(eq(conversations.userId, clientId))).toHaveLength(1);
+    const [link] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(link.status).toBe("active");
+    expect(link.departedAt).toBeNull();
   });
 
   it("rejects a wrong password and deletes nothing", async () => {
