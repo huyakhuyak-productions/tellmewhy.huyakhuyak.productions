@@ -79,7 +79,11 @@ async function handlePost(req: Request): Promise<Response> {
       // Ownership is checked inside loadMessageTree — a foreign conversation
       // and a foreign/unknown message id answer the same uniform 404.
       const tree = await loadMessageTree(conversationId, userId);
-      const target = tree.messages.find((m) => m.id === regenerateOf);
+      // Validate the target off the RAW node, never the decrypted list: sender
+      // and parentId are plaintext columns, so an AI reply whose BODY failed to
+      // decrypt (and is therefore absent from `tree.messages`) is still a valid,
+      // regenerable target.
+      const target = tree.nodes.find((n) => n.id === regenerateOf);
       // Only an AI reply can be regenerated, and a root AI message cannot
       // exist (every reply answers some client turn) — a missing, non-AI, or
       // parentless target is indistinguishable from "not found".
@@ -87,8 +91,10 @@ async function handlePost(req: Request): Promise<Response> {
         throw new NotFoundError("Message not found");
       }
       // The context is exactly the chain that produced the original reply:
-      // root → the client message it answered (the target's parent).
-      const chainIds = resolveActivePath(tree.messages, target.parentId);
+      // root → the client message it answered (the target's parent). Resolve it
+      // over the raw nodes so a corrupt mid-chain body can't sever the ancestors
+      // above it — only that one body is skipped when the chain is decrypted.
+      const chainIds = resolveActivePath(tree.nodes, target.parentId);
       const byId = new Map(tree.messages.map((m) => [m.id, m]));
       history = chainIds.flatMap((id) => {
         const m = byId.get(id);

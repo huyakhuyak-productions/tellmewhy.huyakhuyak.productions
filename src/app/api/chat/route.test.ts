@@ -1092,6 +1092,52 @@ describe("POST /api/chat", () => {
       await res.text();
     });
 
+    it("regenerate keeps the full context when a mid-chain reply won't decrypt", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Corrupt mid-chain regenerate");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "tell me why" });
+      await postAndAwaitReply(clientId, { conversationId: id, text: "second question" });
+      const [m1, r1, m2, r2] = await loadMessages(id, clientId);
+      expect([m1.sender, r1.sender, m2.sender, r2.sender]).toEqual(["client", "ai", "client", "ai"]);
+
+      // Corrupt the mid-chain AI reply between the first client turn and the turn
+      // being regenerated. It drops out of the decrypted tree, but the ancestor
+      // above it (the root "tell me why") must still reach the model — the
+      // context math runs over the RAW nodes, so the chain isn't severed.
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, r1.id));
+
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, regenerateOf: r2.id }));
+      expect(res.status).toBe(200);
+      await res.text();
+
+      const promptJson = JSON.stringify(lastChatPrompt());
+      expect(promptJson).toContain("tell me why");
+      expect(promptJson).toContain("second question");
+    });
+
+    it("regenerates an AI reply whose own body won't decrypt", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Corrupt target regenerate");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "tell me why" });
+      const [m1, r1] = await loadMessages(id, clientId);
+      expect(r1.sender).toBe("ai");
+
+      // Corrupt the AI reply we are about to regenerate. Its body is unreadable,
+      // but sender/parentId live on the raw row — so target validation reads them
+      // off the node, the reply stays regenerable, and a fresh sibling grows
+      // under the same client turn.
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, r1.id));
+
+      const tree = await postAndAwaitReply(clientId, { conversationId: id, regenerateOf: r1.id });
+      const aiSiblings = tree.messages.filter((m) => m.parentId === m1.id && m.sender === "ai");
+      // The corrupt original is gone from the decrypted list; only the fresh
+      // sibling remains, and the leaf now points at it.
+      expect(aiSiblings.map((m) => m.id)).not.toContain(r1.id);
+      expect(aiSiblings).toHaveLength(1);
+      expect(tree.activeLeafId).toBe(aiSiblings[0]!.id);
+    });
+
     it("regenerating a normal turn stays none — no crisis addendum, header none", async () => {
       const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Normal regenerate");

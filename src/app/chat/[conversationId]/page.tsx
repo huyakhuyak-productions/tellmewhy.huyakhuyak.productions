@@ -46,9 +46,12 @@ export default async function ConversationPage({
   }
 
   // Resolve the single root-to-leaf chain the client currently sees. The pure
-  // tree math runs over id/parentId/createdAt only; the messages themselves are
-  // already decrypted. Everything the screen renders is keyed off this path.
-  const nodes = tree.messages.map((m) => ({ id: m.id, parentId: m.parentId, createdAt: m.createdAt }));
+  // tree math runs over the RAW nodes (id/parentId/createdAt plaintext columns),
+  // NOT the decrypted messages — a mid-chain body that failed to decrypt drops
+  // out of `tree.messages`, and resolving the path over that list would orphan
+  // every ancestor above it. Decrypted messages feed display only, keyed off
+  // this path; a path member with no readable body is simply omitted from view.
+  const nodes = tree.nodes;
   const pathIds = resolveActivePath(nodes, tree.activeLeafId);
   const messageById = new Map(tree.messages.map((m) => [m.id, m]));
   const pathMessages = pathIds.flatMap((id) => {
