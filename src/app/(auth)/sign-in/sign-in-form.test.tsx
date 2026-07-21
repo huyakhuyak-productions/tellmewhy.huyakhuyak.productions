@@ -58,6 +58,9 @@ describe("SignInForm", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("Invalid email or password");
+    // Unified error voice: the calm accent InlineError, never the old red alarm.
+    expect(alert.className).toContain("text-accent");
+    expect(alert.className).not.toContain("text-red");
 
     const button = screen.getByRole("button") as HTMLButtonElement;
     expect(button.disabled).toBe(false);

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { InlineError } from "@/components/ui/inline-error";
 
 // Mirrors minPasswordLength in @/lib/auth — a local literal so this client
 // component never imports the server auth module. The server is the real guard;
@@ -78,16 +79,6 @@ function Section({
   );
 }
 
-// A calm, quiet inline error — the app's room idiom (serif italic, accent),
-// never a red alarm.
-function InlineError({ message }: { message: string }) {
-  return (
-    <p role="alert" className="font-serif text-[12.5px] italic leading-relaxed text-accent">
-      {message}
-    </p>
-  );
-}
-
 // Leave this device. A plain hard-navigate home once the cookie is cleared —
 // the session may already be gone, so a failed signOut still walks to "/".
 function SignOutSection() {
@@ -156,7 +147,10 @@ function ChangePasswordSection() {
         revokeOtherSessions: true,
       });
       if (error) {
-        setError(error.message ?? "That didn't work — check your current password and try again.");
+        // Always the house line — never echo the raw server error.message. A
+        // verbatim server string can be noisy, shifting, or faintly enumerating;
+        // the transport-catch branch below already speaks in this same voice.
+        setError("That didn't work — check your current password and try again.");
         return;
       }
       setCurrent("");

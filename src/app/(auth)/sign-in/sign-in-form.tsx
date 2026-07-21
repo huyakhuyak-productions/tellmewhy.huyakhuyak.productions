@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { InlineError } from "@/components/ui/inline-error";
 
 // `next` is already sanitized to a same-origin path by the server page; it is
 // where we land after a successful sign-in (e.g. an invite the person arrived
@@ -80,11 +81,7 @@ export function SignInForm({ next }: { next?: string }) {
         >
           Forgot your password?
         </Link>
-        {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-            {error}
-          </p>
-        )}
+        {error ? <InlineError message={error} /> : null}
         <button
           className="mt-1 h-12 rounded-xl bg-accent font-medium text-accent-foreground shadow-sm outline-none transition-[transform,background-color,box-shadow] duration-150 hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/50 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-50"
           disabled={pending}
