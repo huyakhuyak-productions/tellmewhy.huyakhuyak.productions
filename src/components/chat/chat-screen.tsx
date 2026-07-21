@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { harvestFailedSend, mergeRestoredDraft, partsToText } from "@/lib/send-recovery";
+import { harvestFailedSend, mergeRestoredDraft, partsToText, resendMessageId } from "@/lib/send-recovery";
 import { buildChatRequestBody } from "@/lib/chat-request";
 import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
 import { MessageBubble } from "./message-bubble";
@@ -172,6 +172,9 @@ export function ChatScreen({
   // unedited retry (composer text unchanged) reuses the key so the persisted
   // client row is reclaimed, not duplicated; an edited retry falls through to a
   // fresh key (leaving the original as a version sibling — a known caveat).
+  // Memory-only by design: a full page refresh loses it, so a retry after a
+  // reload fails OPEN to a fresh key (a duplicate client row) rather than
+  // risking a wrong-row reuse — the safe direction for an idempotency key.
   const failedSendRef = useRef<{ id: string; text: string } | null>(null);
   const { messages, sendMessage, setMessages, status, stop, regenerate } = useChat({
     // react-hooks/refs flags the rateLimited write inside the custom fetch
@@ -580,13 +583,10 @@ export function ChatScreen({
   function submit() {
     if (!draft.trim() || isBusy) return;
     setSendFailure(null);
-    // Reuse the failed attempt's key ONLY when the composer still holds the exact
-    // words that failed (an untouched retry) — so the server dedupes it onto the
-    // one already-persisted client row. Any edit (or a fresh send) mints a new
-    // key, which persists as its own turn.
-    const failed = failedSendRef.current;
-    clientMessageIdRef.current =
-      failed && failed.text.trim() === draft.trim() ? failed.id : crypto.randomUUID();
+    // Reuse the failed attempt's key on an untouched retry (server dedupe onto
+    // the one persisted row); any edit or fresh send mints a new key. The
+    // unedited-vs-edited decision lives in one pure, unit-tested place.
+    clientMessageIdRef.current = resendMessageId(failedSendRef.current, draft);
     sendMessage({ text: draft });
     setDraft("");
     if (textareaRef.current) {

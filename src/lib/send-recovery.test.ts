@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
-import { harvestFailedSend, mergeRestoredDraft, partsToText } from "./send-recovery";
+import { harvestFailedSend, mergeRestoredDraft, partsToText, resendMessageId } from "./send-recovery";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function user(text: string, id = "u-fail"): UIMessage {
   return { id, role: "user", parts: [{ type: "text", text }] };
@@ -45,6 +47,27 @@ describe("harvestFailedSend", () => {
 
   it("returns null when the last user message carries no text", () => {
     expect(harvestFailedSend([{ id: "u1", role: "user", parts: [] }])).toBeNull();
+  });
+});
+
+describe("resendMessageId", () => {
+  const failed = { id: "11111111-1111-4111-8111-111111111111", text: "lost words" };
+
+  it("reuses the failed attempt's id when the composer still holds the same words", () => {
+    expect(resendMessageId(failed, "lost words")).toBe(failed.id);
+    // Surrounding whitespace is not a meaningful edit — the restore re-inserts
+    // the words verbatim, so a trim-equal draft is an untouched retry.
+    expect(resendMessageId(failed, "  lost words \n")).toBe(failed.id);
+  });
+
+  it("mints a fresh id when the draft was edited", () => {
+    const id = resendMessageId(failed, "lost words, reworded");
+    expect(id).not.toBe(failed.id);
+    expect(id).toMatch(UUID);
+  });
+
+  it("mints a fresh id when there is no failed send stashed", () => {
+    expect(resendMessageId(null, "a brand-new thought")).toMatch(UUID);
   });
 });
 
