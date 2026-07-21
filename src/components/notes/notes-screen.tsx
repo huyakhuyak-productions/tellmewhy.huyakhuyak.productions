@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { focusAfterDestructive, useConfirmFocus } from "@/components/ui/destructive-focus";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
 import { relativeTime } from "@/lib/relative-time";
 import type { SelfNote } from "@/lib/notes";
@@ -23,6 +24,20 @@ export function NotesScreen({ notes }: { notes: SelfNote[] }) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  // Spoken once a note is let go: the deleted card (and its focused button) has
+  // unmounted, so an always-mounted live region here carries the confirmation
+  // that the card can no longer announce for itself.
+  const [announcement, setAnnouncement] = useState("");
+
+  // A confirmed delete unmounts the card that held focus; hand focus to the
+  // composer (the stable, always-present place to act next) and announce, so
+  // focus never drops to <body> and a screen reader hears the note is gone.
+  function handleDeleted() {
+    setAnnouncement("Note let go.");
+    focusAfterDestructive(composeRef);
+    router.refresh();
+  }
 
   async function save() {
     const body = draft.trim();
@@ -78,8 +93,15 @@ export function NotesScreen({ notes }: { notes: SelfNote[] }) {
         </p>
       </div>
 
+      {/* One always-mounted live region so a let-go note is spoken even though
+          the card that held focus has unmounted (same idiom as MessageKeep). */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
+
       <section className="animate-message-rise flex flex-col gap-2" style={{ animationDelay: "40ms" }}>
         <textarea
+          ref={composeRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -122,7 +144,7 @@ export function NotesScreen({ notes }: { notes: SelfNote[] }) {
           <ul className="flex flex-col gap-2.5">
             {notes.map((note) => (
               <li key={note.id}>
-                <NoteCard note={note} onDeleted={() => router.refresh()} />
+                <NoteCard note={note} onDeleted={handleDeleted} />
               </li>
             ))}
           </ul>
@@ -140,6 +162,9 @@ function NoteCard({ note, onDeleted }: { note: SelfNote; onDeleted: () => void }
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // On open, land focus on "Keep it" (the safe action) so a keyboard user never
+  // fires "let it go" by reflex.
+  const keepItRef = useConfirmFocus<HTMLButtonElement>(confirming);
 
   async function remove() {
     if (busy) return;
@@ -188,6 +213,7 @@ function NoteCard({ note, onDeleted }: { note: SelfNote; onDeleted: () => void }
               {busy ? "Letting go…" : "Yes, let it go"}
             </button>
             <button
+              ref={keepItRef}
               type="button"
               onClick={() => setConfirming(false)}
               disabled={busy}

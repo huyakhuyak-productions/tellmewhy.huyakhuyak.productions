@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { focusAfterDestructive } from "@/components/ui/destructive-focus";
 import { composeSubmitTitle, isComposeSubmit } from "@/lib/keyboard";
 import { useIsMac } from "@/lib/use-is-mac";
 import { relativeTime } from "@/lib/relative-time";
@@ -210,7 +211,7 @@ function AssignmentCard({
     setCloseError(null);
     const error = await onClose();
     if (error) setCloseError(error);
-    else cardRef.current?.focus();
+    else focusAfterDestructive(cardRef);
   }
   return (
     <li
