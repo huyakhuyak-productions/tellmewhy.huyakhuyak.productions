@@ -159,19 +159,23 @@ export function ReadingView({
   // that path has re-rendered and re-registered its refs.
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const focusMessage = useCallback(
-    (id: string) => {
+    (id: string, opts?: { claimNavigator?: boolean }) => {
       if (!messagesById.has(id)) return;
-      // A NON-navigator landing on a crisis message — a digest anchor or the
-      // `?focus=` mount — syncs the navigator's readout to it, so its i/N never
-      // goes stale behind a landing jumpToCrisis didn't drive. Guarded by
-      // `messagesById` above: a body-less crisis (absent here) can't scroll-land,
-      // so these landings never sync it. Stepping is the exception — jumpToCrisis
-      // advances the readout for a body-less target on its own (see below), so
-      // the navigator can still step past one; only focus/digest landings skip it.
-      const crisisIndex = crisisIds.indexOf(id);
-      if (crisisIndex !== -1) {
-        setActiveCrisis(crisisIndex);
-        setLanded(true);
+      // Only a reader-DRIVEN jump onto a crisis (a digest risk-anchor click,
+      // via focusFromDigest below) claims the navigator — syncing its i/N to the
+      // crisis it lands on, so the readout never goes stale behind a jump the
+      // arrows didn't drive. The `?focus=` mount (an attention-queue arrival)
+      // deliberately does NOT claim: the pill's first impression must stay the
+      // honest "N crisis messages" count until the reader actually steps —
+      // otherwise arriving on a single-crisis thread would dead-end the navigator
+      // at 1/1 with both arrows disabled. Guarded by `messagesById` above: a
+      // body-less crisis (absent here) can't scroll-land, so it never claims.
+      if (opts?.claimNavigator) {
+        const crisisIndex = crisisIds.indexOf(id);
+        if (crisisIndex !== -1) {
+          setActiveCrisis(crisisIndex);
+          setLanded(true);
+        }
       }
       if (displayedPathIdSet.has(id)) {
         landOn(id);
@@ -181,6 +185,15 @@ export function ReadingView({
       setPendingFocusId(id);
     },
     [messagesById, crisisIds, displayedPathIdSet, nodes, landOn],
+  );
+
+  // A digest anchor click is a reader-driven jump, so it claims the navigator
+  // (the `?focus=` mount call does not). A "moment" anchor lands on a non-crisis
+  // id, so the claim is a no-op there — only a "risk" anchor onto a crisis moves
+  // the readout.
+  const focusFromDigest = useCallback(
+    (id: string) => focusMessage(id, { claimNavigator: true }),
+    [focusMessage],
   );
 
   // After a branch switch re-renders the path (and the ref for the target is
@@ -210,14 +223,15 @@ export function ReadingView({
     (next: number) => {
       const id = crisisIds[next];
       if (!id) return;
-      // The readout advances BEFORE the (possibly-bailing) land: a body-less
-      // crisis is in `crisisIds` but absent from `messagesById`, so focusMessage
-      // bails at its guard and never scrolls — but the reader still must be able
-      // to step PAST it to reach the next crisis, so the navigator moves on its
-      // own here. When the body IS present this duplicates focusMessage's sync
-      // with identical values (harmless). A crisis message may also sit on
-      // another branch — focusMessage switches to it before landing, so the
-      // navigator reaches every crisis in the tree.
+      // Stepping owns the navigator readout: it advances BEFORE the
+      // (possibly-bailing) land. A body-less crisis is in `crisisIds` but absent
+      // from `messagesById`, so focusMessage bails at its guard and never scrolls
+      // — but the reader still must be able to step PAST it to reach the next
+      // crisis, so the readout moves here on its own. (focusMessage itself never
+      // claims the navigator for a plain call — see its comment — so this is the
+      // sole driver for arrow steps.) A crisis message may also sit on another
+      // branch — focusMessage switches to it before landing, so the navigator
+      // reaches every crisis in the tree.
       setActiveCrisis(next);
       setLanded(true);
       focusMessage(id);
@@ -302,7 +316,7 @@ export function ReadingView({
         <DigestPanel
           conversationId={conversationId}
           orderedMessageIds={clientPathIds}
-          onJumpToMessage={focusMessage}
+          onJumpToMessage={focusFromDigest}
         />
       ) : null}
       {crisisIds.length > 0 ? (

@@ -162,34 +162,40 @@ describe("ReadingView corrupt-row resilience", () => {
   });
 });
 
-describe("ReadingView crisis navigator sync on focus landing", () => {
-  it("syncs the navigator readout when a `?focus=` landing hits a crisis message", async () => {
-    // A short path whose leaf is a crisis message. It's on the displayed path
-    // (seeded from activeLeafId), so the `?focus=` landing scrolls straight to
-    // it — no branch switch — exercising focusMessage's direct-land path.
-    const messages: ReadingMessage[] = [
-      {
-        id: "root",
-        parentId: null,
-        createdAt: new Date("2026-07-20T10:00:00Z"),
-        sender: "client",
-        text: "How the week opened.",
-        riskLevel: "none",
-        flagged: false,
-        authorName: null,
-      },
-      {
-        id: "crisis-msg",
-        parentId: "root",
-        createdAt: new Date("2026-07-20T10:00:05Z"),
-        sender: "client",
-        text: "A line that reads as crisis.",
-        riskLevel: "crisis",
-        flagged: false,
-        authorName: null,
-      },
-    ];
+// A short path whose leaf is a crisis message, reused by the two tests below.
+function crisisTree(): ReadingMessage[] {
+  return [
+    {
+      id: "root",
+      parentId: null,
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+      sender: "client",
+      text: "How the week opened.",
+      riskLevel: "none",
+      flagged: false,
+      authorName: null,
+    },
+    {
+      id: "crisis-msg",
+      parentId: "root",
+      createdAt: new Date("2026-07-20T10:00:05Z"),
+      sender: "client",
+      text: "A line that reads as crisis.",
+      riskLevel: "crisis",
+      flagged: false,
+      authorName: null,
+    },
+  ];
+}
 
+describe("ReadingView crisis navigator on a `?focus=` arrival", () => {
+  // Regression pin for the c7339d7 break: the attention queue links here with
+  // `?focus=<crisis-id>`, and that mount landing must NOT claim the navigator.
+  // If it did, arriving on a single-crisis thread would dead-end the pill at
+  // "1/1" with both arrows disabled — the reader would never see the count and
+  // could never step. The pill stays at the honest count until an arrow moves it.
+  it("keeps the pre-landing count when the `?focus=` mount lands on the crisis", async () => {
+    const messages = crisisTree();
     render(
       <ReadingView
         conversationId="conv-crisis"
@@ -202,11 +208,55 @@ describe("ReadingView crisis navigator sync on focus landing", () => {
       />,
     );
 
-    // Before the (rAF-deferred) mount landing fires, the pill shows the count.
+    // Let the rAF-deferred mount landing run — it scrolls/flashes but must not
+    // touch the navigator.
+    await waitFor(() => expect(screen.getByText("1 crisis message")).toBeTruthy());
+    // Never claimed: the landed "1/1" readout must not appear from the arrival.
+    expect(screen.queryByText("1/1")).toBeNull();
+  });
+});
+
+describe("ReadingView crisis navigator on a digest risk-anchor click", () => {
+  // A digest risk anchor IS a reader-driven jump, so clicking one onto a crisis
+  // DOES claim the navigator — its i/N syncs to where the reader landed.
+  it("syncs the readout when a digest risk anchor lands on a crisis message", async () => {
+    const messages = crisisTree();
+
+    // A digest whose single anchor is a risk pointer at the crisis message.
+    const digest = {
+      overview: "",
+      themes: [],
+      anchors: [{ messageId: "crisis-msg", label: "A hard moment", kind: "risk" as const }],
+      coversUpToMessageId: "crisis-msg",
+      generatedAt: "2026-07-20T10:00:05Z",
+      stale: false,
+    };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/digest")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ digest }) } as Response);
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ digest: null }) } as Response);
+    });
+
+    render(
+      <ReadingView
+        conversationId="conv-crisis"
+        clientId="client-1"
+        messages={messages}
+        nodes={nodesFrom(messages)}
+        activeLeafId="crisis-msg"
+        markerMessageId={null}
+      />,
+    );
+
+    // Before any jump the pill shows the count, not a position.
     expect(screen.getByText("1 crisis message")).toBeTruthy();
 
-    // Once the landing lands on the crisis message, the navigator reads its
-    // position — i/N, landed — even though jumpToCrisis was never called.
+    // The anchor renders once the digest fetch resolves; clicking it claims the
+    // navigator, so the readout advances to the crisis it landed on.
+    const anchor = await screen.findByRole("button", { name: /Jump to a crisis moment/ });
+    fireEvent.click(anchor);
     await waitFor(() => expect(screen.getByText("1/1")).toBeTruthy());
   });
 });
