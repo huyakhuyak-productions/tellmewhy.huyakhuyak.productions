@@ -35,21 +35,17 @@ account-management phase shipped — self-serve deletion + email password reset)
         only (DEK wrapped by the server KEK, not the password), revokes all
         other sessions, is enumeration-free, and the email carries a link and
         nothing else. Known gap, recorded: sign-up email is not verified.
-- [ ] **Hardening sweep** — the ledgered non-blocking findings
-      (`.superpowers/sdd/progress.md` holds the authoritative list; the
-      account-management phase appended its own non-blocking findings there).
-      Substantive: resolve message paths over raw rows on the chat page,
-      therapist reading view, and regenerate context so a corrupt
-      ciphertext row can't sever readable ancestors (the `riskById`
-      pattern shows how). The rest: unread tie-break at the marker
-      timestamp, 429 "gentle pace" copy on hide/restore, degenerate
-      chat-request fallback should throw, off-path `regenerateOf`
-      widening (doc or check), crisis counter sync on focus/anchor
-      landings, a11y focus-restore on confirm dismiss + `inert` on
-      collapsed drawers, `data-*` e2e hooks, unit pin for the
-      intervention `viewLeafId` resync, never-rerun comment on migration
-      0014, MessageEdit/composer trim alignment, X-Robots-Tag belt,
-      error-class `.name` overrides, e2e for direct-nav hidden chip.
+- [x] **Hardening sweep** — DONE (2026-07-22, ~45 commits): every ledgered
+      non-blocking finding fixed or explicitly adjudicated. Includes the
+      raw-node path resolution on all 3 surfaces, idempotent client sends
+      (crisis-risk carried on retry), test-data isolation + user-FK
+      CASCADE (6 content tables; `user_keys` tombstone deliberately
+      FK-less), component-test harness (happy-dom), chat-screen hook
+      decomposition, generateObject migration, the full a11y/copy batch,
+      and data-testid e2e hooks + a direct-nav hidden-chip e2e.
+      Deferred (explicit): departed-clients' notes desk surface (spec
+      IOU); kept-markdown rendering. Details in
+      `.superpowers/sdd/progress.md` (hardening-sweep section).
 
 ## Bar 3 — v2 (explicitly deferred by the founding spec; not "completion")
 
