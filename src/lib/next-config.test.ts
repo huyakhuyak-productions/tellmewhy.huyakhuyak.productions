@@ -14,4 +14,15 @@ describe("next.config deployment contract", () => {
     const all = headers.find((rule) => rule.source === "/:path*{/}?");
     expect(all?.headers).toContainEqual({ key: "X-Accel-Buffering", value: "no" });
   });
+
+  it("sends X-Robots-Tag: noindex over every private route tree", async () => {
+    // Belt over the per-page robots metadata: these trees only ever render a
+    // signed-in person's private data, so a crawler must never index them —
+    // even a redirect or error response under the prefix that skips the page.
+    const headers = await nextConfig.headers!();
+    for (const prefix of ["/chat", "/notes", "/exercises", "/trust", "/account", "/therapist", "/link"]) {
+      const rule = headers.find((r) => r.source === `${prefix}/:path*`);
+      expect(rule?.headers).toContainEqual({ key: "X-Robots-Tag", value: "noindex" });
+    }
+  });
 });

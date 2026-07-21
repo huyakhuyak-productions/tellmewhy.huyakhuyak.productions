@@ -1,4 +1,16 @@
 -- Custom SQL migration file, put your code below! --
+--
+-- ⚠️  NEVER run this migration by hand once the tree/branching feature is live.
+-- The drizzle migrator applies it exactly once (by journal timestamp, not by
+-- content hash — editing THESE COMMENTS is safe and changes nothing), and this
+-- one-time guarantee is load-bearing. The `parent_id IS NULL` / `active_leaf_id
+-- IS NULL` guards below are only inert on a pre-branching database, where a NULL
+-- parent means "not yet backfilled". After branching ships, a NULL parent_id is
+-- a LEGITIMATE root — the first message of a conversation or a branch's sibling
+-- root — so re-running would re-parent every such root to whatever message
+-- happens to precede it by (created_at, id), collapsing independent sibling
+-- roots into one bogus linear chain and silently corrupting the forest.
+--
 -- Wire the existing linear history into the tree: each message's parent is
 -- the previous message of its conversation; each conversation's active leaf
 -- is its last message. Replay-safe: on an empty database both UPDATEs touch
