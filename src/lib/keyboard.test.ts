@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { composeSubmitTitle, isComposeSubmit, type ComposeKeyEvent } from "./keyboard";
 
 function event(overrides: Partial<ComposeKeyEvent>): ComposeKeyEvent {
-  return { key: "Enter", metaKey: false, ctrlKey: false, shiftKey: false, ...overrides };
+  return {
+    key: "Enter",
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    isComposing: false,
+    ...overrides,
+  };
 }
 
 describe("isComposeSubmit", () => {
@@ -28,6 +36,17 @@ describe("isComposeSubmit", () => {
     expect(isComposeSubmit(event({ key: "a", metaKey: true }))).toBe(false);
     expect(isComposeSubmit(event({ key: "s", ctrlKey: true }))).toBe(false);
     expect(isComposeSubmit(event({ key: " ", metaKey: true }))).toBe(false);
+  });
+
+  it("ignores an Enter fired mid IME composition even with a submit modifier", () => {
+    expect(isComposeSubmit(event({ metaKey: true, isComposing: true }))).toBe(false);
+    expect(isComposeSubmit(event({ ctrlKey: true, isComposing: true }))).toBe(false);
+  });
+
+  it("ignores Alt+Enter even with a submit modifier held", () => {
+    expect(isComposeSubmit(event({ altKey: true }))).toBe(false);
+    expect(isComposeSubmit(event({ metaKey: true, altKey: true }))).toBe(false);
+    expect(isComposeSubmit(event({ ctrlKey: true, altKey: true }))).toBe(false);
   });
 });
 

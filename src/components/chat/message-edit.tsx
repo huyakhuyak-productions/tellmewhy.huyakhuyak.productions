@@ -57,7 +57,7 @@ export function MessageEdit({
           e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`;
         }}
         onKeyDown={(e) => {
-          if (isComposeSubmit(e)) {
+          if (isComposeSubmit(e.nativeEvent)) {
             e.preventDefault();
             save();
           } else if (e.key === "Escape") {

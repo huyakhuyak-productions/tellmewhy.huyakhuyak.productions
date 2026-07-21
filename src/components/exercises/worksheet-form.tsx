@@ -245,7 +245,7 @@ export function WorksheetForm({
                     grow(e.target);
                   }}
                   onKeyDown={(e) => {
-                    if (isComposeSubmit(e)) {
+                    if (isComposeSubmit(e.nativeEvent)) {
                       e.preventDefault();
                       e.currentTarget.form?.requestSubmit();
                     }

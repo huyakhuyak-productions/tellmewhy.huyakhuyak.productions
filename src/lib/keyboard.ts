@@ -6,21 +6,26 @@
 // left untouched.
 //
 // A structural shape (not React's SyntheticEvent) so the predicate stays pure
-// and unit-testable without a DOM: any object carrying the four fields a key
-// event exposes will do.
+// and unit-testable without a DOM: any object carrying the key-event fields it
+// reads will do. `isComposing` lives on the NATIVE KeyboardEvent (not React's
+// synthetic one), so callers pass `e.nativeEvent`.
 export type ComposeKeyEvent = {
   key: string;
   metaKey: boolean;
   ctrlKey: boolean;
   shiftKey: boolean;
+  altKey: boolean;
+  isComposing: boolean;
 };
 
 export function isComposeSubmit(event: ComposeKeyEvent): boolean {
   if (event.key !== "Enter") return false;
-  // Shift+Enter is the newline gesture — never a submit, even alongside a
-  // modifier (a stray Shift must not swallow the shortcut's intent either way,
-  // so it simply defers to the newline).
-  if (event.shiftKey) return false;
+  // An Enter fired while an IME is mid-composition confirms the candidate the
+  // person is typing — it must never submit and swallow their unfinished word.
+  if (event.isComposing) return false;
+  // Shift+Enter is the newline gesture, and Alt+Enter is an OS/editor shortcut
+  // — neither is a submit, even alongside a submit modifier, so they defer.
+  if (event.shiftKey || event.altKey) return false;
   return event.metaKey || event.ctrlKey;
 }
 

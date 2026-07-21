@@ -106,7 +106,7 @@ export function NotesScreen({ notes }: { notes: SelfNote[] }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (isComposeSubmit(e)) {
+            if (isComposeSubmit(e.nativeEvent)) {
               e.preventDefault();
               void save();
             }

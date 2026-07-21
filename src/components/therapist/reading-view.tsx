@@ -416,7 +416,7 @@ export function ReadingView({
           maxLength={8000}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
-            if (isComposeSubmit(e)) {
+            if (isComposeSubmit(e.nativeEvent)) {
               e.preventDefault();
               e.currentTarget.form?.requestSubmit();
             }

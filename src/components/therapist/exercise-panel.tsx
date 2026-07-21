@@ -131,7 +131,7 @@ export function ExercisePanel({
           maxLength={MAX_INSTRUCTION}
           onChange={(e) => setInstruction(e.target.value)}
           onKeyDown={(e) => {
-            if (isComposeSubmit(e)) {
+            if (isComposeSubmit(e.nativeEvent)) {
               e.preventDefault();
               e.currentTarget.form?.requestSubmit();
             }

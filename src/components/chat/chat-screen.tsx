@@ -461,9 +461,13 @@ export function ChatScreen({
     setSendFailure(null);
     // Reuse the failed attempt's key on an untouched retry (server dedupe onto
     // the one persisted row); any edit or fresh send mints a new key. The
-    // unedited-vs-edited decision lives in one pure, unit-tested place.
+    // unedited-vs-edited decision lives in one pure, unit-tested place, and it
+    // trims both sides — so sending the trimmed text (below) still reads as an
+    // untouched retry.
     clientMessageIdRef.current = resolveResendId(draft);
-    sendMessage({ text: draft });
+    // Send the trimmed words, matching message-edit — the guard above already
+    // requires non-blank, so surrounding whitespace is never meaningful content.
+    sendMessage({ text: draft.trim() });
     setDraft("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";

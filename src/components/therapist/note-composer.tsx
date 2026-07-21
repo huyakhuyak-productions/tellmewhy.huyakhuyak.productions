@@ -99,7 +99,7 @@ export function NoteComposer({
         maxLength={MAX_BODY}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
-          if (isComposeSubmit(e)) {
+          if (isComposeSubmit(e.nativeEvent)) {
             e.preventDefault();
             e.currentTarget.form?.requestSubmit();
           }
