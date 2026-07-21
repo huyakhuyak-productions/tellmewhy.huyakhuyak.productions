@@ -107,8 +107,11 @@ export function StatsRail({
   });
 
   return (
+    /* lg:h-dvh is load-bearing: the rail sits in an implicit `auto` grid row,
+       so without a definite height overflow-y-auto never engages and tall
+       content grows the row — and the whole page — past the viewport. */
     <aside
-      className={`cp-edge flex flex-col gap-3.5 overflow-y-auto px-4 pb-5 pt-12 lg:border-l ${className}`}
+      className={`cp-edge flex flex-col gap-3.5 overflow-y-auto px-4 pb-5 pt-12 lg:h-dvh lg:border-l ${className}`}
     >
       <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
         Alongside you

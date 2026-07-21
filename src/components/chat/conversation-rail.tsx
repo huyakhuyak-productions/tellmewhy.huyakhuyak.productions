@@ -183,8 +183,11 @@ export function ConversationRail({
   }
 
   return (
+    /* lg:h-dvh is load-bearing: the rail sits in an implicit `auto` grid row,
+       so without a definite height overflow-y-auto never engages and a long
+       list grows the row — and the whole page — past the viewport. */
     <aside
-      className={`cp-edge flex flex-col overflow-y-auto px-3 pb-4 pt-12 lg:border-r ${className}`}
+      className={`cp-edge flex flex-col overflow-y-auto px-3 pb-4 pt-12 lg:h-dvh lg:border-r ${className}`}
     >
       <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
         Conversations

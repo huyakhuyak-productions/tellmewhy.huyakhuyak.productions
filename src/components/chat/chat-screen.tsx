@@ -657,7 +657,11 @@ export function ChatScreen({
           </div>
         ) : null}
 
-        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-5 lg:px-10 lg:py-8">
+        {/* `relative` keeps out-of-flow descendants (the sr-only live-region
+            spans in message actions) anchored — and clipped — inside this
+            scroller; anchored to the column they escape its clip and stretch
+            the whole document. */}
+        <div className="relative flex flex-1 flex-col overflow-y-auto px-4 py-5 lg:px-10 lg:py-8">
           <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-3 lg:gap-[22px]">
             {messages.map((m) => {
               const meta = metaById.get(m.id);
