@@ -181,16 +181,23 @@ export async function getClientConversations(
     createdAtById.set(row.id, row.createdAt);
   }
 
-  // Unread is time-based, not index-based: a message is unread when it landed
-  // strictly after the marker message — regardless of which branch it sits on.
-  // No marker (nothing reviewed yet) → every message counts.
+  // Unread is time-based, not index-based: a message is unread when it lands
+  // strictly after the marker message in the (createdAt, id) total order —
+  // regardless of which branch it sits on. The id tiebreak makes equal-clock
+  // messages count deterministically: a message sharing the marker's timestamp
+  // is unread iff its (stable) id sorts after the marker's. No marker (nothing
+  // reviewed yet) → every message counts.
   const conversations = convs.map((c) => {
     const rows = rowsByConversation.get(c.id) ?? [];
     const markerId = markerByConversation.get(c.id);
     const markerAt = markerId ? createdAtById.get(markerId) : undefined;
-    const unreadCount = markerAt
-      ? rows.filter((r) => r.createdAt.getTime() > markerAt.getTime()).length
-      : rows.length;
+    const unreadCount =
+      markerAt && markerId
+        ? rows.filter((r) => {
+            const delta = r.createdAt.getTime() - markerAt.getTime();
+            return delta > 0 || (delta === 0 && r.id > markerId);
+          }).length
+        : rows.length;
     return { ...c, unreadCount };
   });
 

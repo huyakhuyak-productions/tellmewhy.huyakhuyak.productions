@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { auditEvents, user } from "@/db/schema";
+import { auditEvents, messages, user } from "@/db/schema";
 import { createConversation, flagMessageForTherapist, saveMessage, setConversationHidden } from "./conversations";
 import { sendIntervention } from "./interventions";
 import { advanceReviewMarker } from "./therapist-access";
@@ -180,6 +180,24 @@ describe("therapist desk — composed reads", () => {
       // branchA + branchB were both created after m2 → 2 unread, independent of
       // which branch is active. (m1 predates the marker; m2 is the marker.)
       expect(view.conversations[0].unreadCount).toBe(2);
+    });
+
+    it("counts a same-timestamp message after the marker via the (createdAt, id) tiebreak", async () => {
+      await link(clientId, therapistId);
+      const conv = await createConversation(clientId, "Tie");
+      await grantConversation(clientId, conv.id);
+      // Two fresh ids ordered so the marker sorts BEFORE the later message.
+      const [markerUuid, laterUuid] = [randomUUID(), randomUUID()].sort();
+      const marker = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "marker", id: markerUuid });
+      await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "same instant", id: laterUuid });
+      // Force identical timestamps so ONLY the id tiebreak separates the two.
+      await db.update(messages).set({ createdAt: new Date() }).where(inArray(messages.id, [markerUuid, laterUuid]));
+
+      await advanceReviewMarker(therapistId, conv.id, marker.id);
+      const view = await getClientConversations(therapistId, clientId);
+      // laterUuid sorts after markerUuid in the (createdAt, id) total order →
+      // strictly after the marker → unread, even though the clocks are equal.
+      expect(view.conversations[0].unreadCount).toBe(1);
     });
 
     it("keeps a hidden conversation fully visible in getClientConversations (hide changes nothing therapist-visible)", async () => {

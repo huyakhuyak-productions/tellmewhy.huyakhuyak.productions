@@ -161,4 +161,17 @@ describe("projectMarkerOntoPath", () => {
   it("returns null for an unknown marker id", () => {
     expect(projectMarkerOntoPath(nodes, path, "ghost")).toBeNull();
   });
+
+  it("breaks a shared-timestamp tie by id: the marker only reaches path nodes at-or-before it in (createdAt, id) order", () => {
+    // Three nodes share t=2; their ids order them m-1 < m-2(off) < m-3. The
+    // off-path marker (m-2) sits BETWEEN the two path nodes, so only m-1 is
+    // at-or-before it in the total order — m-3 comes after despite equal time.
+    const tie = [
+      node("a", null, 1),
+      node("m-1", "a", 2),
+      node("m-3", "m-1", 2),
+      node("m-2", "a", 2), // off-path marker: same time, id between m-1 and m-3
+    ];
+    expect(projectMarkerOntoPath(tie, ["a", "m-1", "m-3"], "m-2")).toBe("m-1");
+  });
 });

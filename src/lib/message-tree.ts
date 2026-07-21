@@ -126,13 +126,15 @@ export function projectMarkerOntoPath(
   const marker = index.byId.get(markerId);
   if (!marker) return null;
 
-  const markerTime = marker.createdAt.getTime();
   let projected: string | null = null;
-  // pathIds are root-first, so createdAt is non-decreasing down the chain;
-  // the last one at or before the marker is the deepest qualifying node.
+  // pathIds are root-first, so the total order is non-decreasing down the
+  // chain; the last one at or before the marker in the (createdAt, id) total
+  // order is the deepest qualifying node. The id tiebreak matters when a path
+  // node shares the marker's timestamp: equal clocks alone can't decide which
+  // side of the marker it falls on, but the stable id can.
   for (const id of pathIds) {
     const n = index.byId.get(id);
-    if (n && n.createdAt.getTime() <= markerTime) projected = id;
+    if (n && compare(n, marker) <= 0) projected = id;
   }
   return projected;
 }
