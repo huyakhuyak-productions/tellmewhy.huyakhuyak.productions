@@ -1,4 +1,4 @@
-import { generateObject, type LanguageModel } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 import { errorCause } from "@/lib/errors";
 
@@ -12,8 +12,8 @@ export type RiskLevel = "none" | "elevated" | "crisis";
 // whole raise-only layer in production, invisibly, for every message.
 //
 // Sized with headroom rather than to the byte — a truncated completion fails
-// `generateObject`'s JSON parse outright, dropping us back to the regex floor,
-// the very outage this cap exists to end. For the full sizing rationale
+// the structured-output JSON parse outright, dropping us back to the regex
+// floor, the very outage this cap exists to end. For the full sizing rationale
 // (reservation-ceiling semantics, reasoning-model thinking budgets, the
 // env-swappable model) see TITLE_MAX_OUTPUT_TOKENS in lib/title.ts; the same
 // reasoning applies here and both deliberately match the 1024 every other
@@ -45,9 +45,17 @@ const riskSchema = z.object({ risk: z.enum(["none", "elevated", "crisis"]) });
 export async function assessRisk(text: string, model: LanguageModel): Promise<RiskLevel> {
   const floor = screenText(text);
   try {
-    const { object } = await generateObject({
+    // v6's non-deprecated structured-output API: `generateText` with
+    // `Output.object` parses+validates the completion against the schema and
+    // THROWS (NoObjectGeneratedError) on unparseable JSON or a schema
+    // mismatch — the same failure mode the deprecated `generateObject` had, so
+    // the regex-floor fallback below is untouched. The one gap it does NOT
+    // throw on is a non-`stop` finish (truncation, content filter), where it
+    // leaves `output` undefined; the guard treats that as a failed
+    // classification so a partial reply can never masquerade as a verdict.
+    const { output } = await generateText({
       model,
-      schema: riskSchema,
+      output: Output.object({ schema: riskSchema }),
       maxOutputTokens: RISK_MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(2500),
       system:
@@ -57,7 +65,8 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
         "'none' = ordinary distress or everyday conversation. Respond with the classification only.",
       prompt: text,
     });
-    return RANK[object.risk] > RANK[floor] ? object.risk : floor;
+    if (!output) throw new Error("classifier returned no object");
+    return RANK[output.risk] > RANK[floor] ? output.risk : floor;
   } catch (error) {
     // The regex floor still stands, so the chat is never blocked — but a
     // classifier that fails on EVERY message silently downgrades crisis

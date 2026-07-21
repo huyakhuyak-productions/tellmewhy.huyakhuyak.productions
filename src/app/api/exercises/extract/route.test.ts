@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
-import { payloadCarryingFailureModel } from "@/test/ai-fixtures";
+import { payloadCarryingFailureModel, truncatedObjectModel } from "@/test/ai-fixtures";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { exerciseEntries } from "@/db/schema";
@@ -111,6 +111,31 @@ describe("POST /api/exercises/extract", () => {
 
     const logged = errorSpy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
     expect(logged).not.toContain(sentinel);
+  });
+
+  it("returns 502 when the model's completion is truncated (non-stop finish)", async () => {
+    const clientId = await seedUser();
+    mockSession(clientId);
+    const { id } = await createConversation(clientId, "Truncated draft");
+    await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: "I froze again" });
+
+    // A well-formed record, but the model ran out of budget mid-object: v6's
+    // Output.object returns an undefined object instead of throwing, and the
+    // route must surface that as a 502 rather than send back a partial draft.
+    vi.mocked(getExtractorModel).mockReturnValueOnce(
+      truncatedObjectModel({
+        situation: "half",
+        thoughts: "a",
+        emotions: "draft",
+        behavior: "cut off",
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(extractRequest({ conversationId: id }));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Could not extract an entry" });
+    expect(errorSpy).toHaveBeenCalled();
   });
 
   it("returns 429 once the caller's rate-limit bucket is exhausted", async () => {

@@ -9,7 +9,7 @@
 // swallowed to a stale/null result — never rethrown — and logged id-only:
 // never message plaintext, never digest content.
 import { asc, eq, inArray } from "drizzle-orm";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import { db } from "@/db";
 import { conversations, digests, messages } from "@/db/schema";
@@ -156,14 +156,21 @@ export async function getOrRefreshDigest(
 
   let generated: DigestBody;
   try {
-    const { object } = await generateObject({
+    // v6's non-deprecated structured-output API: `generateText` +
+    // `Output.object` parses+validates the completion against the schema and
+    // THROWS on unparseable JSON or a schema mismatch, like the deprecated
+    // `generateObject`. On a non-`stop` finish (truncation, content filter) it
+    // does not throw but leaves `output` undefined — guard that so a partial
+    // never becomes a digest, and the stale/null fallback below stands.
+    const { output } = await generateText({
       model: getDigestModel(),
-      schema: digestSchema,
+      output: Output.object({ schema: digestSchema }),
       prompt,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
-    generated = object;
+    if (!output) throw new Error("digest generation returned no object");
+    generated = output;
   } catch (error) {
     // Never throw past the gate. Fall back to the prior digest (marked stale)
     // or null. NEVER log the raw error object here: AI SDK errors carry the

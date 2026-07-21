@@ -126,9 +126,9 @@ export function getTitleModel(): LanguageModel {
   return openrouter()(process.env.OPENROUTER_CLASSIFIER_MODEL ?? "google/gemini-2.5-flash-lite", NO_LOGGING);
 }
 
-// Deterministic digest object for offline tests. `generateObject` drives the
-// model through `doGenerate` and parses the single text part as JSON, so the
-// mock returns the whole digest body as one stringified content part.
+// Deterministic digest object for offline tests. `generateText` + `Output.object`
+// drives the model through `doGenerate` and parses the single text part as JSON,
+// so the mock returns the whole digest body as one stringified content part.
 //
 // Anchors: the digest transcript reaches the model as "[message <uuid>] …"
 // lines (see digests.ts), and the domain drops any anchor whose messageId
@@ -167,8 +167,9 @@ export function getDigestModel(): LanguageModel {
 }
 
 // Deterministic thought-record for offline tests. Like the digest mock,
-// `generateObject` drives this through `doGenerate` and parses the single text
-// part as JSON, so the mock returns the whole payload as one stringified part.
+// `generateText` + `Output.object` drives this through `doGenerate` and parses
+// the single text part as JSON, so the mock returns the whole payload as one
+// stringified part.
 const MOCK_THOUGHT_RECORD_JSON = JSON.stringify({
   situation: "Mock situation",
   thoughts: "Mock thoughts",

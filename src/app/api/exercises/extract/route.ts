@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -54,15 +54,22 @@ async function handlePost(req: Request): Promise<Response> {
       .join("\n");
 
     try {
-      const { object } = await generateObject({
+      // v6's non-deprecated structured-output API: `generateText` +
+      // `Output.object` parses+validates against the schema and THROWS on
+      // unparseable JSON or a schema mismatch, like the deprecated
+      // `generateObject` — so the 502 path below is unchanged. A non-`stop`
+      // finish (truncation, content filter) does not throw but leaves `output`
+      // undefined; guard it so a partial draft never reaches the client.
+      const { output } = await generateText({
         model: getExtractorModel(),
-        schema: thoughtRecordSchema,
+        output: Output.object({ schema: thoughtRecordSchema }),
         prompt: buildExtractionPrompt(transcript),
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
       });
+      if (!output) throw new Error("extraction returned no object");
       // Persist NOTHING — the client confirms this draft in a prefilled form.
-      return Response.json(object);
+      return Response.json(output);
     } catch (error) {
       // NEVER log the raw error object: AI SDK errors carry the request/response
       // as enumerable own properties (APICallError's requestBodyValues embeds

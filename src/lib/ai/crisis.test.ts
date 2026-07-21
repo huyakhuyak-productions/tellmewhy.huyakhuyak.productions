@@ -8,6 +8,7 @@ import {
   mockClassifier,
   payloadCarryingFailureModel,
   throwingModel,
+  truncatedObjectModel,
 } from "@/test/ai-fixtures";
 
 describe("screenText", () => {
@@ -103,5 +104,25 @@ describe("assessRisk", () => {
     await assessRisk("rough week", capture);
     expect(seen).toBe(RISK_MAX_OUTPUT_TOKENS);
     expect(RISK_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(64);
+  });
+
+  // The v6 structured-output API does NOT throw on a truncated (non-`stop`)
+  // finish the way generateObject's parse did — it hands back an undefined
+  // object. A partial completion must never be mistaken for a verdict: it has
+  // to fall to the regex floor, exactly as an outright parse failure does, so
+  // an explicit crisis is never silently dropped by a cut-off response.
+  it("treats a truncated (non-stop) completion as a failed classification, holding the floor", async () => {
+    // A well-formed verdict, but the model ran out of budget mid-object.
+    const truncated = truncatedObjectModel({ risk: "none" });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // Crisis text: the floor stands, never downgraded to the truncated "none".
+      expect(await assessRisk("I want to kill myself", truncated)).toBe("crisis");
+      // Benign text: falls to the floor "none", never a verdict from a partial.
+      expect(await assessRisk("rough week", truncated)).toBe("none");
+      expect(errorSpy.mock.calls.some((args) => String(args[0]).includes("Failed to classify risk"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

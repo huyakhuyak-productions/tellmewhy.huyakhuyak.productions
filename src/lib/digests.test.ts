@@ -11,6 +11,7 @@ import {
   mockObjectModel,
   payloadCarryingFailureModel,
   throwingModel,
+  truncatedObjectModel,
 } from "@/test/ai-fixtures";
 import { createConversation, saveMessage, setActiveLeaf } from "./conversations";
 import { CryptoError, decryptText, encryptText } from "./crypto/envelope";
@@ -283,6 +284,23 @@ describe("digests — get-or-refresh behind the gate", () => {
 
       const result = await getOrRefreshDigest(therapistId, convId);
       expect(result).toBeNull();
+      expect(await db.select().from(digests).where(eq(digests.conversationId, convId))).toHaveLength(0);
+    });
+
+    it("treats a truncated (non-stop) generation as a failure — no partial digest, no row", async () => {
+      const convId = await grantedConversation("Truncated generation");
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: "first" });
+      // Well-formed body, but the model reports a non-`stop` finish: v6's
+      // Output.object hands back an undefined object instead of throwing, and
+      // the digest path must reject it exactly like an outright failure.
+      vi.mocked(getDigestModel).mockReturnValueOnce(
+        truncatedObjectModel({ overview: "half a digest", themes: [], anchors: [] }),
+      );
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const result = await getOrRefreshDigest(therapistId, convId);
+      expect(result).toBeNull();
+      expect(errorSpy).toHaveBeenCalled();
       expect(await db.select().from(digests).where(eq(digests.conversationId, convId))).toHaveLength(0);
     });
 
