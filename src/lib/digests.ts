@@ -216,7 +216,7 @@ export async function getOrRefreshDigest(
       // Deliberately NOT serialized with an advisory lock: the CAS already
       // guarantees correctness (no rollback, no torn write — the losing writer
       // simply no-ops). A lock would have to be held across the whole
-      // generateObject call above to prevent the duplicate work, pinning a DB
+      // generateText call above to prevent the duplicate work, pinning a DB
       // connection for the multi-second model round-trip — a steep, always-on
       // cost to save the rare, cheap case of two refreshes racing and one
       // wasting its generation. We accept the occasional wasted generation.
