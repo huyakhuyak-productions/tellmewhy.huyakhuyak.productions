@@ -18,7 +18,7 @@ import { withRequestScope } from "@/lib/request-scope";
 import { getGrantStateForClient } from "@/lib/sharing";
 import { getActiveAiInstruction } from "@/lib/therapist-notes";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
-import { clampTitle } from "@/lib/title";
+import { clampTitle, TITLE_MAX_OUTPUT_TOKENS } from "@/lib/title";
 
 const sendSchema = z.object({
   conversationId: z.uuid(),
@@ -298,12 +298,25 @@ async function handlePost(req: Request): Promise<Response> {
               const { text: rawTitle } = await generateText({
                 model: getTitleModel(),
                 prompt: buildTitlePrompt(clientText, replyText),
+                // Sized (and reasoned about) in lib/title.ts — an uncapped
+                // call is what broke auto-titling in production.
+                maxOutputTokens: TITLE_MAX_OUTPUT_TOKENS,
                 abortSignal: AbortSignal.timeout(5000),
               });
               // Code-point-safe clamp — see clampTitle for why a plain
               // `.slice(0, 80)` (UTF-16 code units) can split an emoji.
               const title = clampTitle(rawTitle.trim());
-              if (title) await renameConversation(conversationId, userId, title, { customized: false });
+              if (title) {
+                await renameConversation(conversationId, userId, title, { customized: false });
+              } else {
+                // A model that answers with nothing (or with pure whitespace)
+                // leaves the conversation on its placeholder date — visually
+                // IDENTICAL to the provider-rejection outage this cap fixed,
+                // and just as silent if we only skip the rename. Say so: an
+                // empty completion is the signature of a reasoning model
+                // spending the whole budget on thinking tokens.
+                console.error(`Auto-title produced no usable title for conversation ${conversationId}`);
+              }
             }
           } catch (error) {
             // Fire-and-forget by design — a failed title never disturbs the

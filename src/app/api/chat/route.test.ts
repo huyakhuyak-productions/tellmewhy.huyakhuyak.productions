@@ -5,7 +5,8 @@ import path from "node:path";
 import { inspect } from "node:util";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import { MOCK_USAGE } from "@/test/ai-fixtures";
+import { MOCK_FINISH_REASON, MOCK_USAGE } from "@/test/ai-fixtures";
+import { TITLE_MAX_OUTPUT_TOKENS } from "@/lib/title";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
 import chatRateLimiter from "@/lib/rate-limit";
@@ -279,6 +280,73 @@ describe("POST /api/chat", () => {
       .map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" "))
       .join("\n");
     expect(logged).not.toContain(sentinel);
+  });
+
+  // Pins the budget EXACTLY. Uncapped (the production bug), the provider
+  // reserves the model's whole 65535-token window and OpenRouter rejects the
+  // call, leaving the composer's placeholder date as the title. Capped too
+  // tightly, a reasoning model spends the budget on thinking tokens and
+  // returns empty text — same visible symptom. Asserting one side only would
+  // let the other regression through.
+  it("reserves exactly the title call's output budget — neither uncapped nor starved", async () => {
+    const { id } = await createConversation(userId, "Untitled");
+    let seen: number | undefined;
+    // Waited on instead of `seen` itself: pre-fix `seen` is assigned
+    // undefined, so waiting on its definedness fails by timeout with a
+    // misleading message rather than by assertion.
+    let titleCallMade = false;
+    vi.mocked(getTitleModel).mockReturnValueOnce(
+      new MockLanguageModelV3({
+        doGenerate: async (options) => {
+          seen = options.maxOutputTokens;
+          titleCallMade = true;
+          return {
+            finishReason: MOCK_FINISH_REASON,
+            usage: MOCK_USAGE,
+            content: [{ type: "text", text: "A quiet mock title" }],
+            warnings: [],
+          };
+        },
+      }),
+    );
+
+    const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+    await res.text(); // drain the stream so onFinish (and the title call) runs
+
+    await vi.waitFor(() => {
+      expect(titleCallMade).toBe(true);
+    });
+    expect(seen).toBe(TITLE_MAX_OUTPUT_TOKENS);
+    expect(TITLE_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(64);
+  });
+
+  // The empty-completion twin of the outage above: a model that answers with
+  // nothing leaves the date placeholder in place, and without this log that
+  // is indistinguishable from working correctly.
+  it("logs when the model returns no usable title, rather than silently keeping the date", async () => {
+    const { id } = await createConversation(userId, "July 6");
+    vi.mocked(getTitleModel).mockReturnValueOnce(
+      new MockLanguageModelV3({
+        doGenerate: async () => ({
+          finishReason: MOCK_FINISH_REASON,
+          usage: MOCK_USAGE,
+          content: [{ type: "text", text: "   " }], // whitespace clamps to nothing
+          warnings: [],
+        }),
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+    await res.text();
+
+    await vi.waitFor(() => {
+      expect(errorSpy.mock.calls.some((args) => String(args[0]).includes("no usable title"))).toBe(true);
+    });
+    // ...and the conversation keeps its placeholder rather than being renamed
+    // to an empty string.
+    const [conversation] = (await listConversations(userId)).filter((c) => c.id === id);
+    expect(conversation?.title).toBe("July 6");
   });
 
   it("never overwrites a title the user already customized", async () => {
