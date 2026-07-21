@@ -24,11 +24,26 @@ export type SharedMessage = {
   createdAt: Date;
 };
 
+// A raw row's plaintext columns — never any ciphertext. The reading view runs
+// ALL its tree math (active path, versions, marker projection, crisis
+// navigation) over these, so a body that fails to decrypt (and is therefore
+// absent from the decrypted `messages`) can neither sever the chain above it
+// nor hide a crisis message from the navigator.
+export type SharedMessageNode = {
+  id: string;
+  parentId: string | null;
+  createdAt: Date;
+  riskLevel: SharedMessage["riskLevel"];
+};
+
 // Gate → decrypt via the CLIENT's DEK (the conversation is theirs, not the
 // therapist's) → audit conversation_viewed, deduped so re-opening the same
 // conversation repeatedly doesn't flood the client's feed with one row per
 // page view.
-export async function loadSharedMessages(therapistId: string, conversationId: string): Promise<SharedMessage[]> {
+export async function loadSharedMessages(
+  therapistId: string,
+  conversationId: string,
+): Promise<{ messages: SharedMessage[]; nodes: SharedMessageNode[] }> {
   const { clientId } = await requireGrantedConversation(therapistId, conversationId);
   const dek = await getOrCreateUserDek(clientId);
   // The WHOLE tree, flat, in (createdAt, id) order — the therapist reads every
@@ -70,7 +85,17 @@ export async function loadSharedMessages(therapistId: string, conversationId: st
     action: "conversation_viewed",
     actorId: therapistId,
   });
-  return result;
+  return {
+    messages: result,
+    // Every row's plaintext columns, corrupt bodies included — the raw material
+    // the reading view resolves every path (and its crisis count) over.
+    nodes: rows.map((r) => ({
+      id: r.id,
+      parentId: r.parentId,
+      createdAt: r.createdAt,
+      riskLevel: r.riskLevel,
+    })),
+  };
 }
 
 // Gate + the message must belong to THIS conversation (a message id from a

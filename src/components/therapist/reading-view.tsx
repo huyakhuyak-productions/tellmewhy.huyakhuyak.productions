@@ -12,7 +12,7 @@ import {
   resolveActivePath,
   versionInfo,
 } from "@/lib/message-tree";
-import type { ReadingMessage } from "@/lib/therapist-desk";
+import type { ReadingMessage, ReadingNode } from "@/lib/therapist-desk";
 import { AttentionBadge } from "./attention-badge";
 import { CrisisNavigator } from "./crisis-navigator";
 import { DigestPanel } from "./digest-panel";
@@ -27,6 +27,7 @@ export function ReadingView({
   conversationId,
   clientId,
   messages,
+  nodes,
   activeLeafId,
   markerMessageId,
   focusMessageId = null,
@@ -34,8 +35,14 @@ export function ReadingView({
   conversationId: string;
   clientId: string;
   /** The WHOLE tree, flat (createdAt, id) asc — every branch, not just one
-      path. The view resolves which path it shows from `viewLeafId` below. */
+      path. Display data ONLY: a body that failed to decrypt is absent here, so
+      the view never resolves a path over this list. */
   messages: ReadingMessage[];
+  /** The whole tree's RAW nodes — every row's plaintext columns (id/parentId/
+      createdAt/riskLevel), corrupt bodies included. ALL path math runs over
+      these, so an unreadable mid-chain body can't sever its ancestors, and the
+      crisis navigator still counts a crisis whose body won't decrypt. */
+  nodes: ReadingNode[];
   /** The client's own active leaf — the branch THEY currently see. It seeds the
       therapist's initial view and anchors the digest's coverage math, but the
       therapist's local navigation never writes it back. */
@@ -67,9 +74,11 @@ export function ReadingView({
 
   // The single root-to-leaf path the therapist is currently reading, and the
   // messages along it in render order (root-first, matching the flat asc tree).
+  // Resolved over the RAW nodes (not the decrypted `messages`), so a mid-chain
+  // body that won't decrypt can't drop the ancestors above it off the path.
   const displayedPathIds = useMemo(
-    () => resolveActivePath(messages, viewLeafId),
-    [messages, viewLeafId],
+    () => resolveActivePath(nodes, viewLeafId),
+    [nodes, viewLeafId],
   );
   const displayedPathIdSet = useMemo(() => new Set(displayedPathIds), [displayedPathIds]);
   const displayedMessages = useMemo(
@@ -82,16 +91,16 @@ export function ReadingView({
 
   // Version sets for the displayed path only (entries exist where count > 1).
   const versions = useMemo(
-    () => versionInfo(messages, displayedPathIds),
-    [messages, displayedPathIds],
+    () => versionInfo(nodes, displayedPathIds),
+    [nodes, displayedPathIds],
   );
 
   // The review divider follows the marker PROJECTED onto the displayed path:
   // the marker may sit on a branch the therapist isn't viewing, so we render
   // the line after the deepest displayed message created at or before it.
   const projectedMarkerId = useMemo(
-    () => projectMarkerOntoPath(messages, displayedPathIds, markerMessageId),
-    [messages, displayedPathIds, markerMessageId],
+    () => projectMarkerOntoPath(nodes, displayedPathIds, markerMessageId),
+    [nodes, displayedPathIds, markerMessageId],
   );
 
   // Digest coverage math intentionally rides the CLIENT's active path, not the
@@ -100,8 +109,8 @@ export function ReadingView({
   // ids — so keeping them the client's path keeps coverage truthful no matter
   // which branch the therapist happens to be reading.
   const clientPathIds = useMemo(
-    () => resolveActivePath(messages, activeLeafId),
-    [messages, activeLeafId],
+    () => resolveActivePath(nodes, activeLeafId),
+    [nodes, activeLeafId],
   );
 
   // The crisis navigator reaches crisis messages on ANY branch of the whole
@@ -109,8 +118,8 @@ export function ReadingView({
   // branches. The pill's readout ("N crisis messages" / "i/N") still reads
   // sensibly: it's a count of crisis messages in the conversation, unchanged.
   const crisisIds = useMemo(
-    () => messages.filter((m) => m.riskLevel === "crisis").map((m) => m.id),
-    [messages],
+    () => nodes.filter((n) => n.riskLevel === "crisis").map((n) => n.id),
+    [nodes],
   );
 
   // One ref map over ALL messages (not just crisis ones), so both the crisis
@@ -155,10 +164,10 @@ export function ReadingView({
         landOn(id);
         return;
       }
-      setViewLeafId(deepestDescendant(messages, id));
+      setViewLeafId(deepestDescendant(nodes, id));
       setPendingFocusId(id);
     },
-    [messagesById, displayedPathIdSet, messages, landOn],
+    [messagesById, displayedPathIdSet, nodes, landOn],
   );
 
   // After a branch switch re-renders the path (and the ref for the target is
@@ -203,9 +212,9 @@ export function ReadingView({
     (siblings: string[], targetIndex: number) => {
       const siblingId = siblings[targetIndex];
       if (!siblingId) return;
-      setViewLeafId(deepestDescendant(messages, siblingId));
+      setViewLeafId(deepestDescendant(nodes, siblingId));
     },
-    [messages],
+    [nodes],
   );
 
   async function markReadTo(messageId: string) {

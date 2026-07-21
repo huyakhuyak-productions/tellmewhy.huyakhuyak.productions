@@ -30,7 +30,9 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
 
   try {
     const { linkId } = await requireGrantedConversation(authResult.therapistId, conversationId);
-    const messages = await loadSharedMessages(authResult.therapistId, conversationId);
+    // Only the decrypted messages leave this endpoint — the raw path nodes are a
+    // server-render concern (getReadingView), not part of this JSON contract.
+    const { messages } = await loadSharedMessages(authResult.therapistId, conversationId);
 
     const [markerRow] = await db
       .select({ messageId: reviewMarkers.lastReviewedMessageId, updatedAt: reviewMarkers.updatedAt })

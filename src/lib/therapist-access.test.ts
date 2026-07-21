@@ -48,7 +48,7 @@ describe("therapist access — reads, review line, attention queue", () => {
       await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "hello" });
       await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "hi there" });
 
-      const loaded = await loadSharedMessages(therapistId, conv.id);
+      const { messages: loaded } = await loadSharedMessages(therapistId, conv.id);
       expect(loaded.map((m) => [m.sender, m.text])).toEqual([
         ["client", "hello"],
         ["ai", "hi there"],
@@ -66,7 +66,7 @@ describe("therapist access — reads, review line, attention queue", () => {
       const branchA = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch A", parentId: m2.id });
       const branchB = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "branch B", parentId: m2.id });
 
-      const loaded = await loadSharedMessages(therapistId, conv.id);
+      const { messages: loaded } = await loadSharedMessages(therapistId, conv.id);
       const byId = new Map(loaded.map((m) => [m.id, m]));
       // The whole tree is present — neither branch is filtered out by a path.
       expect(loaded.map((m) => m.text).sort()).toEqual(["branch A", "branch B", "reply", "root"]);
@@ -83,11 +83,11 @@ describe("therapist access — reads, review line, attention queue", () => {
       await grantConversation(clientId, conv.id);
       await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "still visible to the therapist" });
 
-      const before = await loadSharedMessages(therapistId, conv.id);
+      const { messages: before } = await loadSharedMessages(therapistId, conv.id);
       await setConversationHidden(conv.id, clientId, true);
       // The gate must not care about hiddenAt.
       await expect(requireGrantedConversation(therapistId, conv.id)).resolves.toMatchObject({ clientId });
-      const after = await loadSharedMessages(therapistId, conv.id);
+      const { messages: after } = await loadSharedMessages(therapistId, conv.id);
       expect(after.map((m) => m.text)).toEqual(before.map((m) => m.text));
       expect(after).toHaveLength(1);
     });
@@ -121,8 +121,29 @@ describe("therapist access — reads, review line, attention queue", () => {
       const corrupt = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "bad" });
       await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, corrupt.id));
 
-      const loaded = await loadSharedMessages(therapistId, conv.id);
+      const { messages: loaded } = await loadSharedMessages(therapistId, conv.id);
       expect(loaded.map((m) => m.text)).toEqual(["good"]);
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("exposes raw nodes that keep a corrupt row present for path resolution", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      const conv = await createConversation(clientId, "Corrupt but present");
+      await grantConversation(clientId, conv.id);
+      const root = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "root" });
+      const corrupt = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "ai", text: "will corrupt" });
+      await db.update(messages).set({ ciphertext: "not-valid-ciphertext" }).where(eq(messages.id, corrupt.id));
+
+      const { messages: decrypted, nodes } = await loadSharedMessages(therapistId, conv.id);
+      // The corrupt body is gone from the decrypted list…
+      expect(decrypted.map((m) => m.id)).toEqual([root.id]);
+      // …but its raw node survives (plaintext columns only), so the reading
+      // view's path math still sees the whole tree — corrupt row and all.
+      expect(nodes.map((n) => n.id)).toEqual([root.id, corrupt.id]);
+      expect(nodes.find((n) => n.id === corrupt.id)).toMatchObject({ parentId: root.id, riskLevel: "none" });
+
       consoleErrorSpy.mockRestore();
     });
 

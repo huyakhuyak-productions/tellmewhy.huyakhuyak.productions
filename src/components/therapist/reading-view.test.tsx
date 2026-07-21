@@ -72,12 +72,26 @@ function tree(): ReadingMessage[] {
   ];
 }
 
+// The raw nodes the view resolves paths over — every row's plaintext columns,
+// mirroring getReadingView's `nodes`. Here they line up 1:1 with the decrypted
+// messages (nothing corrupt); the corrupt-row test below deliberately diverges.
+function nodesFrom(messages: ReadingMessage[]) {
+  return messages.map((m) => ({
+    id: m.id,
+    parentId: m.parentId,
+    createdAt: m.createdAt,
+    riskLevel: m.riskLevel,
+  }));
+}
+
 function renderView() {
+  const messages = tree();
   return render(
     <ReadingView
       conversationId="conv-1"
       clientId="client-1"
-      messages={tree()}
+      messages={messages}
+      nodes={nodesFrom(messages)}
       // The client's active leaf is the AI reply — the therapist's initial view
       // is seeded from it, so the not-yet-shown intervention is its descendant.
       activeLeafId="ai-reply"
@@ -111,6 +125,41 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("ReadingView corrupt-row resilience", () => {
+  it("keeps ancestors visible when a mid-chain message body won't decrypt", () => {
+    const rootText = "This is the very first thing I wrote.";
+    const leafText = "And this is what I said after.";
+    // The whole raw tree — every branch, corrupt bodies included. Path math
+    // resolves over THIS, so a body that fails to decrypt can't sever the chain.
+    const nodes = [
+      { id: "root", parentId: null, createdAt: new Date("2026-07-20T10:00:00Z"), riskLevel: "none" as const },
+      { id: "middle", parentId: "root", createdAt: new Date("2026-07-20T10:00:05Z"), riskLevel: "none" as const },
+      { id: "leaf", parentId: "middle", createdAt: new Date("2026-07-20T10:00:10Z"), riskLevel: "none" as const },
+    ];
+    // The decrypted list — the middle body failed to decrypt, so it's ABSENT.
+    // Resolving the path over this alone would orphan the root from the leaf.
+    const messages: ReadingMessage[] = [
+      { id: "root", parentId: null, createdAt: nodes[0]!.createdAt, sender: "client", text: rootText, riskLevel: "none", flagged: false, authorName: null },
+      { id: "leaf", parentId: "middle", createdAt: nodes[2]!.createdAt, sender: "client", text: leafText, riskLevel: "none", flagged: false, authorName: null },
+    ];
+
+    render(
+      <ReadingView
+        conversationId="conv-corrupt"
+        clientId="client-1"
+        messages={messages}
+        nodes={nodes}
+        activeLeafId="leaf"
+        markerMessageId={null}
+      />,
+    );
+
+    // Both readable ancestors survive; only the unreadable middle is omitted.
+    expect(screen.getByText(rootText)).toBeTruthy();
+    expect(screen.getByText(leafText)).toBeTruthy();
+  });
 });
 
 describe("ReadingView intervention resync", () => {

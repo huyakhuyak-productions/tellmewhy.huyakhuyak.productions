@@ -56,6 +56,7 @@ export default async function TherapistReadingPage({
         conversationId={conversationId}
         clientId={view.clientId}
         messages={view.messages}
+        nodes={view.nodes}
         activeLeafId={view.activeLeafId}
         markerMessageId={view.markerMessageId}
         focusMessageId={focusMessageId}

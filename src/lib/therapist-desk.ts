@@ -18,6 +18,7 @@ import {
 import {
   type AttentionItem,
   type SharedMessage,
+  type SharedMessageNode,
   listAttentionItems,
   loadSharedMessages,
 } from "./therapist-access";
@@ -208,13 +209,21 @@ export type ReadingMessage = {
   authorName: string | null;
 };
 
+// The whole tree's RAW nodes — plaintext columns only, corrupt bodies included.
+// The reading view runs every path calculation over these (never the decrypted
+// messages), so an unreadable mid-chain body can't sever its ancestors.
+export type ReadingNode = SharedMessageNode;
+
 export type ReadingView = {
   clientId: string;
   clientName: string | null;
   conversationTitle: string;
   /** The WHOLE tree, flat, (createdAt, id) asc — every branch, not just the
-   *  active path. The view projects the marker per displayed path itself. */
+   *  active path. Display data ONLY: a body that failed to decrypt is absent,
+   *  so the view resolves paths over `nodes`, not this. */
   messages: ReadingMessage[];
+  /** The same tree's raw nodes — path math and the crisis count ride these. */
+  nodes: ReadingNode[];
   activeLeafId: string | null;
   markerMessageId: string | null;
 };
@@ -231,7 +240,7 @@ export async function getReadingView(
   conversationId: string,
 ): Promise<ReadingView> {
   const { linkId, clientId } = await requireGrantedConversation(therapistId, conversationId);
-  const shared = await loadSharedMessages(therapistId, conversationId);
+  const { messages: shared, nodes } = await loadSharedMessages(therapistId, conversationId);
 
   const authorIds = shared
     .filter((m) => m.sender === "therapist" && m.authorId)
@@ -271,6 +280,7 @@ export async function getReadingView(
     clientName: links.find((l) => l.clientId === clientId)?.clientName ?? null,
     conversationTitle: convs.find((c) => c.id === conversationId)?.title ?? "Untitled reflection",
     messages: messages_,
+    nodes,
     activeLeafId: convRow[0]?.activeLeafId ?? null,
     markerMessageId: markerRow?.messageId ?? null,
   };
