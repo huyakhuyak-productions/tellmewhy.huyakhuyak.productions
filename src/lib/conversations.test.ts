@@ -241,6 +241,31 @@ describe("encrypted conversations", () => {
       expect(rows).toHaveLength(1);
     });
 
+    it("keeps the stored text and risk when a reused id is re-sent with different words", async () => {
+      const { id } = await createConversation(userId, "Reused id, new words");
+      const clientMessageId = randomUUID();
+      await saveMessage({ conversationId: id, userId, sender: "client", text: "the original words", riskLevel: "crisis", id: clientMessageId });
+
+      // A replay with DIFFERENT words never rewrites the row — the first send is
+      // the authority. The return reports the reuse and carries the STORED risk,
+      // so a caller (the chat route) can prefer it over a fresh classification.
+      const reused = await saveMessage({ conversationId: id, userId, sender: "client", text: "totally different words", riskLevel: "none", id: clientMessageId });
+      expect(reused.id).toBe(clientMessageId);
+      expect(reused.reused).toBe(true);
+      expect(reused.riskLevel).toBe("crisis");
+
+      const [stored] = await loadMessages(id, userId);
+      expect(stored.text).toBe("the original words");
+      expect(stored.riskLevel).toBe("crisis");
+    });
+
+    it("reports a fresh (non-reused) insert with its own risk level", async () => {
+      const { id } = await createConversation(userId, "Fresh insert");
+      const saved = await saveMessage({ conversationId: id, userId, sender: "client", text: "hello", riskLevel: "elevated", id: randomUUID() });
+      expect(saved.reused).toBe(false);
+      expect(saved.riskLevel).toBe("elevated");
+    });
+
     it("rejects a re-sent id that belongs to another conversation with NotFoundError", async () => {
       const { id } = await createConversation(userId, "Owner here");
       const other = await createConversation(userId, "A different conversation");

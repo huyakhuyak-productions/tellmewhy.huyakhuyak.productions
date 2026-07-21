@@ -135,6 +135,13 @@ async function handlePost(req: Request): Promise<Response> {
       // to the existing client row instead of inserting a duplicate, and the AI
       // reply below chains onto whichever row saveMessage returns.
       const savedClient = await saveMessage({ conversationId, userId, sender: "client", text, riskLevel, parentId, id: clientMessageId });
+      // On an idempotent reuse the stored row keeps its ORIGINAL risk — prefer it
+      // over this replay's fresh classification so an unedited retry of a crisis
+      // send can never silently downgrade the reply (no crisis addendum, header
+      // "none") onto a crisis-flagged row. On a fresh insert this is a no-op
+      // (the stored level IS the one just classified). Mirrors the regenerate
+      // path, which likewise reuses the parent turn's stored risk.
+      riskLevel = savedClient.riskLevel;
       // The AI reply must chain off THIS client message — never "whatever the
       // leaf happens to be when the stream finishes", which a concurrent send
       // could have moved.

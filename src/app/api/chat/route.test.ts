@@ -994,6 +994,29 @@ describe("POST /api/chat", () => {
       });
     });
 
+    it("an unedited replay of a crisis send keeps crisis risk — never downgraded to the replay's classification", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Crisis replay");
+      const clientMessageId = randomUUID();
+      // First attempt: classified crisis (MOCK_CRISIS drives the classifier), so
+      // the persisted client row stores riskLevel "crisis".
+      await postAndAwaitReply(clientId, { conversationId: id, text: "MOCK_CRISIS I can't keep going", clientMessageId });
+      const [m1] = await loadMessages(id, clientId);
+      expect(m1.riskLevel).toBe("crisis");
+
+      // Replay the SAME clientMessageId, but with text that classifies as none.
+      // Dedupe reuses the stored crisis row, so the reply must still carry crisis
+      // — the stored risk wins over this replay's fresh classification, mirroring
+      // the regenerate invariant (a retry can never silently downgrade a crisis).
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, text: "just an ordinary thought now", clientMessageId }));
+      expect(res.headers.get("x-risk-level")).toBe("crisis");
+      await res.text();
+
+      const content = String(lastChatPrompt().find((m) => m.role === "system")?.content);
+      expect(content).toContain("The latest message shows possible self-harm or suicidal intent");
+    });
+
     it("rejects a replayed clientMessageId owned by another user with a uniform 404", async () => {
       const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Replay guard");

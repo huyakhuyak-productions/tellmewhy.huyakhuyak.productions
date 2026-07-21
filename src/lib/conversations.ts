@@ -104,7 +104,11 @@ export async function saveMessage(input: {
   // once. Omitted for server-authored rows (AI reply, therapist), which have no
   // retry to dedupe and let the DB mint the id.
   id?: string;
-}): Promise<{ id: string }> {
+  // `reused` is true only on an idempotent conflict-reuse (a replay of a
+  // caller-minted id); `riskLevel` is the STORED row's level — the original on a
+  // reuse, the just-inserted one otherwise. It lets the route prefer the stored
+  // risk over a replay's fresh classification (never downgrade a crisis turn).
+}): Promise<{ id: string; reused: boolean; riskLevel: RiskLevel }> {
   await requireOwnedConversation(input.conversationId, input.userId);
   const dek = await getOrCreateUserDek(input.userId);
   // The insert, the leaf move, and the updatedAt bump must succeed or fail
@@ -165,21 +169,27 @@ export async function saveMessage(input: {
       // conversation ownership was already established above, so a same-conversation
       // client row here belongs to this owner. Reuse takes no leaf move: the first
       // send already positioned the leaf, and a fresh reply will move it onward.
+      //
+      // The stored row is the authority: its text and risk are NOT overwritten by
+      // this replay's payload. Returning the stored `riskLevel` lets the route
+      // keep a crisis flag even if a replay carrying different words (or a flaky
+      // classifier) would have scored the turn lower — the same "never silently
+      // downgrade a crisis turn" invariant the regenerate path upholds.
       const [existing] = await tx
-        .select({ id: messages.id, conversationId: messages.conversationId, sender: messages.sender })
+        .select({ id: messages.id, conversationId: messages.conversationId, sender: messages.sender, riskLevel: messages.riskLevel })
         .from(messages)
         .where(eq(messages.id, input.id!));
       if (!existing || existing.conversationId !== input.conversationId || existing.sender !== input.sender) {
         throw new NotFoundError("Message not found");
       }
-      return { id: existing.id };
+      return { id: existing.id, reused: true, riskLevel: existing.riskLevel };
     }
 
     await tx
       .update(conversations)
       .set({ activeLeafId: row.id, updatedAt: new Date() })
       .where(eq(conversations.id, input.conversationId));
-    return row;
+    return { id: row.id, reused: false, riskLevel: input.riskLevel ?? "none" };
   });
 }
 
