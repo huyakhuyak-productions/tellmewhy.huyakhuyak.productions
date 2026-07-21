@@ -211,6 +211,50 @@ describe("ReadingView crisis navigator sync on focus landing", () => {
   });
 });
 
+describe("ReadingView navigator steps past a body-less crisis", () => {
+  it("advances the readout onto a body-less crisis so the next press reaches the next one", () => {
+    // Two crisis messages on one chain: the first (A) is body-less — its row is
+    // a crisis in `nodes` (so it counts) but its body failed to decrypt, so
+    // it's ABSENT from the decrypted `messages` and can never scroll-land. The
+    // second (B) is present. The navigator must still be able to step PAST A to
+    // reach B — stepping advances its own readout even when it can't scroll.
+    const bText = "The second thing, which reads as crisis.";
+    const nodes = [
+      { id: "root", parentId: null, createdAt: new Date("2026-07-20T10:00:00Z"), riskLevel: "none" as const },
+      { id: "A", parentId: "root", createdAt: new Date("2026-07-20T10:00:05Z"), riskLevel: "crisis" as const },
+      { id: "B", parentId: "A", createdAt: new Date("2026-07-20T10:00:10Z"), riskLevel: "crisis" as const },
+    ];
+    // A's body is absent (won't decrypt); root and B decrypt fine.
+    const messages: ReadingMessage[] = [
+      { id: "root", parentId: null, createdAt: nodes[0]!.createdAt, sender: "client", text: "How it started.", riskLevel: "none", flagged: false, authorName: null },
+      { id: "B", parentId: "A", createdAt: nodes[2]!.createdAt, sender: "client", text: bText, riskLevel: "crisis", flagged: false, authorName: null },
+    ];
+
+    render(
+      <ReadingView
+        conversationId="conv-bodyless"
+        clientId="client-1"
+        messages={messages}
+        nodes={nodes}
+        activeLeafId="B"
+        markerMessageId={null}
+      />,
+    );
+
+    // Fresh mount: the pill shows the count, no position yet.
+    expect(screen.getByText("2 crisis messages")).toBeTruthy();
+
+    // First step lands on A (index 0). A can't scroll (body-less), but the
+    // readout must still advance to 1/2 — otherwise Next stays a dead button.
+    fireEvent.click(screen.getByLabelText("Next crisis message"));
+    expect(screen.getByText("1/2")).toBeTruthy();
+
+    // The following press reaches B (index 1) — proving A didn't deadlock it.
+    fireEvent.click(screen.getByLabelText("Next crisis message"));
+    expect(screen.getByText("2/2")).toBeTruthy();
+  });
+});
+
 describe("ReadingView intervention resync", () => {
   it("snaps the view leaf to the created id so the just-sent message appears", async () => {
     renderView();

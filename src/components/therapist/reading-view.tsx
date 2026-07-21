@@ -161,11 +161,13 @@ export function ReadingView({
   const focusMessage = useCallback(
     (id: string) => {
       if (!messagesById.has(id)) return;
-      // Landing on a crisis message — from the navigator, a digest anchor, or
-      // the `?focus=` mount — syncs the navigator's readout to it, so its i/N
-      // never goes stale behind a landing jumpToCrisis didn't drive. Guarded by
-      // `messagesById` above: a body-less crisis (absent here) can't scroll-land
-      // in the first place, so it deliberately never claims the navigator.
+      // A NON-navigator landing on a crisis message — a digest anchor or the
+      // `?focus=` mount — syncs the navigator's readout to it, so its i/N never
+      // goes stale behind a landing jumpToCrisis didn't drive. Guarded by
+      // `messagesById` above: a body-less crisis (absent here) can't scroll-land,
+      // so these landings never sync it. Stepping is the exception — jumpToCrisis
+      // advances the readout for a body-less target on its own (see below), so
+      // the navigator can still step past one; only focus/digest landings skip it.
       const crisisIndex = crisisIds.indexOf(id);
       if (crisisIndex !== -1) {
         setActiveCrisis(crisisIndex);
@@ -208,10 +210,16 @@ export function ReadingView({
     (next: number) => {
       const id = crisisIds[next];
       if (!id) return;
-      // A crisis message may sit on another branch — focusMessage switches to
-      // it before landing, so the navigator reaches every crisis in the tree.
-      // focusMessage also owns the activeCrisis/landed sync now (a crisis id in
-      // `crisisIds`), so stepping and landing agree from one place.
+      // The readout advances BEFORE the (possibly-bailing) land: a body-less
+      // crisis is in `crisisIds` but absent from `messagesById`, so focusMessage
+      // bails at its guard and never scrolls — but the reader still must be able
+      // to step PAST it to reach the next crisis, so the navigator moves on its
+      // own here. When the body IS present this duplicates focusMessage's sync
+      // with identical values (harmless). A crisis message may also sit on
+      // another branch — focusMessage switches to it before landing, so the
+      // navigator reaches every crisis in the tree.
+      setActiveCrisis(next);
+      setLanded(true);
       focusMessage(id);
     },
     [crisisIds, focusMessage],
