@@ -15,6 +15,7 @@ import { grantConversation, revokeGrant } from "./sharing";
 import { acceptInvite, createInvite } from "./therapist-links";
 import { getDigestModel } from "./ai/models";
 import { getOrRefreshDigest, type DigestBody } from "./digests";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 // Spy-mode keeps the real getDigestModel (returns the AI_MOCK model) by
 // default; individual tests override a single call to inject a hallucinating
@@ -68,14 +69,15 @@ describe("digests — get-or-refresh behind the gate", () => {
   let clientId: string;
   let therapistId: string;
 
-  beforeEach(() => {
-    clientId = `test-${randomUUID()}`;
-    therapistId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    clientId = await seedUser();
+    therapistId = await seedUser();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
+  afterEach(cleanupSeededUsers);
 
   async function link() {
     const { token } = await createInvite(clientId, "client");

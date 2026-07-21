@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNote, listNotes } from "@/lib/notes";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -16,6 +17,7 @@ import { DELETE } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function ctx(noteId: string) {
   return { params: Promise.resolve({ noteId }) };
@@ -35,7 +37,7 @@ describe("DELETE /api/notes/[noteId]", () => {
   });
 
   it("deletes the caller's own note and leaves no row behind", async () => {
-    const owner = `test-${randomUUID()}`;
+    const owner = await seedUser();
     session = { user: { id: owner } };
     const { id } = await createNote(owner, { body: "let this one go" });
 
@@ -45,7 +47,7 @@ describe("DELETE /api/notes/[noteId]", () => {
   });
 
   it("returns 404 (never a hint) for a note owned by someone else", async () => {
-    const otherId = `test-${randomUUID()}`;
+    const otherId = await seedUser();
     const { id: theirs } = await createNote(otherId, { body: "theirs" });
 
     const owner = `test-${randomUUID()}`;

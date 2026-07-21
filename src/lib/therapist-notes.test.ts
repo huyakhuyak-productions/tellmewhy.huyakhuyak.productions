@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, notes, user } from "@/db/schema";
 import { createConversation } from "./conversations";
@@ -15,6 +15,7 @@ import {
   listPublicNotesForClient,
 } from "./therapist-notes";
 import { acceptInvite, createInvite, revokeLink } from "./therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 async function insertUser(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -34,10 +35,11 @@ describe("therapist notes — author-owned, client-boundaried", () => {
   let clientId: string;
   let therapistId: string;
 
-  beforeEach(() => {
-    clientId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    clientId = await seedUser();
     therapistId = `test-${randomUUID()}`;
   });
+  afterEach(cleanupSeededUsers);
 
   describe("createNote — key ownership and boundaries", () => {
     it("encrypts the body with the THERAPIST's DEK — a v1 blob that decrypts only with it", async () => {

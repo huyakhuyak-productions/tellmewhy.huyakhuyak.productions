@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
@@ -16,6 +16,7 @@ import {
   listDepartures,
   revokeLink,
 } from "./therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 async function insertUser(overrides: { name?: string; role?: string } = {}): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -39,6 +40,7 @@ describe("therapist link lifecycle", () => {
     clientId = `test-${randomUUID()}`;
     therapistId = `test-${randomUUID()}`;
   });
+  afterEach(cleanupSeededUsers);
 
   it("round-trips a client-initiated invite through acceptance", async () => {
     const { linkId, token } = await createInvite(clientId, "client");
@@ -174,6 +176,7 @@ describe("therapist link lifecycle", () => {
     const { createConversation } = await import("./conversations");
     const { linkId, token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
+    await seedUser(clientId);
     const conv = await createConversation(clientId, "Shared conversation");
     await db.insert(sharingGrants).values({ linkId, conversationId: conv.id });
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise } from "@/lib/exercises";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -17,6 +18,7 @@ import { PATCH } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(exerciseId: string) {
   return { params: Promise.resolve({ exerciseId }) };
@@ -31,7 +33,7 @@ function jsonRequest(body: unknown) {
 }
 
 async function assignedExercise() {
-  const clientId = `test-${randomUUID()}`;
+  const clientId = await seedUser();
   const therapistId = `test-${randomUUID()}`;
   const { token } = await createInvite(clientId, "client");
   await acceptInvite(token, therapistId);

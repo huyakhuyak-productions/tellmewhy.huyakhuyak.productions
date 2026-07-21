@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkInMood, listMoodCheckins } from "@/lib/mood";
 import { moodRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -20,6 +21,7 @@ import { GET, POST } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function jsonRequest(method: string, body: unknown) {
   return new Request("http://localhost/api/mood", {
@@ -35,7 +37,7 @@ function getRequest(query = "") {
 
 describe("POST/GET /api/mood", () => {
   it("records a check-in the client can then read back", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
 
     const res = await POST(jsonRequest("POST", { score: 4, note: "steadier today" }));
@@ -46,7 +48,7 @@ describe("POST/GET /api/mood", () => {
   });
 
   it("returns the check-ins for the caller as { checkins }", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     await POST(jsonRequest("POST", { score: 3 }));
 
@@ -63,7 +65,7 @@ describe("POST/GET /api/mood", () => {
   });
 
   it("clamps days=0 up to 1 instead of falling back to the default window", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     // A check-in 10 days back sits inside the 56-day default window but
     // outside a 1-day one — so it tells a clamp-to-1 apart from a fallthrough
@@ -79,7 +81,7 @@ describe("POST/GET /api/mood", () => {
   });
 
   it("treats an empty days= as absent, falling back to the default window", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     // A check-in 30 days back sits inside the 56-day default window but outside
     // a 1-day one — so an empty `?days=` that fell back to the default surfaces

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation, saveMessage } from "@/lib/conversations";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -17,6 +18,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 describe("GET /api/therapist/attention", () => {
   it("returns 404 when there is no session", async () => {
@@ -40,7 +42,7 @@ describe("GET /api/therapist/attention", () => {
   });
 
   it("surfaces a crisis message from a granted conversation, never an ungranted one", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -71,7 +73,7 @@ describe("GET /api/therapist/attention", () => {
   });
 
   it("stops surfacing a crisis message once its grant is revoked", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);

@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { createConversation, saveMessage } from "@/lib/conversations";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -20,6 +21,7 @@ import { PUT } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(conversationId: string) {
   return { params: Promise.resolve({ conversationId }) };
@@ -53,7 +55,7 @@ describe("PUT /api/therapist/conversations/[conversationId]/review-marker", () =
   });
 
   it("returns 404 for a therapist without a grant on this conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const conv = await createConversation(clientId, "Never shared");
     const msg = await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "hi" });
@@ -64,7 +66,7 @@ describe("PUT /api/therapist/conversations/[conversationId]/review-marker", () =
   });
 
   it("returns 404 once the grant has been revoked", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -79,7 +81,7 @@ describe("PUT /api/therapist/conversations/[conversationId]/review-marker", () =
   });
 
   it("returns 404 for a message belonging to a different conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -95,7 +97,7 @@ describe("PUT /api/therapist/conversations/[conversationId]/review-marker", () =
   });
 
   it("advances the review marker for a granted conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { linkId, token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);

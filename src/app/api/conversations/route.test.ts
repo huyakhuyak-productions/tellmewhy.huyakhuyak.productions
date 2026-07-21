@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { auth } from "@/lib/auth";
 import chatRateLimiter, { conversationCreateRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 vi.mock("@/lib/auth", () => ({
@@ -10,6 +11,11 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { GET, POST } from "./route";
+
+beforeAll(async () => {
+  await seedUser(userId);
+});
+afterAll(cleanupSeededUsers);
 
 function jsonRequest(method: string, body: unknown) {
   return new Request("http://localhost/api/conversations", {

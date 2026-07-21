@@ -6,6 +6,7 @@ import { createConversation } from "@/lib/conversations";
 import { setMoodSharing } from "@/lib/mood";
 import { grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -21,6 +22,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 async function insertTherapist(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -46,7 +48,7 @@ describe("GET /api/trust", () => {
   });
 
   it("returns link state, granted conversation ids, and the audit feed in one payload", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const therapistId = await insertTherapist("Dr. Amaro");
     const { linkId, token } = await createInvite(clientId, "client");
@@ -77,7 +79,7 @@ describe("GET /api/trust", () => {
   });
 
   it("reports moodShared: true once the client opts in", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const therapistId = await insertTherapist("Dr. On");
     const { token } = await createInvite(clientId, "client");

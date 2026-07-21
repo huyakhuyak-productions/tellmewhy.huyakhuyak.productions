@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, exerciseEntries, exercises, user } from "@/db/schema";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 import { CryptoError, decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
@@ -19,6 +20,8 @@ import {
   thoughtRecordSchema,
 } from "./exercises";
 import { acceptInvite, createInvite, revokeLink } from "./therapist-links";
+
+afterEach(cleanupSeededUsers);
 
 const SAMPLE: ThoughtRecordPayload = {
   situation: "Team standup this morning",
@@ -44,7 +47,7 @@ async function insertUser(name: string): Promise<string> {
 // A client with one active therapist link. The therapist is a real user row so
 // listExercisesForClient's name join resolves; the client can stay a bare id.
 async function linkedPair(therapistName = "Dr. Test"): Promise<{ clientId: string; therapistId: string; linkId: string }> {
-  const clientId = `test-${randomUUID()}`;
+  const clientId = await seedUser();
   const therapistId = await insertUser(therapistName);
   const { linkId, token } = await createInvite(clientId, "client");
   await acceptInvite(token, therapistId);
@@ -255,7 +258,7 @@ describe("exercise entries — private until each is shared", () => {
 
   describe("saveEntry", () => {
     it("saves a self-guided entry (null exerciseId), unshared, encrypted with the CLIENT's DEK", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
 
       const { id } = await saveEntry(clientId, { payload: SAMPLE });
 
@@ -342,7 +345,7 @@ describe("exercise entries — private until each is shared", () => {
     });
 
     it("refuses to share a self-guided entry (null exerciseId) → NotFoundError", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await saveEntry(clientId, { payload: SAMPLE });
 
       await expect(shareEntry(clientId, id)).rejects.toThrow(NotFoundError);

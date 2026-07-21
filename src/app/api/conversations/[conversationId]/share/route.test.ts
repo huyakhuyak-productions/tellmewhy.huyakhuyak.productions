@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation } from "@/lib/conversations";
 import { getGrantStateForClient, grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -21,6 +22,7 @@ import { DELETE, POST } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function shareRequest(method: "POST" | "DELETE", conversationId: string) {
   const req = new Request(`http://localhost/api/conversations/${conversationId}/share`, { method });
@@ -31,9 +33,10 @@ function shareRequest(method: "POST" | "DELETE", conversationId: string) {
 // Each test that needs an active therapist link uses its own fresh client
 // id — the one-active-link-per-client rule (therapist-links.ts) means a
 // shared client id across tests would collide the moment a second test
-// tries to create its own link for the "same" client.
+// tries to create its own link for the "same" client. The client id is
+// seeded because it goes on to own a created conversation.
 async function withActiveLink(): Promise<{ clientId: string }> {
-  const clientId = `test-${randomUUID()}`;
+  const clientId = await seedUser();
   const therapistId = `test-${randomUUID()}`;
   const { token } = await createInvite(clientId, "client");
   await acceptInvite(token, therapistId);
@@ -88,7 +91,7 @@ describe("POST/DELETE /api/conversations/[conversationId]/share", () => {
   });
 
   it("returns 400 with the module's message when the caller has no active therapist link", async () => {
-    const soloClientId = `test-${randomUUID()}`;
+    const soloClientId = await seedUser();
     session = { user: { id: soloClientId } };
     const conv = await createConversation(soloClientId, "No link yet");
     const res = await shareRequest("POST", conv.id);
@@ -100,14 +103,14 @@ describe("POST/DELETE /api/conversations/[conversationId]/share", () => {
   it("returns 404 (never a hint) sharing a conversation owned by someone else", async () => {
     const { clientId } = await withActiveLink();
     session = { user: { id: clientId } };
-    const foreign = await createConversation(`test-${randomUUID()}`, "Not yours");
+    const foreign = await createConversation(await seedUser(), "Not yours");
 
     const res = await shareRequest("POST", foreign.id);
     expect(res.status).toBe(404);
   });
 
   it("returns 404 revoking a share on a conversation owned by someone else", async () => {
-    const foreign = await createConversation(`test-${randomUUID()}`, "Not yours either");
+    const foreign = await createConversation(await seedUser(), "Not yours either");
     const res = await shareRequest("DELETE", foreign.id);
     expect(res.status).toBe(404);
   });

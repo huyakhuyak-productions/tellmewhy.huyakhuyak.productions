@@ -4,6 +4,7 @@ import { createConversation, loadMessages } from "@/lib/conversations";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 import chatRateLimiter, { therapistWriteRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -18,6 +19,7 @@ import { POST } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(conversationId: string) {
   return { params: Promise.resolve({ conversationId }) };
@@ -57,7 +59,7 @@ describe("POST /api/therapist/conversations/[conversationId]/intervention", () =
   });
 
   it("returns 404 for a therapist without a grant on this conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const conv = await createConversation(clientId, "Never shared");
 
@@ -67,7 +69,7 @@ describe("POST /api/therapist/conversations/[conversationId]/intervention", () =
   });
 
   it("returns 404 once the grant has been revoked", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -81,7 +83,7 @@ describe("POST /api/therapist/conversations/[conversationId]/intervention", () =
   });
 
   it("appends the intervention as a therapist message attributed to the caller", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);

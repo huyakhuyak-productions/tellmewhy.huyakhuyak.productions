@@ -4,6 +4,7 @@ import { createConversation } from "@/lib/conversations";
 import { grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -18,6 +19,7 @@ import { POST } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function jsonRequest(body: unknown) {
   return new Request("http://localhost", {
@@ -80,7 +82,7 @@ describe("POST /api/therapist/notes", () => {
   });
 
   it("returns 404 when the passed clientId doesn't match the gated conversation's actual client", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const otherClientId = `test-${randomUUID()}`;
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise, listEntriesForClient } from "@/lib/exercises";
 import { entryRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
@@ -18,6 +19,7 @@ import { POST } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function jsonRequest(body: unknown) {
   return new Request("http://localhost/api/entries", {
@@ -47,7 +49,7 @@ async function assignedExerciseFor(clientId: string): Promise<string> {
 
 describe("POST /api/entries", () => {
   it("saves a self-guided entry and returns its id", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
 
     const res = await POST(jsonRequest({ payload: validPayload }));
@@ -60,7 +62,7 @@ describe("POST /api/entries", () => {
   });
 
   it("saves an entry anchored to one of the caller's own exercises", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const exerciseId = await assignedExerciseFor(clientId);
 
@@ -82,7 +84,7 @@ describe("POST /api/entries", () => {
   });
 
   it("returns 404 (never a hint) for an exercise owned by someone else", async () => {
-    const foreignId = `test-${randomUUID()}`;
+    const foreignId = await seedUser();
     const foreignExercise = await assignedExerciseFor(foreignId);
 
     const clientId = `test-${randomUUID()}`;

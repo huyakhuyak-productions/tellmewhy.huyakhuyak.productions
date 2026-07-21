@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -22,6 +22,7 @@ import { sendIntervention } from "@/lib/interventions";
 import { assignExercise, closeExercise } from "@/lib/exercises";
 import { checkInMood } from "@/lib/mood";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 // Auth is mocked at the module boundary; everything below it is real
 // (repo, crypto, mock models via AI_MOCK=1).
@@ -82,6 +83,16 @@ function chatRequest(body: unknown) {
 }
 
 describe("POST /api/chat", () => {
+  // The module-level `userId` lives for the whole file (its rate-limit bucket
+  // must stay pristine until the very last test), so it is seeded once here
+  // rather than per-test — afterAll (not afterEach) is the sanctioned pairing
+  // for beforeAll-seeded ids, and it also sweeps up every per-test clientId
+  // seeded below in one pass at the end of the file.
+  beforeAll(async () => {
+    await seedUser(userId);
+  });
+  afterAll(cleanupSeededUsers);
+
   it("streams a reply and persists both messages encrypted", async () => {
     const { id } = await createConversation(userId, "Test chat");
     const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
@@ -137,7 +148,7 @@ describe("POST /api/chat", () => {
   });
 
   it("rejects a conversation the user does not own", async () => {
-    const foreign = await createConversation("someone-else", "Not yours");
+    const foreign = await createConversation(await seedUser(), "Not yours");
     const res = await POST(chatRequest({ conversationId: foreign.id, text: "hi" }));
     expect(res.status).toBe(404);
   });
@@ -392,7 +403,7 @@ describe("POST /api/chat", () => {
     }
 
     it("sends a therapist's intervention to the model as a user-role message with the attribution prefix", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Shared with a therapist");
       const therapistId = await insertUser("Dr. Rivera");
@@ -424,7 +435,7 @@ describe("POST /api/chat", () => {
       // revoking it (or replacing it) silently relabeled — or blanked — a
       // past therapist's own words. Attribution now travels with the
       // message's authorId, independent of link status.
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Link revoked later");
       const therapistId = await insertUser("Dr. Chen");
@@ -445,7 +456,7 @@ describe("POST /api/chat", () => {
     });
 
     it("attributes each therapist's messages to themselves, never to whichever therapist is currently linked", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Therapist changed mid-conversation");
 
@@ -473,7 +484,7 @@ describe("POST /api/chat", () => {
     });
 
     it("falls back to 'their therapist' for a legacy therapist message with no recorded author", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Predates the author column");
       // Simulates a row written before the authorId column existed —
@@ -492,7 +503,7 @@ describe("POST /api/chat", () => {
     });
 
     it("clamps an interpolated therapist name to a single bounded line", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Wild display name");
       const messyName = `Dr.\n\tWild   ${"Name".repeat(30)}`;
@@ -517,7 +528,7 @@ describe("POST /api/chat", () => {
     });
 
     it("injects the active AI instruction into the system prompt only when the conversation is currently granted", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Guided conversation");
       const therapistId = await insertUser("Dr. Okafor");
@@ -541,7 +552,7 @@ describe("POST /api/chat", () => {
     });
 
     it("keeps the crisis addendum last, after any therapist guidance", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Crisis with guidance present");
       const therapistId = await insertUser("Dr. Marsh");
@@ -567,7 +578,7 @@ describe("POST /api/chat", () => {
     });
 
     it("never injects instructions when there is no live grant, even though one exists", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Ungranted conversation");
       const therapistId = await insertUser("Dr. Blume");
@@ -586,7 +597,7 @@ describe("POST /api/chat", () => {
     });
 
     it("removes the instruction from the system prompt on the next turn after the grant is revoked", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Grant revoked mid-conversation");
       const therapistId = await insertUser("Dr. Nakamura");
       const { token } = await createInvite(clientId, "client");
@@ -610,7 +621,7 @@ describe("POST /api/chat", () => {
     });
 
     it("never lets the instruction body leak into a response header or a console log", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Nothing to see in headers");
       const therapistId = await insertUser("Dr. Osei");
@@ -637,7 +648,7 @@ describe("POST /api/chat", () => {
     });
 
     it("pays zero extra queries for a client with no therapist link at all", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "No link whatsoever");
 
@@ -672,7 +683,7 @@ describe("POST /api/chat", () => {
     }
 
     it("weaves recent mood check-ins into the system prompt when they exist", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Mood-aware chat");
       await checkInMood(clientId, { score: 2, note: "rough week at work" });
@@ -686,7 +697,7 @@ describe("POST /api/chat", () => {
     });
 
     it("omits the mood line entirely when there are no check-ins", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "No mood data");
 
@@ -697,7 +708,7 @@ describe("POST /api/chat", () => {
     });
 
     it("keeps the crisis addendum after the mood line, never before it", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Crisis with mood present");
       await checkInMood(clientId, { score: 1, note: "very low" });
@@ -714,7 +725,7 @@ describe("POST /api/chat", () => {
     });
 
     it("surfaces active homework in the system prompt but drops closed assignments", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Homework-aware chat");
       const therapistId = await insertUser("Dr. Homework");
@@ -737,7 +748,7 @@ describe("POST /api/chat", () => {
     });
 
     it("orders homework newest-first — the newer assignment's instruction precedes the older one", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Two homework assignments");
       const therapistId = await insertUser("Dr. Sequence");
@@ -761,7 +772,7 @@ describe("POST /api/chat", () => {
     });
 
     it("never lets a client's own self-note reach the system prompt, and the route never imports the notes module", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Notes stay out of the prompt");
       // A private self-note is the client's own data, but it is journal
@@ -781,7 +792,7 @@ describe("POST /api/chat", () => {
     });
 
     it("drops homework once its therapist link is revoked — steering dies with the relationship", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Homework after revoke");
       const therapistId = await insertUser("Dr. Gone");
@@ -804,7 +815,7 @@ describe("POST /api/chat", () => {
     });
 
     it("always briefs the thought-record walk-through, even with no homework or therapist", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Standalone walk-through");
 
@@ -817,7 +828,7 @@ describe("POST /api/chat", () => {
     });
 
     it("orders the system prompt base < walk-through < mood < homework < guidance < crisis", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       mockSession(clientId);
       const { id } = await createConversation(clientId, "Everything at once");
       const therapistId = await insertUser("Dr. Everything");
@@ -880,7 +891,7 @@ describe("POST /api/chat", () => {
     }
 
     it("an edit branches: the new client message is a sibling of the edited one", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Branching edit");
       await postAndAwaitReply(clientId, { conversationId: id, text: "first thought" });
       await postAndAwaitReply(clientId, { conversationId: id, text: "second thought" });
@@ -909,7 +920,7 @@ describe("POST /api/chat", () => {
     });
 
     it("regenerate creates an AI sibling and moves the leaf", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Regenerated reply");
       await postAndAwaitReply(clientId, { conversationId: id, text: "tell me why" });
       const [m1, r1] = await loadMessages(id, clientId);
@@ -938,7 +949,7 @@ describe("POST /api/chat", () => {
     });
 
     it("regenerateOf rejects a non-AI or foreign message with 404", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Regenerate misuse");
       await postAndAwaitReply(clientId, { conversationId: id, text: "hello" });
       const [m1] = await loadMessages(id, clientId);
@@ -950,7 +961,7 @@ describe("POST /api/chat", () => {
 
       // Another user's AI message id answers the same uniform 404 — no
       // existence oracle across ownership boundaries.
-      const strangerId = `test-${randomUUID()}`;
+      const strangerId = await seedUser();
       const foreign = await createConversation(strangerId, "Not yours");
       await saveMessage({ conversationId: foreign.id, userId: strangerId, sender: "ai", text: "foreign reply" });
       const [foreignAi] = await loadMessages(foreign.id, strangerId);
@@ -960,7 +971,7 @@ describe("POST /api/chat", () => {
     });
 
     it("aborting the stream persists exactly the streamed prefix", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Stopped mid-reply");
 
       const FULL_REPLY_CHUNKS = ["The ", "river ", "keeps ", "moving ", "even ", "when ", "you ", "rest."];
@@ -1036,7 +1047,7 @@ describe("POST /api/chat", () => {
     });
 
     it("regenerating a crisis-flagged turn reuses its stored risk — addendum and header both crisis, no re-classification", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Crisis regenerate");
       // MOCK_CRISIS flags via the classifier (not the regex floor) so the
       // stored risk on the client row is genuinely "crisis".
@@ -1062,7 +1073,7 @@ describe("POST /api/chat", () => {
     });
 
     it("regenerating a crisis turn keeps its crisis flag even when the parent body won't decrypt", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Corrupt crisis parent");
       await postAndAwaitReply(clientId, { conversationId: id, text: "MOCK_CRISIS I can't keep going" });
       const [m1, r1] = await loadMessages(id, clientId);
@@ -1082,7 +1093,7 @@ describe("POST /api/chat", () => {
     });
 
     it("regenerating a normal turn stays none — no crisis addendum, header none", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Normal regenerate");
       await postAndAwaitReply(clientId, { conversationId: id, text: "just an ordinary thought" });
       const [m1, r1] = await loadMessages(id, clientId);
@@ -1098,7 +1109,7 @@ describe("POST /api/chat", () => {
     });
 
     it("an edit with a foreign/nonexistent parentId is a route-level 404", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Edit misparent");
       await postAndAwaitReply(clientId, { conversationId: id, text: "a real turn" });
 
@@ -1111,7 +1122,7 @@ describe("POST /api/chat", () => {
     });
 
     it("a root edit (parentId: null) collapses history to one message and DELIBERATELY re-titles when uncustomized", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "July 6");
       // First exchange auto-titles (uncustomized).
       await postAndAwaitReply(clientId, { conversationId: id, text: "first thought" });
@@ -1135,7 +1146,7 @@ describe("POST /api/chat", () => {
     });
 
     it("a first exchange whose stream ends in a model error keeps its neutral title (partial still persisted)", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "July 6");
 
       // The stream closes cleanly (so onFinish runs), but the model reports it
@@ -1173,7 +1184,7 @@ describe("POST /api/chat", () => {
     });
 
     it("the AI context is the ACTIVE PATH, not the whole tree", async () => {
-      const clientId = `test-${randomUUID()}`;
+      const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Branch-aware context");
       await postAndAwaitReply(clientId, { conversationId: id, text: "original first" });
       await postAndAwaitReply(clientId, { conversationId: id, text: "SUPERSEDED_BRANCH original second" });

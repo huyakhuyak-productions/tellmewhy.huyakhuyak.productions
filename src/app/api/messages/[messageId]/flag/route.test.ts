@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createConversation, loadMessages, saveMessage } from "@/lib/conversations";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -12,6 +13,11 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { POST } from "./route";
+
+beforeAll(async () => {
+  await seedUser(userId);
+});
+afterAll(cleanupSeededUsers);
 
 afterEach(() => {
   session = { user: { id: userId } };
@@ -59,7 +65,7 @@ describe("POST /api/messages/[messageId]/flag", () => {
   });
 
   it("returns 404 (never a hint) flagging a message in someone else's conversation", async () => {
-    const owner = `test-${randomUUID()}`;
+    const owner = await seedUser();
     const conv = await createConversation(owner, "Not yours");
     const { id: messageId } = await saveMessage({ conversationId: conv.id, userId: owner, sender: "client", text: "hi" });
 

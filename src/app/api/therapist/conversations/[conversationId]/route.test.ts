@@ -4,6 +4,7 @@ import { createConversation, saveMessage } from "@/lib/conversations";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { advanceReviewMarker } from "@/lib/therapist-access";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -18,6 +19,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(conversationId: string) {
   return { params: Promise.resolve({ conversationId }) };
@@ -44,7 +46,7 @@ describe("GET /api/therapist/conversations/[conversationId]", () => {
   });
 
   it("returns 404 for a therapist with no grant on this conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const conv = await createConversation(clientId, "Never shared");
 
@@ -54,7 +56,7 @@ describe("GET /api/therapist/conversations/[conversationId]", () => {
   });
 
   it("returns 404 once the grant has been revoked", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -68,7 +70,7 @@ describe("GET /api/therapist/conversations/[conversationId]", () => {
   });
 
   it("returns decrypted messages with no marker when nothing has been reviewed yet", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
@@ -86,7 +88,7 @@ describe("GET /api/therapist/conversations/[conversationId]", () => {
   });
 
   it("returns the therapist's own review marker for this conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);

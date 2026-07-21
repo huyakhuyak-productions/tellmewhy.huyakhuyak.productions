@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise, saveEntry } from "@/lib/exercises";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
@@ -17,6 +18,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 async function withAssignedExercise(clientId: string): Promise<{ exerciseId: string }> {
   const therapistId = `test-${randomUUID()}`;
@@ -31,7 +33,7 @@ async function withAssignedExercise(clientId: string): Promise<{ exerciseId: str
 
 describe("GET /api/exercises", () => {
   it("returns the client's assigned exercises and their own entries in one payload", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const { exerciseId } = await withAssignedExercise(clientId);
     await saveEntry(clientId, {

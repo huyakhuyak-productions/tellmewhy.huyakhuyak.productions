@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise, saveEntry, shareEntry } from "@/lib/exercises";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -16,6 +17,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(entryId: string) {
   return { params: Promise.resolve({ entryId }) };
@@ -29,7 +31,7 @@ const payload = {
 };
 
 async function entryFor(shared: boolean) {
-  const clientId = `test-${randomUUID()}`;
+  const clientId = await seedUser();
   const therapistId = `test-${randomUUID()}`;
   const { token } = await createInvite(clientId, "client");
   await acceptInvite(token, therapistId);

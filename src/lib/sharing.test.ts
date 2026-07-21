@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, messages, sharingGrants } from "@/db/schema";
 import { createConversation, saveMessage } from "./conversations";
@@ -14,15 +14,17 @@ import {
   revokeGrant,
 } from "./sharing";
 import { acceptInvite, createInvite, revokeLink } from "./therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 describe("sharing grants — THE gate", () => {
   let clientId: string;
   let therapistId: string;
 
-  beforeEach(() => {
-    clientId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    clientId = await seedUser();
     therapistId = `test-${randomUUID()}`;
   });
+  afterEach(cleanupSeededUsers);
 
   // The adversarial list is the contract for this module — every one of
   // these paths must resolve to a plain NotFoundError (or, where noted, a
@@ -74,7 +76,7 @@ describe("sharing grants — THE gate", () => {
 
     it("refuses a corrupt grant row — conversation owned by client A but grant tied to client B's link", async () => {
       // Set up clientA with a conversation
-      const clientA = `test-${randomUUID()}`;
+      const clientA = await seedUser();
       const convOwnedByA = await createConversation(clientA, "Owned by A");
 
       // Set up clientB and therapist with an active link
@@ -99,7 +101,7 @@ describe("sharing grants — THE gate", () => {
     });
 
     it("refuses a grant attempt by a non-owner client", async () => {
-      const owner = `test-${randomUUID()}`;
+      const owner = await seedUser();
       const conv = await createConversation(owner, "Not yours");
       const { token } = await createInvite(clientId, "client");
       await acceptInvite(token, therapistId);
@@ -185,7 +187,7 @@ describe("sharing grants — THE gate", () => {
     });
 
     it("revokeGrant refuses a non-owner client", async () => {
-      const owner = `test-${randomUUID()}`;
+      const owner = await seedUser();
       const conv = await createConversation(owner, "Not yours either");
       await expect(revokeGrant(clientId, conv.id)).rejects.toThrow(NotFoundError);
     });

@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { auth } from "@/lib/auth";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 vi.mock("@/lib/auth", () => ({
@@ -23,6 +24,11 @@ function jsonRequest(method: string, body: unknown) {
 }
 
 describe("folder routes", () => {
+  beforeAll(async () => {
+    await seedUser(userId);
+  });
+  afterAll(cleanupSeededUsers);
+
   it("creates and lists folders", async () => {
     const res = await POST(jsonRequest("POST", { name: "family" }));
     expect(res.status).toBe(201);
@@ -86,7 +92,7 @@ describe("folder routes", () => {
   });
 
   it("404s on a foreign folder and 400s on malformed input", async () => {
-    const foreign = await createFolder(`test-${randomUUID()}`, "not yours");
+    const foreign = await createFolder(await seedUser(), "not yours");
     const params = Promise.resolve({ folderId: foreign.id });
     expect((await PATCH_FOLDER(jsonRequest("PATCH", { name: "x" }), { params })).status).toBe(404);
     const bad = new Request("http://localhost/api/folders", {

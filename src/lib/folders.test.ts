@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   assignConversationToFolder,
@@ -11,12 +10,14 @@ import {
 import { NotFoundError, createConversation } from "./conversations";
 import { db } from "@/db";
 import { conversations, folders } from "@/db/schema";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 describe("encrypted folders", () => {
   let userId: string;
-  beforeEach(() => {
-    userId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    userId = await seedUser();
   });
+  afterEach(cleanupSeededUsers);
 
   it("stores folder names as ciphertext only", async () => {
     const { id } = await createFolder(userId, "relationships");
@@ -61,7 +62,7 @@ describe("encrypted folders", () => {
   it("refuses every foreign-access path", async () => {
     const folder = await createFolder(userId, "private");
     const conv = await createConversation(userId, "mine");
-    const stranger = `test-${randomUUID()}`;
+    const stranger = await seedUser();
     await expect(renameFolder(folder.id, stranger, "x")).rejects.toThrow(NotFoundError);
     await expect(deleteFolder(folder.id, stranger)).rejects.toThrow(NotFoundError);
     // stranger's conversation can't be filed into my folder…

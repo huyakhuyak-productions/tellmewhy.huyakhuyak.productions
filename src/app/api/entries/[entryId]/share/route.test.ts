@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assignExercise, listEntriesForClient, saveEntry } from "@/lib/exercises";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
 const userId = `test-${randomUUID()}`;
@@ -17,6 +18,7 @@ import { POST } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function shareRequest(entryId: string) {
   const req = new Request(`http://localhost/api/entries/${entryId}/share`, { method: "POST" });
@@ -46,7 +48,7 @@ async function anchoredEntryFor(clientId: string): Promise<string> {
 
 describe("POST /api/entries/[entryId]/share", () => {
   it("shares an entry anchored to the caller's active link", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const entryId = await anchoredEntryFor(clientId);
 
@@ -68,7 +70,8 @@ describe("POST /api/entries/[entryId]/share", () => {
   });
 
   it("returns 404 (never a hint) sharing an entry owned by someone else", async () => {
-    const foreignEntry = await anchoredEntryFor(`test-${randomUUID()}`);
+    const foreignId = await seedUser();
+    const foreignEntry = await anchoredEntryFor(foreignId);
     const clientId = `test-${randomUUID()}`;
     session = { user: { id: clientId } };
 
@@ -77,7 +80,7 @@ describe("POST /api/entries/[entryId]/share", () => {
   });
 
   it("returns 404 sharing a self-guided entry that has no exercise to join", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     session = { user: { id: clientId } };
     const { id } = await saveEntry(clientId, { payload: validPayload });
 

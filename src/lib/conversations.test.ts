@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
 import { eq } from "drizzle-orm";
@@ -18,12 +18,14 @@ import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 describe("encrypted conversations", () => {
   let userId: string;
-  beforeEach(() => {
-    userId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    userId = await seedUser();
   });
+  afterEach(cleanupSeededUsers);
 
   it("stores the title and message bodies as ciphertext only", async () => {
     const { id } = await createConversation(userId, "Feeling overwhelmed");

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { auditEvents, moodCheckins, therapistLinks, user } from "@/db/schema";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 import { CryptoError, decryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError, ValidationError } from "./errors";
@@ -47,9 +48,10 @@ function daysAgo(n: number): string {
 describe("mood — client-owned check-ins, shared on the client's terms", () => {
   let userId: string;
 
-  beforeEach(() => {
-    userId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    userId = await seedUser();
   });
+  afterEach(cleanupSeededUsers);
 
   describe("checkInMood", () => {
     it("stores the payload as v1 ciphertext with no plaintext at rest", async () => {

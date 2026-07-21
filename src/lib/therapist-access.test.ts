@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { auditEvents, messages, reviewMarkers, user } from "@/db/schema";
 import { createConversation, saveMessage, setConversationHidden } from "./conversations";
@@ -13,6 +13,7 @@ import {
   loadSharedMessages,
 } from "./therapist-access";
 import { acceptInvite, createInvite } from "./therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 async function insertUser(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -32,10 +33,11 @@ describe("therapist access — reads, review line, attention queue", () => {
   let clientId: string;
   let therapistId: string;
 
-  beforeEach(() => {
-    clientId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    clientId = await seedUser();
     therapistId = `test-${randomUUID()}`;
   });
+  afterEach(cleanupSeededUsers);
 
   describe("loadSharedMessages", () => {
     it("decrypts a granted conversation's messages via the client's DEK", async () => {
@@ -419,7 +421,7 @@ describe("therapist access — reads, review line, attention queue", () => {
       await acceptInvite(token, therapistId);
       const grantedConv = await createConversation(clientId, "Granted");
       await grantConversation(clientId, grantedConv.id);
-      const otherClientId = `test-${randomUUID()}`;
+      const otherClientId = await seedUser();
       const ungrantedConv = await createConversation(otherClientId, "Ungranted crisis, different client");
       await saveMessage({ conversationId: ungrantedConv.id, userId: otherClientId, sender: "client", text: "hidden crisis", riskLevel: "crisis" });
 

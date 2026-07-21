@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth";
 import { createConversation, saveMessage } from "@/lib/conversations";
 import { getExtractorModel } from "@/lib/ai/models";
 import chatRateLimiter from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 vi.mock("@/lib/auth", () => ({
@@ -24,6 +25,7 @@ import { POST } from "./route";
 afterEach(() => {
   vi.restoreAllMocks();
 });
+afterEach(cleanupSeededUsers);
 
 function mockSession(clientId: string) {
   vi.mocked(auth.api.getSession).mockResolvedValueOnce({
@@ -41,7 +43,7 @@ function extractRequest(body: unknown) {
 
 describe("POST /api/exercises/extract", () => {
   it("returns the extracted thought-record payload for the conversation's owner", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     mockSession(clientId);
     const { id } = await createConversation(clientId, "A hard morning");
     await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: "I froze in the standup again" });
@@ -58,7 +60,7 @@ describe("POST /api/exercises/extract", () => {
   });
 
   it("persists nothing — the entries table stays empty after extraction", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     mockSession(clientId);
     const { id } = await createConversation(clientId, "Nothing saved");
     await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: "I keep avoiding the gym" });
@@ -72,7 +74,8 @@ describe("POST /api/exercises/extract", () => {
   });
 
   it("returns 404 for a conversation the caller does not own", async () => {
-    const foreign = await createConversation("someone-else", "Not yours");
+    const foreignOwner = await seedUser();
+    const foreign = await createConversation(foreignOwner, "Not yours");
     const res = await POST(extractRequest({ conversationId: foreign.id }));
     expect(res.status).toBe(404);
   });
@@ -91,7 +94,7 @@ describe("POST /api/exercises/extract", () => {
   });
 
   it("returns 502 without logging message plaintext when the model fails", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     mockSession(clientId);
     const { id } = await createConversation(clientId, "Model hiccup");
     const sentinel = "SENTINEL_TRANSCRIPT_PLAINTEXT";
@@ -119,7 +122,7 @@ describe("POST /api/exercises/extract", () => {
   });
 
   it("returns 429 once the caller's rate-limit bucket is exhausted", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     mockSession(clientId);
     const { id } = await createConversation(clientId, "Slow down");
     for (let i = 0; i < 25; i++) chatRateLimiter.consume(clientId);

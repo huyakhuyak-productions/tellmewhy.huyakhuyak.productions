@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createConversation, listConversations, listHiddenConversations } from "@/lib/conversations";
 import chatRateLimiter, { conversationMutateRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -13,6 +14,11 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { PATCH } from "./route";
+
+beforeAll(async () => {
+  await seedUser(userId);
+});
+afterAll(cleanupSeededUsers);
 
 afterEach(() => {
   session = { user: { id: userId } };
@@ -42,7 +48,7 @@ describe("PATCH /api/conversations/[conversationId] — hide and restore", () =>
   });
 
   it("returns 404 (never a hint) hiding a conversation owned by someone else", async () => {
-    const foreign = await createConversation(`test-${randomUUID()}`, "Not yours");
+    const foreign = await createConversation(await seedUser(), "Not yours");
     const res = await patchRequest(foreign.id, { hidden: true });
     expect(res.status).toBe(404);
   });

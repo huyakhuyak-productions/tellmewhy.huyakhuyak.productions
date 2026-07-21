@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createConversation, loadMessages, saveMessage } from "@/lib/conversations";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -12,6 +13,11 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 
 import { POST } from "./route";
+
+beforeAll(async () => {
+  await seedUser(userId);
+});
+afterAll(cleanupSeededUsers);
 
 afterEach(() => {
   session = { user: { id: userId } };
@@ -58,8 +64,8 @@ describe("POST /api/conversations/[conversationId]/active-leaf", () => {
   });
 
   it("returns 404 (never a hint) for a conversation owned by someone else", async () => {
-    const { branchA } = await seedBranch(`test-${randomUUID()}`);
-    const foreign = await seedBranch(`test-${randomUUID()}`);
+    const { branchA } = await seedBranch(await seedUser());
+    const foreign = await seedBranch(await seedUser());
 
     const res = await activeLeafRequest(foreign.conv.id, { messageId: branchA.id });
     expect(res.status).toBe(404);

@@ -6,6 +6,7 @@ import { createConversation } from "@/lib/conversations";
 import { grantConversation } from "@/lib/sharing";
 import { createNote } from "@/lib/therapist-notes";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -21,6 +22,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 async function insertTherapist(name: string): Promise<string> {
   const id = `test-${randomUUID()}`;
@@ -66,6 +68,7 @@ describe("GET /api/notes/public", () => {
     const therapistId = await insertTherapist("Dr. Lang");
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);
+    await seedUser(clientId);
     const conv = await createConversation(clientId, "Scoped");
     await grantConversation(clientId, conv.id);
     await createNote(therapistId, clientId, { conversationId: conv.id, kind: "public", body: "About this chat." });

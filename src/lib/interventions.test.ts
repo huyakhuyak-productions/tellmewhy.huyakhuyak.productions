@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, conversations, messages } from "@/db/schema";
 import { createConversation, loadMessages, saveMessage } from "./conversations";
@@ -10,15 +10,17 @@ import { NotFoundError } from "./errors";
 import { sendIntervention } from "./interventions";
 import { grantConversation, revokeGrant } from "./sharing";
 import { acceptInvite, createInvite } from "./therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 describe("sendIntervention", () => {
   let clientId: string;
   let therapistId: string;
 
-  beforeEach(() => {
-    clientId = `test-${randomUUID()}`;
+  beforeEach(async () => {
+    clientId = await seedUser();
     therapistId = `test-${randomUUID()}`;
   });
+  afterEach(cleanupSeededUsers);
 
   it("appears in the client's own message load as a labeled human, with the exact text sent", async () => {
     const { token } = await createInvite(clientId, "client");

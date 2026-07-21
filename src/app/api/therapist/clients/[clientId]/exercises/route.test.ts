@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -16,6 +17,7 @@ import { GET, POST } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(clientId: string) {
   return { params: Promise.resolve({ clientId }) };
@@ -30,7 +32,7 @@ function jsonRequest(body: unknown) {
 }
 
 async function linkedPair() {
-  const clientId = `test-${randomUUID()}`;
+  const clientId = await seedUser();
   const therapistId = `test-${randomUUID()}`;
   const { token } = await createInvite(clientId, "client");
   await acceptInvite(token, therapistId);

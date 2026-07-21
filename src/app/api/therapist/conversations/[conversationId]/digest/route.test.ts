@@ -4,6 +4,7 @@ import { createConversation } from "@/lib/conversations";
 import { digestReadRateLimiter } from "@/lib/rate-limit";
 import { grantConversation } from "@/lib/sharing";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 type Session = { user: { id: string; role: "client" | "therapist" } } | null;
 let session: Session = null;
@@ -18,6 +19,7 @@ import { GET } from "./route";
 afterEach(() => {
   session = null;
 });
+afterEach(cleanupSeededUsers);
 
 function ctxFor(conversationId: string) {
   return { params: Promise.resolve({ conversationId }) };
@@ -44,7 +46,7 @@ describe("GET /api/therapist/conversations/[conversationId]/digest", () => {
   });
 
   it("returns 404 for a therapist with no grant on this conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const conv = await createConversation(clientId, "Never shared");
 
@@ -67,7 +69,7 @@ describe("GET /api/therapist/conversations/[conversationId]/digest", () => {
   });
 
   it("returns 200 with a null digest for a granted-but-empty conversation", async () => {
-    const clientId = `test-${randomUUID()}`;
+    const clientId = await seedUser();
     const therapistId = `test-${randomUUID()}`;
     const { token } = await createInvite(clientId, "client");
     await acceptInvite(token, therapistId);

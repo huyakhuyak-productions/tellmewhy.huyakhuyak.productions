@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation, saveMessage } from "@/lib/conversations";
 import { MAX_NOTE_BODY_LENGTH } from "@/lib/notes";
 import { noteRateLimiter } from "@/lib/rate-limit";
+import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
 const userId = `test-${randomUUID()}`;
 type Session = { user: { id: string } } | null;
@@ -18,6 +19,7 @@ import { GET, POST } from "./route";
 afterEach(() => {
   session = { user: { id: userId } };
 });
+afterEach(cleanupSeededUsers);
 
 function jsonRequest(body: unknown) {
   return new Request("http://localhost/api/notes", {
@@ -42,7 +44,7 @@ describe("POST /api/notes", () => {
   });
 
   it("creates a hand-written note and lists it back", async () => {
-    const owner = `test-${randomUUID()}`;
+    const owner = await seedUser();
     session = { user: { id: owner } };
 
     const res = await POST(jsonRequest({ body: "breathe first, decide after" }));
@@ -58,7 +60,7 @@ describe("POST /api/notes", () => {
   });
 
   it("keeps one of the caller's own chat messages", async () => {
-    const owner = `test-${randomUUID()}`;
+    const owner = await seedUser();
     const messageId = await seedMessage(owner, "I froze in the meeting again");
     session = { user: { id: owner } };
 
@@ -74,7 +76,7 @@ describe("POST /api/notes", () => {
   });
 
   it("returns 404 (never a hint) for a message from someone else's conversation", async () => {
-    const foreignMessage = await seedMessage(`test-${randomUUID()}`, "not yours to keep");
+    const foreignMessage = await seedMessage(await seedUser(), "not yours to keep");
 
     const owner = `test-${randomUUID()}`;
     session = { user: { id: owner } };
@@ -110,7 +112,7 @@ describe("POST /api/notes", () => {
   it("lets a therapist-role session manage its own notes (notes are per-user, not per-role)", async () => {
     // The session shape carries no role; the route never inspects one. Using a
     // distinct therapist-flavoured id proves ownership, not role, gates a note.
-    const therapistId = `test-therapist-${randomUUID()}`;
+    const therapistId = await seedUser(`test-therapist-${randomUUID()}`);
     session = { user: { id: therapistId } };
 
     const res = await POST(jsonRequest({ body: "reflect on today's session" }));
@@ -136,8 +138,8 @@ describe("GET /api/notes", () => {
   });
 
   it("returns only the caller's own notes", async () => {
-    const mine = `test-${randomUUID()}`;
-    const theirs = `test-${randomUUID()}`;
+    const mine = await seedUser();
+    const theirs = await seedUser();
 
     session = { user: { id: theirs } };
     await POST(jsonRequest({ body: "theirs, not mine" }));
