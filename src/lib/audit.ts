@@ -2,7 +2,7 @@
 // audit_events row goes through `recordAudit` (or its deduped variant) here —
 // no module keeps its own inline insert. Rows carry ids, an action enum, and
 // timestamps only: never content, never a title, never decrypted text.
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { db, type DbExecutor } from "@/db";
 import { auditActionEnum, auditEvents, user } from "@/db/schema";
 
@@ -58,23 +58,44 @@ export async function recordAuditDeduped(
 ): Promise<void> {
   const subjectId = event.subjectId ?? null;
   const since = new Date(Date.now() - windowMs);
-  const [existing] = await db
-    .select({ id: auditEvents.id })
-    .from(auditEvents)
-    .where(
-      and(
-        eq(auditEvents.clientId, event.clientId),
-        eq(auditEvents.therapistId, event.therapistId),
-        event.conversationId === null
-          ? isNull(auditEvents.conversationId)
-          : eq(auditEvents.conversationId, event.conversationId),
-        subjectId === null ? isNull(auditEvents.subjectId) : eq(auditEvents.subjectId, subjectId),
-        eq(auditEvents.action, event.action),
-        gte(auditEvents.createdAt, since),
-      ),
-    );
-  if (existing) return;
-  await recordAudit({ ...event, subjectId });
+  // The dedupe is a check-then-insert, so two concurrent identical calls could
+  // both pass the check and both insert — a rolling `gte since` window can't be
+  // expressed as a unique constraint (that's why there's no index here). Serialize
+  // the pair with a Postgres advisory lock keyed on the dedupe tuple, held for
+  // the transaction: the second caller blocks until the first commits, then sees
+  // its row and skips. The key is a deterministic string of the SAME fields the
+  // check matches on (nulls made explicit, since SQL NULL never equals NULL).
+  // Fields join with \u001f (unit separator) — a control char no id or action
+  // carries, so distinct tuples never share a key; even a hashtextextended hash
+  // collision would only serialize two unrelated keys harmlessly. Null becomes ""
+  // (a real id or action is never empty), never a 0x00 byte, which Postgres rejects.
+  const lockKey = [
+    event.clientId,
+    event.therapistId,
+    event.conversationId ?? "",
+    subjectId ?? "",
+    event.action,
+  ].join("\u001f");
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    const [existing] = await tx
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.clientId, event.clientId),
+          eq(auditEvents.therapistId, event.therapistId),
+          event.conversationId === null
+            ? isNull(auditEvents.conversationId)
+            : eq(auditEvents.conversationId, event.conversationId),
+          subjectId === null ? isNull(auditEvents.subjectId) : eq(auditEvents.subjectId, subjectId),
+          eq(auditEvents.action, event.action),
+          gte(auditEvents.createdAt, since),
+        ),
+      );
+    if (existing) return;
+    await recordAudit({ ...event, subjectId }, tx);
+  });
 }
 
 export type AuditEventForClient = {

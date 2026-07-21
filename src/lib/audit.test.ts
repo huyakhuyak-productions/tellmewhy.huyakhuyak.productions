@@ -136,6 +136,22 @@ describe("audit — centralized recording and the client feed", () => {
       expect(rows[0].subjectId).toBe(subjectA);
     });
 
+    it("writes exactly one row when two identical events race concurrently", async () => {
+      // Two callers firing the same view at the same instant must not both slip
+      // past the pre-insert check — the advisory xact lock serializes them so
+      // the second sees the first's row and skips.
+      await Promise.all([
+        recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId }),
+        recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId }),
+      ]);
+
+      const rows = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.conversationId, conversationId), eq(auditEvents.action, "conversation_viewed")));
+      expect(rows).toHaveLength(1);
+    });
+
     it("preserves legacy null-subject dedupe — an omitted subjectId matches null twice as one row", async () => {
       await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
       await recordAuditDeduped({ clientId, therapistId, conversationId, action: "conversation_viewed", actorId: therapistId });
