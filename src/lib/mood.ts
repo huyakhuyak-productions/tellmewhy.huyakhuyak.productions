@@ -26,6 +26,10 @@ export type MoodCheckin = { day: string; score: number; note: string | null };
 // therapist-facing caller (see getMoodTrendForTherapist).
 type MoodPayload = { score: number; note: string | null };
 
+// The canonical clock for a check-in's day: server UTC, never a client-supplied
+// value. toISOString is always UTC, so the one-row-per-(user, day) key means the
+// same calendar day for every caller regardless of their timezone. checkInMood's
+// `day` parameter exists only so tests can pin a day; the route never passes one.
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }

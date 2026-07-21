@@ -105,6 +105,24 @@ describe("notes", () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it("breaks a createdAt tie deterministically by id so the order is total", async () => {
+    // Two notes sharing an exact timestamp: without an id tie-break their order
+    // is undefined. Inserted id-ascending, so an id-descending result is the
+    // tie-break at work, not chance.
+    const dek = await getOrCreateUserDek(userId);
+    const [lowId, highId] = [randomUUID(), randomUUID()].sort();
+    const sameTime = new Date("2026-02-02T00:00:00Z");
+    // Inserted id-ascending, so a heap scan without the tie-break would keep
+    // that order — an id-descending result proves the tie-break is doing it.
+    await db.insert(selfNotes).values([
+      { id: lowId, userId, bodyCiphertext: encryptText(dek, "low"), createdAt: sameTime },
+      { id: highId, userId, bodyCiphertext: encryptText(dek, "high"), createdAt: sameTime },
+    ]);
+
+    const notes = await listNotes(userId);
+    expect(notes.map((n) => n.id)).toEqual([highId, lowId]);
+  });
+
   it("deletes own note; a foreign or missing noteId is NotFoundError", async () => {
     const { id } = await createNote(userId, { body: "let this one go" });
     await deleteNote(userId, id);

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { auditEvents, exerciseEntries, exercises, user } from "@/db/schema";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
-import { CryptoError, decryptText } from "./crypto/envelope";
+import { CryptoError, decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
 import {
@@ -223,6 +223,23 @@ describe("exercises — assignment through the therapist link", () => {
       const otherClient = `test-${randomUUID()}`;
 
       expect(await listExercisesForClient(otherClient)).toEqual([]);
+    });
+
+    it("breaks a createdAt tie deterministically by id so the order is total", async () => {
+      // Two assignments with the identical timestamp — without an id tie-break
+      // their relative order is undefined. Insert them id-ascending so the only
+      // way the list comes back id-descending is the tie-break itself.
+      const { clientId, linkId } = await linkedPair();
+      const dek = await getOrCreateUserDek(clientId);
+      const [lowId, highId] = [randomUUID(), randomUUID()].sort();
+      const sameTime = new Date("2026-02-02T00:00:00Z");
+      await db.insert(exercises).values([
+        { id: lowId, linkId, clientId, type: "thought_record", instructionCiphertext: encryptText(dek, "low"), createdAt: sameTime },
+        { id: highId, linkId, clientId, type: "thought_record", instructionCiphertext: encryptText(dek, "high"), createdAt: sameTime },
+      ]);
+
+      const list = await listExercisesForClient(clientId);
+      expect(list.map((e) => e.id)).toEqual([highId, lowId]);
     });
   });
 });

@@ -154,7 +154,9 @@ export async function listExercisesForClient(userId: string): Promise<ClientExer
     .leftJoin(therapistLinks, and(eq(exercises.linkId, therapistLinks.id), eq(therapistLinks.status, "active")))
     .leftJoin(user, eq(user.id, therapistLinks.therapistId))
     .where(eq(exercises.clientId, userId))
-    .orderBy(desc(exercises.createdAt));
+    // desc(id) tie-break makes the order a total one: two assignments minted in
+    // the same instant still list deterministically instead of arbitrarily.
+    .orderBy(desc(exercises.createdAt), desc(exercises.id));
 
   const dek = await getOrCreateUserDek(userId);
   return rows.flatMap((r) => {

@@ -547,6 +547,31 @@ describe("POST /api/chat", () => {
       expect(systemMessage?.content).toContain("Focus on sleep hygiene, avoid problem-solving mode.");
     });
 
+    it("normalizes newlines in the injected AI instruction so it can't reshape the prompt", async () => {
+      const clientId = await seedUser();
+      mockSession(clientId);
+      const { id } = await createConversation(clientId, "Guided conversation");
+      const therapistId = await insertUser("Dr. Reyes");
+      const { token } = await createInvite(clientId, "client");
+      await acceptInvite(token, therapistId);
+      await grantConversation(clientId, id);
+      // Stored verbatim (never normalized at rest) — the CRLFs and blank-line run
+      // must be folded only where it is spliced into the prompt.
+      await createNote(therapistId, clientId, {
+        kind: "ai_instruction",
+        body: "Focus on sleep hygiene.\r\n\r\n\r\n\r\nAvoid problem-solving mode.",
+      });
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text();
+
+      const content = String(lastChatPrompt().find((m) => m.role === "system")?.content);
+      const guidance = content.slice(content.indexOf("Guidance from the client's therapist"));
+      expect(guidance).toContain("Focus on sleep hygiene.\n\nAvoid problem-solving mode.");
+      expect(guidance).not.toContain("\r");
+      expect(guidance).not.toContain("\n\n\n");
+    });
+
     it("keeps the crisis addendum last, after any therapist guidance", async () => {
       const clientId = await seedUser();
       mockSession(clientId);

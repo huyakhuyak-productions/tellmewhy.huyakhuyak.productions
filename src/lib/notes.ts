@@ -61,7 +61,9 @@ export async function listNotes(userId: string): Promise<SelfNote[]> {
     .select()
     .from(selfNotes)
     .where(eq(selfNotes.userId, userId))
-    .orderBy(desc(selfNotes.createdAt));
+    // desc(id) tie-break makes the order total: two notes saved in the same
+    // instant still list deterministically instead of arbitrarily.
+    .orderBy(desc(selfNotes.createdAt), desc(selfNotes.id));
   const dek = await getOrCreateUserDek(userId);
   return rows.flatMap((r) => {
     try {

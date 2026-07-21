@@ -1,3 +1,5 @@
+import { normalizeForPrompt } from "@/lib/text";
+
 export function buildSystemPrompt(): string {
   return [
     "You are a warm, attentive emotional-support companion inside the tellmewhy app.",
@@ -42,13 +44,10 @@ export function buildHomeworkSection(exercises: { type: string; instruction: str
 
   const items = exercises
     .slice(0, HOMEWORK_MAX_EXERCISES)
-    .map((e) => {
-      const instruction =
-        e.instruction.length > HOMEWORK_INSTRUCTION_CLAMP
-          ? e.instruction.slice(0, HOMEWORK_INSTRUCTION_CLAMP)
-          : e.instruction;
-      return `- ${instruction}`;
-    })
+    // Normalize at interpolation time: fold CRLF, cap blank-line runs, and clamp
+    // length so one instruction can't reshape or dominate the prompt. Never
+    // normalized at storage — encrypted history can't be retro-fixed.
+    .map((e) => `- ${normalizeForPrompt(e.instruction, HOMEWORK_INSTRUCTION_CLAMP)}`)
     .join("\n");
 
   return [

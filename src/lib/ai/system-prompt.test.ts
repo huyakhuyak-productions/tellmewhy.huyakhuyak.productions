@@ -47,6 +47,19 @@ describe("buildHomeworkSection", () => {
     expect(section).not.toContain("a".repeat(301));
   });
 
+  it("folds CRLF and caps runs of blank lines so an instruction can't reshape the prompt", () => {
+    // A therapist-authored instruction is free text spliced into the system
+    // prompt. Stray CRLFs and long runs of blank lines could smuggle structure
+    // or balloon the section, so they are normalized at interpolation time
+    // (never at storage — encrypted history can't be retro-fixed).
+    const section = buildHomeworkSection([
+      { type: "thought_record", instruction: "Notice the thought.\r\n\r\n\r\n\r\nThen write it down." },
+    ])!;
+    expect(section).toContain("Notice the thought.\n\nThen write it down.");
+    expect(section).not.toContain("\r");
+    expect(section).not.toContain("\n\n\n");
+  });
+
   it("keeps only the three newest exercises (input is newest-first)", () => {
     const section = buildHomeworkSection([
       { type: "thought_record", instruction: "NEWEST_ONE" },

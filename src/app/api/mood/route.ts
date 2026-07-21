@@ -27,6 +27,11 @@ export async function POST(req: Request): Promise<Response> {
   if (!parsed.success) return Response.json({ error: "Invalid body" }, { status: 400 });
 
   try {
+    // The check-in's day is deliberately NOT client-supplied: checkInMood
+    // derives it from server UTC (todayString), the single canonical clock for
+    // the one-row-per-(user, day) key. Accepting a client day would let a
+    // skewed or hostile clock overwrite a neighbouring day's row — so there is
+    // no day to validate here; UTC is authoritative.
     await checkInMood(session.user.id, parsed.data);
     return new Response(null, { status: 204 });
   } catch (error) {

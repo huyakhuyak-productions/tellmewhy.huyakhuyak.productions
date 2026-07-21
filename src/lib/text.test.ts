@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { truncateToCodePoints } from "./text";
+import { normalizeForPrompt, truncateToCodePoints } from "./text";
 
 describe("truncateToCodePoints", () => {
   it("returns the text unchanged when it fits within the limit", () => {
@@ -19,5 +19,24 @@ describe("truncateToCodePoints", () => {
     expect(truncateToCodePoints(emojis, 2)).toBe("😀😀");
     // The cut lands on a whole code point, so the result is always valid text.
     expect([...truncateToCodePoints(emojis, 2)]).toHaveLength(2);
+  });
+});
+
+describe("normalizeForPrompt", () => {
+  it("folds CRLF and lone CR to LF", () => {
+    expect(normalizeForPrompt("a\r\nb\rc", 100)).toBe("a\nb\nc");
+  });
+
+  it("caps a run of blank lines to a single one", () => {
+    expect(normalizeForPrompt("a\n\n\n\n\nb", 100)).toBe("a\n\nb");
+  });
+
+  it("trims surrounding whitespace and bounds the length", () => {
+    expect(normalizeForPrompt("  hello  ", 100)).toBe("hello");
+    expect(normalizeForPrompt("abcdef", 3)).toBe("abc");
+  });
+
+  it("leaves already-clean single newlines intact", () => {
+    expect(normalizeForPrompt("line one\nline two", 100)).toBe("line one\nline two");
   });
 });
