@@ -47,12 +47,13 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
   try {
     // v6's non-deprecated structured-output API: `generateText` with
     // `Output.object` parses+validates the completion against the schema and
-    // THROWS (NoObjectGeneratedError) on unparseable JSON or a schema
-    // mismatch — the same failure mode the deprecated `generateObject` had, so
-    // the regex-floor fallback below is untouched. The one gap it does NOT
-    // throw on is a non-`stop` finish (truncation, content filter), where it
-    // leaves `output` undefined; the guard treats that as a failed
-    // classification so a partial reply can never masquerade as a verdict.
+    // THROWS (NoObjectGeneratedError) on unparseable JSON or a schema mismatch
+    // — the same failure mode the deprecated `generateObject` had, so the
+    // regex-floor fallback below is untouched. A non-`stop` finish (truncation,
+    // content filter) is covered too: the result never parses an object, so its
+    // `output` accessor throws NoOutputGeneratedError the moment we read it —
+    // caught by the SAME catch. Either way a partial reply can never masquerade
+    // as a verdict; every failure path lands on the floor.
     const { output } = await generateText({
       model,
       output: Output.object({ schema: riskSchema }),
@@ -65,7 +66,6 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
         "'none' = ordinary distress or everyday conversation. Respond with the classification only.",
       prompt: text,
     });
-    if (!output) throw new Error("classifier returned no object");
     return RANK[output.risk] > RANK[floor] ? output.risk : floor;
   } catch (error) {
     // The regex floor still stands, so the chat is never blocked — but a

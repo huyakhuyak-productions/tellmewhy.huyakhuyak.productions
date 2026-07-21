@@ -159,9 +159,11 @@ export async function getOrRefreshDigest(
     // v6's non-deprecated structured-output API: `generateText` +
     // `Output.object` parses+validates the completion against the schema and
     // THROWS on unparseable JSON or a schema mismatch, like the deprecated
-    // `generateObject`. On a non-`stop` finish (truncation, content filter) it
-    // does not throw but leaves `output` undefined — guard that so a partial
-    // never becomes a digest, and the stale/null fallback below stands.
+    // `generateObject`. A non-`stop` finish (truncation, content filter) is
+    // covered too: no object is parsed, so reading `output` here throws
+    // NoOutputGeneratedError inside this try — never leaking past the gate —
+    // and lands in the SAME catch, so a partial never becomes a digest and the
+    // stale/null fallback below stands.
     const { output } = await generateText({
       model: getDigestModel(),
       output: Output.object({ schema: digestSchema }),
@@ -169,7 +171,6 @@ export async function getOrRefreshDigest(
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
     });
-    if (!output) throw new Error("digest generation returned no object");
     generated = output;
   } catch (error) {
     // Never throw past the gate. Fall back to the prior digest (marked stale)

@@ -58,8 +58,9 @@ async function handlePost(req: Request): Promise<Response> {
       // `Output.object` parses+validates against the schema and THROWS on
       // unparseable JSON or a schema mismatch, like the deprecated
       // `generateObject` — so the 502 path below is unchanged. A non-`stop`
-      // finish (truncation, content filter) does not throw but leaves `output`
-      // undefined; guard it so a partial draft never reaches the client.
+      // finish (truncation, content filter) is covered too: no object is
+      // parsed, so reading `output` here throws NoOutputGeneratedError into the
+      // same catch, so a partial draft never reaches the client.
       const { output } = await generateText({
         model: getExtractorModel(),
         output: Output.object({ schema: thoughtRecordSchema }),
@@ -67,7 +68,6 @@ async function handlePost(req: Request): Promise<Response> {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         abortSignal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
       });
-      if (!output) throw new Error("extraction returned no object");
       // Persist NOTHING — the client confirms this draft in a prefilled form.
       return Response.json(output);
     } catch (error) {
