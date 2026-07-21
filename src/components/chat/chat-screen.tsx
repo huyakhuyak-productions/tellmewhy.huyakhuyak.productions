@@ -552,7 +552,7 @@ export function ChatScreen({
         </header>
 
         {hidden ? (
-          <div className="cp-hairline border-b bg-muted/30 px-4 py-2.5 lg:px-10">
+          <div data-testid="hidden-chip" className="cp-hairline border-b bg-muted/30 px-4 py-2.5 lg:px-10">
             <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center gap-x-3 gap-y-1">
               <p className="flex-1 font-serif text-[0.85rem] italic leading-relaxed text-muted-foreground">
                 Hidden — only you can see your own hidden conversations.

@@ -549,11 +549,12 @@ test("opening a hidden conversation by direct link shows its chip and restores f
 
   // A direct link to a hidden conversation still opens for its owner (the loader
   // never hides it from them); the header wears a quiet chip that says so and
-  // offers a one-tap restore. The rail's Hidden drawer is collapsed and inert,
-  // so the only reachable "Restore" is the chip's own.
+  // offers a one-tap restore. The rail's Hidden drawer also lists this
+  // conversation with its own Restore, so scope to the chip explicitly.
   await page.goto(hiddenHref);
+  const chip = page.getByTestId("hidden-chip");
   await expect(
-    page.getByText("Hidden — only you can see your own hidden conversations."),
+    chip.getByText("Hidden — only you can see your own hidden conversations."),
   ).toBeVisible();
 
   // Restoring from the chip round-trips the same PATCH the drawer uses, then
@@ -561,7 +562,7 @@ test("opening a hidden conversation by direct link shows its chip and restores f
   const restored = page.waitForResponse(
     (res) => res.request().method() === "PATCH" && res.url().includes("/api/conversations/"),
   );
-  await page.getByRole("button", { name: "Restore" }).click();
+  await chip.getByRole("button", { name: "Restore" }).click();
   await restored;
   await expect(
     page.getByText("Hidden — only you can see your own hidden conversations."),
