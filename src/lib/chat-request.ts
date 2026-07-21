@@ -16,7 +16,13 @@ export function buildChatRequestBody(input: {
   /** Meta lookup: the edited message's parent id (null at root, undefined if unknown). */
   parentIdOf: (messageId: string) => string | null | undefined;
 }): Record<string, unknown> {
-  if (input.trigger === "regenerate-message" && input.messageId) {
+  if (input.trigger === "regenerate-message") {
+    // A regenerate names the reply it re-runs. Without a messageId there is no
+    // target, so there is no honest body to build — throwing surfaces the
+    // programmer error at the mapper rather than emitting { text: "" } and
+    // letting the server's min(1) text guard answer an opaque 400. The one
+    // call site (chat-screen's regenerateMessage) always passes the reply's id.
+    if (!input.messageId) throw new Error("Cannot regenerate a reply without its message id");
     return { conversationId: input.conversationId, regenerateOf: input.messageId };
   }
   if (input.messageId !== undefined) {

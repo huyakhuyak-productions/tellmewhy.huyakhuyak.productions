@@ -71,14 +71,19 @@ describe("buildChatRequestBody", () => {
     expect(body).toEqual({ conversationId: CONVERSATION_ID, regenerateOf: "ai-3" });
   });
 
-  it("falls back to a plain send when a regenerate carries no messageId", () => {
-    const body = buildChatRequestBody({
-      conversationId: CONVERSATION_ID,
-      trigger: "regenerate-message",
-      messageId: undefined,
-      text: "",
-      parentIdOf: () => undefined,
-    });
-    expect(body).toEqual({ conversationId: CONVERSATION_ID, text: "" });
+  it("throws on a regenerate with no messageId instead of round-tripping to a silent 400", () => {
+    // A regenerate names the reply it re-runs; without an id there is no
+    // target. The old fallback emitted { text: "" }, which the server's
+    // min(1) text guard rejected as an opaque 400. A throw fails loudly at
+    // the mapper — the degenerate shape is programmer error, never a request.
+    expect(() =>
+      buildChatRequestBody({
+        conversationId: CONVERSATION_ID,
+        trigger: "regenerate-message",
+        messageId: undefined,
+        text: "",
+        parentIdOf: () => undefined,
+      }),
+    ).toThrow();
   });
 });
