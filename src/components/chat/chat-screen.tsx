@@ -793,7 +793,11 @@ export function ChatScreen({
                 resizeComposer(e.target);
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                // `isComposing` is read off the NATIVE event (React's synthetic
+                // one omits it) so a plain Enter that confirms an IME candidate
+                // never sends the unfinished sentence — the same rationale as
+                // isComposeSubmit's IME guard, applied to this bare-Enter send.
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   submit();
                 }
