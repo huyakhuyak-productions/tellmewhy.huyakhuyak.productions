@@ -26,6 +26,11 @@ const sendSchema = z.object({
   // Present = branch here (edit): the new message becomes a sibling of
   // whatever else shares this parent. null = branch at the root.
   parentId: z.uuid().nullable().optional(),
+  // The client mints this per send ATTEMPT (crypto.randomUUID) so an
+  // at-least-once retry of the same send resolves to one persisted client row.
+  // A uuid by contract — it becomes the message's primary key, so a non-uuid
+  // (e.g. the AI-SDK's own UIMessage id, a different format) is rejected here.
+  clientMessageId: z.uuid().optional(),
 });
 // Regenerate: grow a new AI sibling under the target reply's parent. No new
 // client text exists, so no risk classification and no client row.
@@ -112,12 +117,15 @@ async function handlePost(req: Request): Promise<Response> {
       riskLevel = tree.riskById.get(target.parentId) ?? "none";
       aiParentId = target.parentId; // the new reply is the old one's sibling
     } else {
-      const { text, parentId } = parsed.data;
+      const { text, parentId, clientMessageId } = parsed.data;
       clientText = text;
       riskLevel = await assessRisk(text, getClassifierModel());
       // parentId undefined passes through as "append to the active leaf";
-      // an explicit uuid/null branches there instead (an edit).
-      const savedClient = await saveMessage({ conversationId, userId, sender: "client", text, riskLevel, parentId });
+      // an explicit uuid/null branches there instead (an edit). clientMessageId
+      // (when present) is the row's idempotency key — a replayed send resolves
+      // to the existing client row instead of inserting a duplicate, and the AI
+      // reply below chains onto whichever row saveMessage returns.
+      const savedClient = await saveMessage({ conversationId, userId, sender: "client", text, riskLevel, parentId, id: clientMessageId });
       // The AI reply must chain off THIS client message — never "whatever the
       // leaf happens to be when the stream finishes", which a concurrent send
       // could have moved.

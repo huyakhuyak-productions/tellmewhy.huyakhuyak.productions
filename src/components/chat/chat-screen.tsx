@@ -161,6 +161,18 @@ export function ChatScreen({
   // below adopt server truth, so without it a just-sent turn shows no Keep /
   // Edit / Regenerate / Flag row until some unrelated refresh happens by.
   const pendingRefresh = useRef(false);
+  // The idempotency key for the NEXT client-text POST (a send or an edit). Set
+  // by every send path right before it hands off to the SDK; read by the
+  // transport below and forwarded as `clientMessageId`. The SDK's own UIMessage
+  // id can't serve here (wrong format — not a uuid), so a fresh key is minted
+  // per attempt, except an unedited resend which deliberately reuses the failed
+  // attempt's key so the server dedupes it onto the one persisted row.
+  const clientMessageIdRef = useRef<string | null>(null);
+  // The last failed send's idempotency key + the exact words it carried. An
+  // unedited retry (composer text unchanged) reuses the key so the persisted
+  // client row is reclaimed, not duplicated; an edited retry falls through to a
+  // fresh key (leaving the original as a version sibling — a known caveat).
+  const failedSendRef = useRef<{ id: string; text: string } | null>(null);
   const { messages, sendMessage, setMessages, status, stop, regenerate } = useChat({
     // react-hooks/refs flags the rateLimited write inside the custom fetch
     // below: the rule cannot see when a render-created closure runs, so it
@@ -183,6 +195,9 @@ export function ChatScreen({
             // "" for a regenerate — no user turn rides along; the mapper ignores it.
             text: last ? partsToText(last.parts) : "",
             parentIdOf: (id) => metaByIdRef.current.get(id)?.parentId,
+            // The key set by the send path that is firing this request; the
+            // mapper attaches it to a send/edit and drops it for a regenerate.
+            clientMessageId: clientMessageIdRef.current ?? undefined,
           }),
         };
       },
@@ -206,6 +221,9 @@ export function ChatScreen({
       // Waiting costs nothing: the key is only ever read on mount.
       if (!isError && !isAbort) {
         sessionStorage.removeItem(draftKey);
+        // The send that just landed can no longer fail, so the stashed failed
+        // key is spent — clear it so the next composer send always mints fresh.
+        failedSendRef.current = null;
         // Arm the settle refresh for a PLAIN send too (edit/regenerate/stop
         // already arm it at call time). The just-streamed client turn + reply
         // are SDK-only, with no server ids yet, so their action rows (Keep /
@@ -348,6 +366,9 @@ export function ChatScreen({
     setEditingId(null);
     setSendFailure(null);
     pendingRefresh.current = true;
+    // An edit is a brand-new client turn — always a fresh idempotency key, never
+    // a resend's reused one (the reworded words are not the failed words).
+    clientMessageIdRef.current = crypto.randomUUID();
     // The SDK replaces the message in place AND truncates every message after
     // it (verified in node_modules/ai: sendMessage slices to messageIndex + 1
     // before replacing), so no manual setMessages truncate is needed here.
@@ -379,6 +400,8 @@ export function ChatScreen({
     const stashed = sessionStorage.getItem(draftKey);
     if (stashed) {
       sentDraft.current = true;
+      // The hero hand-off is this conversation's first send — a fresh key.
+      clientMessageIdRef.current = crypto.randomUUID();
       sendMessage({ text: stashed });
     }
   }, [draftKey, sendMessage]);
@@ -394,6 +417,13 @@ export function ChatScreen({
     failureHandlerRef.current = () => {
       const failure = harvestFailedSend(messages);
       if (failure) {
+        // Remember the key this attempt POSTed with, paired to its words, so an
+        // unedited retry can reuse it (server dedupe → one row) while an edited
+        // retry mints fresh. Only a real client-text attempt stashes a key —
+        // clientMessageIdRef is always set by the send path that just failed.
+        if (clientMessageIdRef.current) {
+          failedSendRef.current = { id: clientMessageIdRef.current, text: failure.failedText };
+        }
         setDraft((current) => mergeRestoredDraft(failure.failedText, current));
         setMessages(failure.messagesWithoutFailure);
         // The words now live in the composer — the stashed hero draft (if
@@ -550,6 +580,13 @@ export function ChatScreen({
   function submit() {
     if (!draft.trim() || isBusy) return;
     setSendFailure(null);
+    // Reuse the failed attempt's key ONLY when the composer still holds the exact
+    // words that failed (an untouched retry) — so the server dedupes it onto the
+    // one already-persisted client row. Any edit (or a fresh send) mints a new
+    // key, which persists as its own turn.
+    const failed = failedSendRef.current;
+    clientMessageIdRef.current =
+      failed && failed.text.trim() === draft.trim() ? failed.id : crypto.randomUUID();
     sendMessage({ text: draft });
     setDraft("");
     if (textareaRef.current) {

@@ -970,6 +970,60 @@ describe("POST /api/chat", () => {
       expect(foreignRes.status).toBe(404);
     });
 
+    it("dedupes a resent clientMessageId — one client row, the new AI reply chains onto it", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Idempotent send");
+      const clientMessageId = randomUUID();
+
+      const firstTree = await postAndAwaitReply(clientId, { conversationId: id, text: "same words", clientMessageId });
+      const clientRow = firstTree.messages.find((m) => m.sender === "client")!;
+
+      // Replay the SAME clientMessageId: the client row is not duplicated, and
+      // the replay's AI reply chains onto the existing client message — exactly
+      // the shape an at-least-once retry of a live send must converge on.
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, text: "same words", clientMessageId }));
+      expect(res.status).toBe(200);
+      await res.text();
+
+      await vi.waitFor(async () => {
+        const tree = await loadMessageTree(id, clientId);
+        expect(tree.messages.filter((m) => m.sender === "client")).toHaveLength(1);
+        const aiSiblings = tree.messages.filter((m) => m.sender === "ai" && m.parentId === clientRow.id);
+        expect(aiSiblings).toHaveLength(2);
+      });
+    });
+
+    it("rejects a replayed clientMessageId owned by another user with a uniform 404", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Replay guard");
+      const strangerId = await seedUser();
+      const stranger = await createConversation(strangerId, "Not yours");
+      const foreign = await saveMessage({ conversationId: stranger.id, userId: strangerId, sender: "client", text: "stranger words" });
+
+      // A foreign message id replayed as this conversation's clientMessageId must
+      // never let an AI reply chain onto a row this owner doesn't own — the
+      // conflict path answers the same uniform 404 as any not-found.
+      mockSession(clientId);
+      const res = await POST(chatRequest({ conversationId: id, text: "chain onto a stranger's row", clientMessageId: foreign.id }));
+      expect(res.status).toBe(404);
+      expect((await loadMessageTree(id, clientId)).messages).toHaveLength(0);
+    });
+
+    it("does not dedupe an edited resend — a fresh clientMessageId leaves the original persisted (documented caveat)", async () => {
+      const clientId = await seedUser();
+      const { id } = await createConversation(clientId, "Edited resend caveat");
+      await postAndAwaitReply(clientId, { conversationId: id, text: "original words", clientMessageId: randomUUID() });
+      // An edited resend mints a FRESH id, so the original is never reclaimed —
+      // both client rows persist. The failed-send → edited-resend orphan-sibling
+      // shape itself is pinned in the messages e2e project; here we only pin that
+      // a different id does not dedupe.
+      await postAndAwaitReply(clientId, { conversationId: id, text: "edited words", clientMessageId: randomUUID() });
+
+      const clientRows = (await loadMessageTree(id, clientId)).messages.filter((m) => m.sender === "client");
+      expect(clientRows.map((m) => m.text).sort()).toEqual(["edited words", "original words"]);
+    });
+
     it("aborting the stream persists exactly the streamed prefix", async () => {
       const clientId = await seedUser();
       const { id } = await createConversation(clientId, "Stopped mid-reply");

@@ -15,6 +15,10 @@ export function buildChatRequestBody(input: {
   text: string;
   /** Meta lookup: the edited message's parent id (null at root, undefined if unknown). */
   parentIdOf: (messageId: string) => string | null | undefined;
+  /** The client's per-send-attempt idempotency key (a uuid). Rides along on a
+      send or an edit so an at-least-once retry persists once; absent on a
+      regenerate, which carries no new client turn to dedupe. */
+  clientMessageId?: string;
 }): Record<string, unknown> {
   if (input.trigger === "regenerate-message") {
     // A regenerate names the reply it re-runs. Without a messageId there is no
@@ -25,6 +29,9 @@ export function buildChatRequestBody(input: {
     if (!input.messageId) throw new Error("Cannot regenerate a reply without its message id");
     return { conversationId: input.conversationId, regenerateOf: input.messageId };
   }
+  // Both a send and an edit carry a new client turn, so both ride the
+  // idempotency key when one is present; only its absence omits the field.
+  const idempotency = input.clientMessageId !== undefined ? { clientMessageId: input.clientMessageId } : {};
   if (input.messageId !== undefined) {
     // An edit: the replacement message reuses the edited message's parent so
     // the server branches from the same point. A known root parent is null (an
@@ -35,7 +42,8 @@ export function buildChatRequestBody(input: {
       conversationId: input.conversationId,
       text: input.text,
       ...(parentId !== undefined ? { parentId } : {}),
+      ...idempotency,
     };
   }
-  return { conversationId: input.conversationId, text: input.text };
+  return { conversationId: input.conversationId, text: input.text, ...idempotency };
 }

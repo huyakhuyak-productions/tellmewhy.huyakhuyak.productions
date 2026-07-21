@@ -227,6 +227,56 @@ describe("encrypted conversations", () => {
     consoleErrorSpy.mockRestore();
   });
 
+  describe("saveMessage with an explicit id (idempotent client persist)", () => {
+    it("dedupes a re-sent id: the second save returns the first row without inserting a duplicate", async () => {
+      const { id } = await createConversation(userId, "Idempotent save");
+      const clientMessageId = randomUUID();
+
+      const first = await saveMessage({ conversationId: id, userId, sender: "client", text: "the words", id: clientMessageId });
+      const second = await saveMessage({ conversationId: id, userId, sender: "client", text: "the words", id: clientMessageId });
+
+      expect(first.id).toBe(clientMessageId);
+      expect(second.id).toBe(clientMessageId);
+      const rows = await db.select().from(messages).where(eq(messages.conversationId, id));
+      expect(rows).toHaveLength(1);
+    });
+
+    it("rejects a re-sent id that belongs to another conversation with NotFoundError", async () => {
+      const { id } = await createConversation(userId, "Owner here");
+      const other = await createConversation(userId, "A different conversation");
+      const foreign = await saveMessage({ conversationId: other.id, userId, sender: "client", text: "elsewhere" });
+
+      // Replaying the other conversation's message id must not chain here — a
+      // conflict whose row lives in a different conversation is a uniform 404.
+      await expect(
+        saveMessage({ conversationId: id, userId, sender: "client", text: "chain onto a foreign id", id: foreign.id }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect((await db.select().from(messages).where(eq(messages.conversationId, id)))).toHaveLength(0);
+    });
+
+    it("rejects a re-sent id whose existing row is not a client message", async () => {
+      const { id } = await createConversation(userId, "Sender mismatch");
+      const ai = await saveMessage({ conversationId: id, userId, sender: "ai", text: "a reply" });
+
+      // Same conversation, but the id names an AI row — replaying it as a
+      // client send would chain a fresh AI reply onto an AI message. Uniform 404.
+      await expect(
+        saveMessage({ conversationId: id, userId, sender: "client", text: "pretend this is a client turn", id: ai.id }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("rejects a re-sent id owned by a different user with NotFoundError", async () => {
+      const { id } = await createConversation(userId, "Mine");
+      const strangerId = await seedUser();
+      const stranger = await createConversation(strangerId, "Not yours");
+      const foreign = await saveMessage({ conversationId: stranger.id, userId: strangerId, sender: "client", text: "stranger words" });
+
+      await expect(
+        saveMessage({ conversationId: id, userId, sender: "client", text: "chain onto a stranger's row", id: foreign.id }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
   describe("flagMessageForTherapist", () => {
     it("sets flaggedAt on the owner's own message", async () => {
       const { id } = await createConversation(userId, "Flag me");

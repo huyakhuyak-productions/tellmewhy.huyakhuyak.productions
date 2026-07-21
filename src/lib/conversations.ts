@@ -98,6 +98,12 @@ export async function saveMessage(input: {
   // undefined = append to the conversation's current leaf; an explicit uuid or
   // null branches there instead (null = a brand-new root).
   parentId?: string | null;
+  // A caller-minted primary key (the client's per-send idempotency key). When
+  // set, a re-send that carries the same id resolves to the row already stored
+  // rather than inserting a duplicate — an at-least-once POST persists exactly
+  // once. Omitted for server-authored rows (AI reply, therapist), which have no
+  // retry to dedupe and let the DB mint the id.
+  id?: string;
 }): Promise<{ id: string }> {
   await requireOwnedConversation(input.conversationId, input.userId);
   const dek = await getOrCreateUserDek(input.userId);
@@ -132,16 +138,43 @@ export async function saveMessage(input: {
       }
     }
 
-    const [row] = await tx
+    // With a caller-minted id, ignore the conflict on the primary key so a
+    // duplicate send inserts nothing and returns no row; without one, the DB
+    // mints the id and the insert always yields a row.
+    const insert = tx
       .insert(messages)
       .values({
+        ...(input.id !== undefined ? { id: input.id } : {}),
         conversationId: input.conversationId,
         parentId,
         sender: input.sender,
         ciphertext: encryptText(dek, input.text),
         riskLevel: input.riskLevel ?? "none",
-      })
-      .returning({ id: messages.id });
+      });
+    const [row] =
+      input.id !== undefined
+        ? await insert.onConflictDoNothing({ target: messages.id }).returning({ id: messages.id })
+        : await insert.returning({ id: messages.id });
+
+    if (!row) {
+      // The id already exists (only reachable when a caller-minted id conflicts).
+      // Reuse it ONLY when the stored row is genuinely this same send: same
+      // conversation AND same sender. A conflict against a foreign conversation's
+      // row, another user's row, or an AI/therapist row is a replay of an id this
+      // send has no claim to — answer the uniform 404, never chain onto it. The
+      // conversation ownership was already established above, so a same-conversation
+      // client row here belongs to this owner. Reuse takes no leaf move: the first
+      // send already positioned the leaf, and a fresh reply will move it onward.
+      const [existing] = await tx
+        .select({ id: messages.id, conversationId: messages.conversationId, sender: messages.sender })
+        .from(messages)
+        .where(eq(messages.id, input.id!));
+      if (!existing || existing.conversationId !== input.conversationId || existing.sender !== input.sender) {
+        throw new NotFoundError("Message not found");
+      }
+      return { id: existing.id };
+    }
+
     await tx
       .update(conversations)
       .set({ activeLeafId: row.id, updatedAt: new Date() })
