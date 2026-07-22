@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { auditEvents, messages, reviewMarkers, user } from "@/db/schema";
 import { createConversation, saveMessage, setConversationHidden } from "./conversations";
+import { shredUserKey } from "./crypto/user-keys";
 import { NotFoundError } from "./errors";
 import { grantConversation, requireGrantedConversation, revokeGrant } from "./sharing";
 import {
@@ -336,6 +337,36 @@ describe("therapist access — reads, review line, attention queue", () => {
       expect(items.map((i) => i.messageId)).toEqual([crisis2.id, crisis1.id, flag2.id, flag1.id]);
       expect(items.map((i) => i.kind)).toEqual(["crisis", "crisis", "flag", "flag"]);
       expect(items.every((i) => i.excerpt.length > 0)).toBe(true);
+    });
+
+    it("skips a mid-deletion client's items but keeps healthy clients' (per-item, never a whole-feed failure)", async () => {
+      // Healthy client with a crisis message.
+      const { token: healthyToken } = await createInvite(clientId, "client");
+      await acceptInvite(healthyToken, therapistId);
+      const healthyConv = await createConversation(clientId, "Healthy");
+      await grantConversation(clientId, healthyConv.id);
+      const healthyMsg = await saveMessage({
+        conversationId: healthyConv.id, userId: clientId, sender: "client",
+        text: "healthy crisis", riskLevel: "crisis",
+      });
+
+      // A second client, granted, then crypto-shredded (they deleted mid-race):
+      // their DEK unwrap will now throw KeyShreddedError inside the feed loop.
+      const shreddedClient = await seedUser();
+      const { token: doomedToken } = await createInvite(shreddedClient, "client");
+      await acceptInvite(doomedToken, therapistId);
+      const doomedConv = await createConversation(shreddedClient, "Doomed");
+      await grantConversation(shreddedClient, doomedConv.id);
+      await saveMessage({
+        conversationId: doomedConv.id, userId: shreddedClient, sender: "client",
+        text: "doomed crisis", riskLevel: "crisis",
+      });
+      await shredUserKey(shreddedClient);
+
+      // The feed resolves — the shredded client is skipped, the healthy one kept.
+      const items = await listAttentionItems(therapistId);
+      expect(items.map((i) => i.clientId)).toEqual([clientId]);
+      expect(items.map((i) => i.messageId)).toEqual([healthyMsg.id]);
     });
 
     it("caps decrypted excerpts at 140 code points", async () => {

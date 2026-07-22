@@ -8,7 +8,7 @@ import { db } from "@/db";
 import { notes, therapistLinks, user } from "@/db/schema";
 import { recordAudit } from "./audit";
 import { decryptText, encryptText } from "./crypto/envelope";
-import { getOrCreateUserDek } from "./crypto/user-keys";
+import { getOrCreateUserDek, KeyShreddedError } from "./crypto/user-keys";
 import { errorCause, NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 
@@ -249,12 +249,26 @@ export async function listPublicNotesForClient(
   // One DEK unwrap per distinct author therapist, however many public notes
   // they've written for this client.
   const dekByTherapist = new Map<string, Buffer>();
+  // A therapist crypto-shredded mid-race (they deleted between this query and
+  // the DEK unwrap) is SKIPPED, never fatal: this is a LIST of notes, and one
+  // departing author must not 500 or blank the client's whole notes panel.
+  // Tracked so the skip is logged once per author (ids only), not per row.
+  const shreddedTherapists = new Set<string>();
   const result: PublicNoteForClient[] = [];
   for (const row of rows) {
-    if (!row.therapistId) continue;
+    if (!row.therapistId || shreddedTherapists.has(row.therapistId)) continue;
     let dek = dekByTherapist.get(row.therapistId);
     if (!dek) {
-      dek = await getOrCreateUserDek(row.therapistId);
+      try {
+        dek = await getOrCreateUserDek(row.therapistId);
+      } catch (error) {
+        if (error instanceof KeyShreddedError) {
+          shreddedTherapists.add(row.therapistId);
+          console.error(`Skipping public notes for mid-deletion therapist ${row.therapistId} (${errorCause(error)})`);
+          continue;
+        }
+        throw error;
+      }
       dekByTherapist.set(row.therapistId, dek);
     }
     try {

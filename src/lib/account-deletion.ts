@@ -66,7 +66,7 @@ export async function deleteAccount(userId: string, password: string): Promise<v
           return { linkId: link.id, ciphertext: encryptText(partnerDek, userRow.name) };
         } catch (error) {
           if (error instanceof KeyShreddedError) {
-            console.warn(
+            console.error(
               `Skipping departure marker for link ${link.id}: partner mid-deletion (${errorCause(error)})`,
             );
             return null;

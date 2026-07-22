@@ -21,10 +21,17 @@ export default async function TherapistClientPage({
   const session = await requireTherapistPage();
   const { clientId } = await params;
 
+  // getClientConversations unwraps the CLIENT's DEK (its gate read and that
+  // unwrap are separate statements, so a mid-race deletion can commit between
+  // them). A client shredded in that window maps to the same 404 as a
+  // not-a-client, never a 500.
   const [view, notes] = await Promise.all([
     getClientConversations(session.user.id, clientId),
     listNotesForTherapist(session.user.id, clientId),
-  ]);
+  ]).catch((error) => {
+    if (isUniformNotFound(error)) notFound();
+    throw error;
+  });
 
   // No active link with this person → they aren't a client. Same 404 the
   // dashboard would give (they never appear in the roster).

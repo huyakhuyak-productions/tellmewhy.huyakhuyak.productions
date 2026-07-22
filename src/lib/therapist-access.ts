@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { conversations, messages, reviewMarkers, sharingGrants, therapistLinks, user } from "@/db/schema";
 import { recordAudit, recordAuditDeduped } from "./audit";
 import { decryptText } from "./crypto/envelope";
-import { getOrCreateUserDek } from "./crypto/user-keys";
+import { getOrCreateUserDek, KeyShreddedError } from "./crypto/user-keys";
 import { errorCause, NotFoundError } from "./errors";
 import { requireGrantedConversation } from "./sharing";
 import { truncateToCodePoints } from "./text";
@@ -222,12 +222,26 @@ export async function listAttentionItems(therapistId: string): Promise<Attention
   // One DEK unwrap per distinct client, however many of their messages
   // appear here.
   const dekByClient = new Map<string, Buffer>();
+  // A client crypto-shredded mid-race (they deleted between this feed's query
+  // and the DEK unwrap) is SKIPPED, never fatal: one departing client must not
+  // 500 or blank the therapist's whole attention feed. Tracked so the skip is
+  // logged once per client (ids only), not once per row.
+  const shreddedClients = new Set<string>();
   const items: AttentionItem[] = [];
   for (const row of rows) {
-    if (!row.clientId) continue;
+    if (!row.clientId || shreddedClients.has(row.clientId)) continue;
     let dek = dekByClient.get(row.clientId);
     if (!dek) {
-      dek = await getOrCreateUserDek(row.clientId);
+      try {
+        dek = await getOrCreateUserDek(row.clientId);
+      } catch (error) {
+        if (error instanceof KeyShreddedError) {
+          shreddedClients.add(row.clientId);
+          console.error(`Skipping attention items for mid-deletion client ${row.clientId} (${errorCause(error)})`);
+          continue;
+        }
+        throw error;
+      }
       dekByClient.set(row.clientId, dek);
     }
     try {

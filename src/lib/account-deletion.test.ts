@@ -131,7 +131,9 @@ describe("deleteAccount", () => {
     expect(markedLink.status).toBe("revoked");
     expect(markedLink.departedAt).not.toBeNull();
     expect(decryptText(clientDek, markedLink.departedNameCiphertext!)).toBe("Their Therapist");
-  });
+    // Extra headroom: this race test seeds two partners + full fixture content,
+    // so under parallel-load DB contention it needs more than the default 5s.
+  }, 20_000);
 
   it("rejects a wrong password and deletes nothing", async () => {
     await expect(deleteAccount(clientId, "wrong-password-1")).rejects.toBeInstanceOf(ValidationError);

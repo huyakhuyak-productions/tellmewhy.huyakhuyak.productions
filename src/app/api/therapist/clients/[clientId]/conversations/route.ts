@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUniformNotFound } from "@/lib/errors";
 import { listGrantedConversations } from "@/lib/sharing";
 import { requireTherapist } from "../../../_lib/require-therapist";
 
@@ -19,6 +20,13 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
   // join simply finds no rows either way, so this returns [] with a 200,
   // never a 404. (Contrast with therapist-notes.createNote, which throws
   // NotFoundError for a client with no active link at all.)
-  const conversations = await listGrantedConversations(authResult.therapistId, params.data.clientId);
-  return Response.json(conversations);
+  try {
+    const conversations = await listGrantedConversations(authResult.therapistId, params.data.clientId);
+    return Response.json(conversations);
+  } catch (error) {
+    // Single-subject read: a client crypto-shredded mid-race gives the uniform
+    // 404, never a 500 — indistinguishable from any other absent subject.
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
+    throw error;
+  }
 }

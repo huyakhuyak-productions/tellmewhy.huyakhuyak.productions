@@ -10,6 +10,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations as conversationsTable, messages, reviewMarkers, therapistLinks, user } from "@/db/schema";
+import { KeyShreddedError } from "./crypto/user-keys";
+import { errorCause } from "./errors";
 import {
   type GrantedConversationSummary,
   listGrantedConversations,
@@ -65,19 +67,33 @@ export type ClientOverview = {
 // then flags, then name — the same priority the attention queue encodes.
 export async function listClientOverviews(therapistId: string): Promise<ClientOverview[]> {
   const links = await getTherapistClientLinks(therapistId);
-  const overviews = await Promise.all(
-    links.map(async (link) => {
-      const convs = await listGrantedConversations(therapistId, link.clientId);
-      return {
-        clientId: link.clientId,
-        clientName: link.clientName,
-        linkedSince: link.linkedSince,
-        sharedCount: convs.length,
-        crisisCount: convs.reduce((n, c) => n + c.crisisCount, 0),
-        flagCount: convs.reduce((n, c) => n + c.flaggedCount, 0),
-      };
-    }),
-  );
+  // A client mid-deletion (key tombstoned between the link read and this DEK
+  // unwrap) drops off the roster rather than 500ing the whole desk — they are
+  // on their way out anyway. Per-client skip, logged by id.
+  const overviews = (
+    await Promise.all(
+      links.map(async (link) => {
+        let convs: GrantedConversationSummary[];
+        try {
+          convs = await listGrantedConversations(therapistId, link.clientId);
+        } catch (error) {
+          if (error instanceof KeyShreddedError) {
+            console.error(`Skipping desk overview for mid-deletion client ${link.clientId} (${errorCause(error)})`);
+            return null;
+          }
+          throw error;
+        }
+        return {
+          clientId: link.clientId,
+          clientName: link.clientName,
+          linkedSince: link.linkedSince,
+          sharedCount: convs.length,
+          crisisCount: convs.reduce((n, c) => n + c.crisisCount, 0),
+          flagCount: convs.reduce((n, c) => n + c.flaggedCount, 0),
+        };
+      }),
+    )
+  ).filter((overview) => overview !== null);
   overviews.sort(
     (a, b) =>
       b.crisisCount - a.crisisCount ||
@@ -104,8 +120,20 @@ export async function listAttentionQueue(therapistId: string): Promise<Attention
     getUserDisplayNames(clientIds),
     Promise.all(
       clientIds.map(async (clientId) => {
-        const convs = await listGrantedConversations(therapistId, clientId);
-        return convs.map((c) => [c.id, c.title] as const);
+        // listAttentionItems already skipped any client shredded before it ran,
+        // but the race can still land between that call and this one — so a
+        // client dead here just yields no titles (the fallback label is used),
+        // never a 500.
+        try {
+          const convs = await listGrantedConversations(therapistId, clientId);
+          return convs.map((c) => [c.id, c.title] as const);
+        } catch (error) {
+          if (error instanceof KeyShreddedError) {
+            console.error(`Skipping desk titles for mid-deletion client ${clientId} (${errorCause(error)})`);
+            return [] as (readonly [string, string])[];
+          }
+          throw error;
+        }
       }),
     ),
   ]);
