@@ -76,32 +76,61 @@ describe("deleteAccount", () => {
     vi.restoreAllMocks();
   });
 
-  it("surfaces a retriable KeyShreddedError when the partner's key is tombstoned mid-snapshot (mutual-deletion race)", async () => {
-    // The mutual-deletion race: this survivor has already filtered the active
-    // link into `partnered`, but before its snapshot seals the departing name
-    // under the partner's DEK, the partner's OWN concurrent deletion tombstones
-    // that key. We land the race exactly at the seam the code exposes — the
-    // getOrCreateUserDek(partner) call inside the snapshot step — by shredding
-    // the partner's key at the moment it's fetched, then delegating to the real
-    // fetch, which now hits the tombstone.
+  it("skips a mid-deletion partner's marker and still deletes, marking healthy partners (mutual-deletion race)", async () => {
+    // The mutual-deletion race: this departing therapist has already filtered
+    // both active links into `partnered`, but before a snapshot seals the
+    // departing name under a partner's DEK, that partner's OWN concurrent
+    // deletion tombstones their key. We land the race exactly at the seam the
+    // code exposes — the getOrCreateUserDek(partner) call inside the snapshot
+    // step — by shredding the partner's key at the moment it's fetched, then
+    // delegating to the real fetch, which now hits the tombstone. A partner who
+    // is themselves mid-deletion is not a survivor to inform: their own deletion
+    // revokes the link, so we SKIP their marker rather than 500 the whole
+    // deletion.
+
+    // A SECOND client, whose key is tombstoned mid-race, proves the skip is
+    // per-partner: the healthy client's marker must still be written even
+    // though the shredded client's must not. (One therapist may hold many
+    // clients; the unique index only forbids a client holding two therapists.)
+    const shreddedClient = `test-${randomUUID()}`;
+    await seedUser(shreddedClient, "client", "Shredded Client");
+    await getOrCreateUserDek(shreddedClient);
+    const [shreddedLink] = await db
+      .insert(therapistLinks)
+      .values({
+        clientId: shreddedClient, therapistId, initiatedBy: "client",
+        inviteTokenHash: randomUUID(), status: "active", acceptedAt: new Date(),
+      })
+      .returning();
+
     const realGet = userKeysModule.getOrCreateUserDek;
     vi.spyOn(userKeysModule, "getOrCreateUserDek").mockImplementation(async (uid: string) => {
-      if (uid === therapistId) await userKeysModule.shredUserKey(therapistId);
+      if (uid === shreddedClient) await userKeysModule.shredUserKey(shreddedClient);
       return realGet(uid);
     });
 
-    // The error must propagate UNCAUGHT — nothing absorbs it into a fresh key.
-    await expect(deleteAccount(clientId, password)).rejects.toBeInstanceOf(KeyShreddedError);
+    // The deletion must SUCCEED — the shredded partner is worked around, not
+    // panicked over.
+    await expect(deleteAccount(therapistId, password)).resolves.toBeUndefined();
 
-    // Self-healing 500: the throw happened before the transaction, so the
-    // survivor's account and data are fully intact and the link is untouched —
-    // a retry (by when the partner's deletion has revoked the link, filtering it
-    // out) goes through cleanly.
-    expect(await db.select().from(user).where(eq(user.id, clientId))).toHaveLength(1);
-    expect(await db.select().from(conversations).where(eq(conversations.userId, clientId))).toHaveLength(1);
-    const [link] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
-    expect(link.status).toBe("active");
-    expect(link.departedAt).toBeNull();
+    // The departing user is fully purged and tombstoned.
+    expect(await db.select().from(user).where(eq(user.id, therapistId))).toHaveLength(0);
+    const [keyRow] = await db.select().from(userKeys).where(eq(userKeys.userId, therapistId));
+    expect(keyRow.wrappedDek).toBeNull();
+
+    // The shredded partner's link is closed but carries NO departure marker or
+    // ciphertext — there was no survivor key to seal it under.
+    const [closed] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, shreddedLink.id));
+    expect(closed.status).toBe("revoked");
+    expect(closed.departedAt).toBeNull();
+    expect(closed.departedNameCiphertext).toBeNull();
+
+    // The healthy partner's link still gets its marker, sealed under their DEK.
+    const clientDek = await getOrCreateUserDek(clientId);
+    const [markedLink] = await db.select().from(therapistLinks).where(eq(therapistLinks.id, linkId));
+    expect(markedLink.status).toBe("revoked");
+    expect(markedLink.departedAt).not.toBeNull();
+    expect(decryptText(clientDek, markedLink.departedNameCiphertext!)).toBe("Their Therapist");
   });
 
   it("rejects a wrong password and deletes nothing", async () => {

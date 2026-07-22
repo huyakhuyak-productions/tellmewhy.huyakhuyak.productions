@@ -13,8 +13,8 @@ import {
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { encryptText } from "@/lib/crypto/envelope";
-import { getOrCreateUserDek, shredUserKey } from "@/lib/crypto/user-keys";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { getOrCreateUserDek, KeyShreddedError, shredUserKey } from "@/lib/crypto/user-keys";
+import { errorCause, NotFoundError, ValidationError } from "@/lib/errors";
 import { verifyPassword } from "@/lib/password";
 
 export async function deleteAccount(userId: string, password: string): Promise<void> {
@@ -49,14 +49,33 @@ export async function deleteAccount(userId: string, password: string): Promise<v
 
   // The departing name, sealed under each SURVIVOR's DEK before the
   // transaction — it is the survivor's record from here on (key-ownership
-  // law), and their key must exist for that to hold.
-  const snapshots = await Promise.all(
-    partnered.map(async (link) => {
-      const partnerId = link.clientId === userId ? link.therapistId! : link.clientId!;
-      const partnerDek = await getOrCreateUserDek(partnerId);
-      return { linkId: link.id, ciphertext: encryptText(partnerDek, userRow.name) };
-    }),
-  );
+  // law), and their key must exist for that to hold. A partner who is
+  // themselves mid-deletion is the mutual-deletion race: the link read as
+  // invited/active, but their concurrent deletion tombstoned their key before
+  // this seal. They are not a survivor to inform — their own deletion revokes
+  // the link — so we SKIP their marker (returning null, dropped below) rather
+  // than let KeyShreddedError 500 the whole deletion. The link still closes in
+  // the transaction; it simply carries no departure marker, exactly as a link
+  // the partner's tx closes first would.
+  const snapshots = (
+    await Promise.all(
+      partnered.map(async (link) => {
+        const partnerId = link.clientId === userId ? link.therapistId! : link.clientId!;
+        try {
+          const partnerDek = await getOrCreateUserDek(partnerId);
+          return { linkId: link.id, ciphertext: encryptText(partnerDek, userRow.name) };
+        } catch (error) {
+          if (error instanceof KeyShreddedError) {
+            console.warn(
+              `Skipping departure marker for link ${link.id}: partner mid-deletion (${errorCause(error)})`,
+            );
+            return null;
+          }
+          throw error;
+        }
+      }),
+    )
+  ).filter((snapshot) => snapshot !== null);
 
   const asTherapistLinkIds = links.filter((l) => l.therapistId === userId).map((l) => l.id);
 
