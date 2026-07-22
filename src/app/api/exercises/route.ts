@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { isUniformNotFound } from "@/lib/errors";
 import { listEntriesForClient, listExercisesForClient } from "@/lib/exercises";
 import { withRequestScope } from "@/lib/request-scope";
 
@@ -14,7 +15,14 @@ export async function GET(): Promise<Response> {
   // Both reads decrypt with the same user's DEK — scope the request so the DEK
   // unwrap memoizes across the two calls (see the chat route).
   return withRequestScope(async () => {
-    const [exercises, entries] = await Promise.all([listExercisesForClient(userId), listEntriesForClient(userId)]);
-    return Response.json({ exercises, entries });
+    try {
+      const [exercises, entries] = await Promise.all([listExercisesForClient(userId), listEntriesForClient(userId)]);
+      return Response.json({ exercises, entries });
+    } catch (error) {
+      // A stale session of a just-deleted user (own key tombstoned) gets the
+      // uniform 404, never a 500.
+      if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
+      throw error;
+    }
   });
 }

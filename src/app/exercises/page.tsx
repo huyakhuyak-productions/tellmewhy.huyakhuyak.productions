@@ -1,7 +1,8 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isUniformNotFound } from "@/lib/errors";
 import { listEntriesForClient, listExercisesForClient } from "@/lib/exercises";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
 import { withRequestScope } from "@/lib/request-scope";
@@ -28,6 +29,8 @@ export default async function ExercisesPage({
   // Both listExercisesForClient and listEntriesForClient decrypt with the same
   // DEK — one request scope collapses their two unwraps into one, and never
   // outlives this request (see request-scope.ts).
+  // A stale session of a just-deleted user (own key tombstoned) 404s here
+  // instead of 500ing — same notFound() path a missing resource takes.
   const [{ start }, exercises, entries, activeLink] = await withRequestScope(() =>
     Promise.all([
       searchParams,
@@ -35,7 +38,10 @@ export default async function ExercisesPage({
       listEntriesForClient(userId),
       getActiveLinkForClient(userId),
     ]),
-  );
+  ).catch((error) => {
+    if (isUniformNotFound(error)) notFound();
+    throw error;
+  });
 
   // Actionable homework = status active AND its link still live. Therapist
   // steering dies with the relationship, so once the link is revoked the ask

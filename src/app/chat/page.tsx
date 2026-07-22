@@ -1,8 +1,9 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import Link from "next/link";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isUniformNotFound } from "@/lib/errors";
 import { listConversations, listHiddenConversations } from "@/lib/conversations";
 import { listExercisesForClient } from "@/lib/exercises";
 import { listFolders } from "@/lib/folders";
@@ -24,6 +25,8 @@ export default async function HomePage() {
   // Scope the whole home fetch so the reader's DEK is unwrapped once for every
   // decrypting read below (titles, folder names, mood, homework) instead of
   // per-call — and never held past this request (see request-scope.ts).
+  // A stale session of a just-deleted user (own key tombstoned) 404s here
+  // instead of 500ing — same notFound() path a missing resource takes.
   const [conversations, hiddenConversations, folders, grantIds, activeLink, recentMood, exercises] =
     await withRequestScope(() =>
       Promise.all([
@@ -36,7 +39,10 @@ export default async function HomePage() {
         listMoodCheckins(session.user.id, 1),
         listExercisesForClient(session.user.id),
       ]),
-    );
+    ).catch((error) => {
+      if (isUniformNotFound(error)) notFound();
+      throw error;
+    });
 
   const today = moodTodayUTC();
   const todayCheckin = recentMood.find((c) => c.day === today) ?? null;

@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { ValidationError } from "@/lib/errors";
+import { isUniformNotFound, ValidationError } from "@/lib/errors";
 import { checkInMood, listMoodCheckins } from "@/lib/mood";
 import { moodRateLimiter } from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
@@ -35,6 +35,9 @@ export async function POST(req: Request): Promise<Response> {
     await checkInMood(session.user.id, parsed.data);
     return new Response(null, { status: 204 });
   } catch (error) {
+    // A stale session of a just-deleted user (own key tombstoned) gets the
+    // uniform 404, never a 500.
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     // Only the domain's own validation failures (static, client-safe messages —
     // see ValidationError in errors.ts) map to 400. Anything else is an
     // infrastructure failure (DB, crypto) and rethrows into a 500, so its
@@ -61,7 +64,14 @@ export async function GET(req: Request): Promise<Response> {
   // Decrypts the client's check-ins — scope the request so getOrCreateUserDek
   // memoizes the DEK unwrap within it (see the chat route).
   return withRequestScope(async () => {
-    const checkins = await listMoodCheckins(userId, days);
-    return Response.json({ checkins });
+    try {
+      const checkins = await listMoodCheckins(userId, days);
+      return Response.json({ checkins });
+    } catch (error) {
+      // A stale session of a just-deleted user (own key tombstoned) gets the
+      // uniform 404, never a 500.
+      if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
+      throw error;
+    }
   });
 }

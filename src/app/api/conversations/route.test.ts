@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { auth } from "@/lib/auth";
+import { createConversation } from "@/lib/conversations";
+import { shredUserKey } from "@/lib/crypto/user-keys";
 import chatRateLimiter, { conversationCreateRateLimiter } from "@/lib/rate-limit";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
@@ -37,6 +39,22 @@ describe("conversation routes", () => {
     vi.mocked(auth.api.getSession).mockResolvedValueOnce(null);
     const res = await GET();
     expect(res.status).toBe(401);
+  });
+
+  // Stale-session shape: the user deleted their account (key tombstoned) but a
+  // device still holds a valid session. Listing their own conversations needs a
+  // DEK that no longer exists — the answer is the uniform 404, never a 500.
+  it("returns the uniform 404 when the caller's own key was shredded (stale session)", async () => {
+    const ghostId = await seedUser();
+    await createConversation(ghostId, "written before deletion");
+    await shredUserKey(ghostId);
+    vi.mocked(auth.api.getSession).mockResolvedValueOnce({
+      user: { id: ghostId },
+    } as Awaited<ReturnType<typeof auth.api.getSession>>);
+
+    const res = await GET();
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
   });
 
   // Runs last in this file: it drains the shared in-memory bucket for

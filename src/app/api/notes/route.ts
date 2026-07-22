@@ -49,7 +49,14 @@ export async function GET(): Promise<Response> {
   const userId = session.user.id;
   // Decrypts the owner's notes — scope the request so the DEK unwrap memoizes.
   return withRequestScope(async () => {
-    const notes = await listNotes(userId);
-    return Response.json({ notes });
+    try {
+      const notes = await listNotes(userId);
+      return Response.json({ notes });
+    } catch (error) {
+      // A stale session of a just-deleted user (own key tombstoned) gets the
+      // uniform 404, never a 500.
+      if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
+      throw error;
+    }
   });
 }
