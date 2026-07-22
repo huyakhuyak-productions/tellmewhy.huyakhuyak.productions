@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { shareEntry } from "@/lib/exercises";
 
 const paramsSchema = z.object({ entryId: z.uuid() });
@@ -20,7 +20,7 @@ export async function POST(_req: Request, ctx: Ctx): Promise<Response> {
   } catch (error) {
     // A foreign entry, a self-guided one (no exercise to join), or a revoked
     // link all fail identically here — NotFoundError → 404, never a hint.
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

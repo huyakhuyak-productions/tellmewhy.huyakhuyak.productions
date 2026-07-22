@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { deleteFolder, renameFolder } from "@/lib/folders";
 
 const renameSchema = z.object({ name: z.string().min(1).max(80) });
@@ -19,7 +19,7 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
     await renameFolder(params.data.folderId, session.user.id, body.data.name);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }
@@ -33,7 +33,7 @@ export async function DELETE(_req: Request, ctx: Ctx): Promise<Response> {
     await deleteFolder(params.data.folderId, session.user.id);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

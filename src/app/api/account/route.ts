@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { deleteAccount } from "@/lib/account-deletion";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { isUniformNotFound, ValidationError } from "@/lib/errors";
 import { accountDeleteRateLimiter } from "@/lib/rate-limit";
 
 const bodySchema = z.object({ password: z.string().min(1) });
@@ -23,7 +23,7 @@ export async function DELETE(req: Request): Promise<Response> {
     if (error instanceof ValidationError) {
       return Response.json({ error: error.message }, { status: 400 });
     }
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

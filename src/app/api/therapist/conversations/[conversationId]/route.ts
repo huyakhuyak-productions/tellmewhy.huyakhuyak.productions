@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reviewMarkers } from "@/db/schema";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { requireGrantedConversation } from "@/lib/sharing";
 import { loadSharedMessages } from "@/lib/therapist-access";
 import { requireTherapist } from "../../_lib/require-therapist";
@@ -41,7 +41,7 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
 
     return Response.json({ messages, marker: markerRow ?? null });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

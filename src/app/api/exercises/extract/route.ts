@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { loadMessages } from "@/lib/conversations";
-import { errorCause, NotFoundError } from "@/lib/errors";
+import { errorCause, isUniformNotFound } from "@/lib/errors";
 import { getExtractorModel } from "@/lib/ai/models";
 import { thoughtRecordSchema } from "@/lib/exercises";
 import chatRateLimiter from "@/lib/rate-limit";
@@ -80,7 +80,7 @@ async function handlePost(req: Request): Promise<Response> {
       return Response.json({ error: "Could not extract an entry" }, { status: 502 });
     }
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

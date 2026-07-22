@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { createNote } from "@/lib/therapist-notes";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { requireTherapist } from "../_lib/require-therapist";
@@ -32,7 +32,7 @@ export async function POST(req: Request): Promise<Response> {
     });
     return Response.json(note, { status: 201 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

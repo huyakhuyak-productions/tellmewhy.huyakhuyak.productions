@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { closeExercise } from "@/lib/exercises";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { requireTherapist } from "../../_lib/require-therapist";
@@ -32,7 +32,7 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
     await closeExercise(authResult.therapistId, params.data.exerciseId);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

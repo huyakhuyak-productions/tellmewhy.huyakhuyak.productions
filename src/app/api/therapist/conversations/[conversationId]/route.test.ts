@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createConversation, saveMessage } from "@/lib/conversations";
+import { shredUserKey } from "@/lib/crypto/user-keys";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 import { advanceReviewMarker } from "@/lib/therapist-access";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
@@ -67,6 +68,26 @@ describe("GET /api/therapist/conversations/[conversationId]", () => {
     session = { user: { id: therapistId, role: "therapist" } };
     const res = await GET(new Request("http://localhost"), ctxFor(conv.id));
     expect(res.status).toBe(404);
+  });
+
+  it("returns the uniform 404 when the client's key was shredded mid-race (never a 500)", async () => {
+    const clientId = await seedUser();
+    const therapistId = `test-${randomUUID()}`;
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+    const conv = await createConversation(clientId, "Shared, then deleted");
+    await grantConversation(clientId, conv.id);
+    await saveMessage({ conversationId: conv.id, userId: clientId, sender: "client", text: "hello" });
+
+    // The client deletes mid-session: their key is tombstoned. Reading their
+    // conversation now needs a DEK that no longer exists — this must answer the
+    // same indistinguishable 404 as a never-granted conversation, not a 500.
+    await shredUserKey(clientId);
+
+    session = { user: { id: therapistId, role: "therapist" } };
+    const res = await GET(new Request("http://localhost"), ctxFor(conv.id));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
   });
 
   it("returns decrypted messages with no marker when nothing has been reviewed yet", async () => {

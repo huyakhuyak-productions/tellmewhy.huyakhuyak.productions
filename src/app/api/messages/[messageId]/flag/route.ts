@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { flagMessageForTherapist } from "@/lib/conversations";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 
 const paramsSchema = z.object({ messageId: z.uuid() });
 
@@ -19,7 +19,7 @@ export async function POST(
     await flagMessageForTherapist(session.user.id, params.data.messageId);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

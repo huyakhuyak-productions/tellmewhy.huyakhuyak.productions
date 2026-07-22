@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { isUniformNotFound, ValidationError } from "@/lib/errors";
 import { acceptInvite } from "@/lib/therapist-links";
 
 const bodySchema = z.object({ token: z.string().min(20).max(200) });
@@ -25,7 +25,7 @@ export async function POST(req: Request): Promise<Response> {
     // throws it. Anything else is an infrastructure failure and rethrows
     // into a 500, so its internal message never reaches a response body.
     // The submitted token is never echoed back in any branch.
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }

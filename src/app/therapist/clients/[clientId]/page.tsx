@@ -1,6 +1,6 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { notFound } from "next/navigation";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { listAssignmentsForTherapist } from "@/lib/exercises";
 import { getMoodTrendForTherapist } from "@/lib/mood";
 import { moodTodayUTC } from "@/lib/mood-sparkline";
@@ -42,12 +42,12 @@ export default async function TherapistClientPage({
     [assignments, moodTrend] = await Promise.all([
       listAssignmentsForTherapist(session.user.id, clientId),
       getMoodTrendForTherapist(session.user.id, clientId).catch((error) => {
-        if (error instanceof NotFoundError) return null;
+        if (isUniformNotFound(error)) return null;
         throw error;
       }),
     ]);
   } catch (error) {
-    if (error instanceof NotFoundError) notFound();
+    if (isUniformNotFound(error)) notFound();
     throw error;
   }
 

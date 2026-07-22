@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { getSharedEntryForTherapist } from "@/lib/exercises";
 import { withRequestScope } from "@/lib/request-scope";
 import { requireTherapist } from "../../_lib/require-therapist";
@@ -26,7 +26,7 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
     );
     return Response.json({ entry });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

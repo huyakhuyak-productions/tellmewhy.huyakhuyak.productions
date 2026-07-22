@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { saveEntry, thoughtRecordSchema } from "@/lib/exercises";
 import { entryRateLimiter } from "@/lib/rate-limit";
 
@@ -27,7 +27,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (error) {
     // A given exerciseId that isn't one of this user's own assignments is
     // indistinguishable from a nonexistent one — NotFoundError → 404.
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

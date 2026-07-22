@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { setMoodSharing } from "@/lib/mood";
 
 const sharingSchema = z.object({ enabled: z.boolean() });
@@ -20,7 +20,7 @@ export async function PUT(req: Request): Promise<Response> {
   } catch (error) {
     // No active link means there is nothing to toggle — a client with no
     // therapist has no sharing state, indistinguishable from a missing row.
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

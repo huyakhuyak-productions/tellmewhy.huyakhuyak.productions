@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { setActiveLeaf } from "@/lib/conversations";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { conversationMutateRateLimiter } from "@/lib/rate-limit";
 
 const paramsSchema = z.object({ conversationId: z.uuid() });
@@ -26,7 +26,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     await setActiveLeaf(params.data.conversationId, session.user.id, body.data.messageId);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

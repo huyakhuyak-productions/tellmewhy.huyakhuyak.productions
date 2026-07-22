@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createConversation, listConversations, listHiddenConversations } from "@/lib/conversations";
+import { shredUserKey } from "@/lib/crypto/user-keys";
 import chatRateLimiter, { conversationMutateRateLimiter } from "@/lib/rate-limit";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
@@ -57,6 +58,21 @@ describe("PATCH /api/conversations/[conversationId] — hide and restore", () =>
     session = null;
     const res = await patchRequest(randomUUID(), { hidden: true });
     expect(res.status).toBe(401);
+  });
+
+  // Stale-session shape: the user deleted their account (key tombstoned) but a
+  // device still holds a valid session cookie. Renaming a conversation needs
+  // their own DEK, which no longer exists — the answer must be the uniform 404,
+  // never a 500 that betrays a shredded key.
+  it("returns the uniform 404 when the caller's own key was shredded (stale session)", async () => {
+    const ghostId = await seedUser();
+    session = { user: { id: ghostId } };
+    const conv = await createConversation(ghostId, "Written before deletion");
+    await shredUserKey(ghostId);
+
+    const res = await patchRequest(conv.id, { title: "rename after death" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
   });
 
   // The mutate bucket is its own instance with its own namespace — draining

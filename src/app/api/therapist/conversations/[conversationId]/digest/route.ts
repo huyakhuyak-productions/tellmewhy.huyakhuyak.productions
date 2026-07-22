@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getOrRefreshDigest } from "@/lib/digests";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { digestReadRateLimiter } from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
 import { requireTherapist } from "../../../_lib/require-therapist";
@@ -35,7 +35,7 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
     );
     return Response.json({ digest });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

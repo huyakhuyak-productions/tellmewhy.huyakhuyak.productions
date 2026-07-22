@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { assignExercise, listAssignmentsForTherapist } from "@/lib/exercises";
 import { therapistWriteRateLimiter } from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
@@ -30,7 +30,7 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
     );
     return Response.json({ assignments });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }
@@ -59,7 +59,7 @@ export async function POST(req: Request, ctx: Ctx): Promise<Response> {
     );
     return Response.json(assigned, { status: 201 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

@@ -3,7 +3,8 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, listConversations, listHiddenConversations, loadMessageTree } from "@/lib/conversations";
+import { listConversations, listHiddenConversations, loadMessageTree } from "@/lib/conversations";
+import { isUniformNotFound } from "@/lib/errors";
 import { projectMarkerOntoPath, resolveActivePath, versionInfo } from "@/lib/message-tree";
 import { listFolders } from "@/lib/folders";
 import { deriveChatStats } from "@/lib/chat-stats";
@@ -49,7 +50,7 @@ export default async function ConversationPage({
     try {
       tree = await loadMessageTree(conversationId, userId);
     } catch (error) {
-      if (error instanceof NotFoundError) notFound();
+      if (isUniformNotFound(error)) notFound();
       throw error;
     }
 

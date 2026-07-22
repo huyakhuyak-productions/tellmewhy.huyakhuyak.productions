@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isTitleCustomized, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
-import { errorCause, NotFoundError } from "@/lib/errors";
+import { errorCause, isUniformNotFound, NotFoundError } from "@/lib/errors";
 import { resolveActivePath } from "@/lib/message-tree";
 import { assessRisk, type RiskLevel } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
@@ -380,7 +380,7 @@ async function handlePost(req: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

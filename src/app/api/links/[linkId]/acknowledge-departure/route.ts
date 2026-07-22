@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { acknowledgeDeparture } from "@/lib/therapist-links";
 
 const paramsSchema = z.object({ linkId: z.uuid() });
@@ -19,7 +19,7 @@ export async function POST(
     await acknowledgeDeparture(params.data.linkId, session.user.id);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

@@ -1,7 +1,7 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { notFound } from "next/navigation";
 import { z } from "zod";
-import { NotFoundError } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { getReadingView } from "@/lib/therapist-desk";
 import { DeskFrame } from "@/components/therapist/desk-frame";
 import { ReadingView } from "@/components/therapist/reading-view";
@@ -34,7 +34,7 @@ export default async function TherapistReadingPage({
   try {
     view = await getReadingView(session.user.id, conversationId);
   } catch (error) {
-    if (error instanceof NotFoundError) notFound();
+    if (isUniformNotFound(error)) notFound();
     throw error;
   }
 

@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { isUniformNotFound, ValidationError } from "@/lib/errors";
 import { grantConversation, revokeGrant } from "@/lib/sharing";
 
 const paramsSchema = z.object({ conversationId: z.uuid() });
@@ -18,7 +18,7 @@ export async function POST(_req: Request, ctx: Ctx): Promise<Response> {
     await grantConversation(session.user.id, params.data.conversationId);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     // Only grantConversation's own business rule (no active link — a static,
     // client-safe ValidationError, see errors.ts) maps to 400 with its
     // message. Anything else is an infrastructure failure and rethrows into a
@@ -38,7 +38,7 @@ export async function DELETE(_req: Request, ctx: Ctx): Promise<Response> {
     await revokeGrant(session.user.id, params.data.conversationId);
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     throw error;
   }
 }

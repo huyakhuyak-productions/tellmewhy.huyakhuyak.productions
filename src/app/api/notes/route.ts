@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { isUniformNotFound, ValidationError } from "@/lib/errors";
 import { createNote, listNotes, MAX_NOTE_BODY_LENGTH } from "@/lib/notes";
 import { noteRateLimiter } from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
@@ -37,7 +37,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ id: created.id }, { status: 201 });
   } catch (error) {
     // A foreign or missing message is indistinguishable from nonexistence.
-    if (error instanceof NotFoundError) return Response.json({ error: "Not found" }, { status: 404 });
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
     if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }
