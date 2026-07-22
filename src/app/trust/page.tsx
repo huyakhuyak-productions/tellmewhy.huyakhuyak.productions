@@ -1,7 +1,8 @@
 export { noIndexMetadata as metadata } from "@/lib/noindex-metadata";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isUniformNotFound } from "@/lib/errors";
 import { listAuditEventsForClient } from "@/lib/audit";
 import { resolveAuditActor } from "@/lib/audit-copy";
 import { listConversations } from "@/lib/conversations";
@@ -19,6 +20,10 @@ export default async function TrustPage() {
   if (!session) redirect("/sign-in?next=/trust");
   const userId = session.user.id;
 
+  // listConversations and listDepartures both unwrap the caller's own DEK as
+  // their first statement — a stale session of a just-deleted user (own key
+  // tombstoned) 404s here instead of 500ing, the same notFound() path a missing
+  // resource takes.
   const [conversations, activeLink, grantIds, audit, notes, moodShared, departures] = await Promise.all([
     listConversations(userId),
     getActiveLinkForClient(userId),
@@ -27,7 +32,10 @@ export default async function TrustPage() {
     listPublicNotesForClient(userId, null),
     getMoodSharingState(userId),
     listDepartures(userId),
-  ]);
+  ]).catch((error) => {
+    if (isUniformNotFound(error)) notFound();
+    throw error;
+  });
 
   // Only look for a pending invite when there's no active link — the two are
   // mutually exclusive under the one-therapist rule, and this keeps the common

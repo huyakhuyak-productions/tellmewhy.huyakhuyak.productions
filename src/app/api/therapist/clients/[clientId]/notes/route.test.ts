@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { shredUserKey } from "@/lib/crypto/user-keys";
 import { createNote } from "@/lib/therapist-notes";
 import { acceptInvite, createInvite } from "@/lib/therapist-links";
 
@@ -54,6 +55,24 @@ describe("GET /api/therapist/clients/[clientId]/notes", () => {
     const body = await res.json();
     expect(body).toHaveLength(1);
     expect(body[0].body).toBe("First impression");
+  });
+
+  // Stale-session shape on the therapist's own side: listNotesForTherapist
+  // unwraps the DESK-HOLDER's own DEK, so a therapist whose account was deleted
+  // (own key tombstoned) but whose session still validates gets the uniform
+  // 404, never a 500.
+  it("returns the uniform 404 when the therapist's own key was shredded (stale session)", async () => {
+    const clientId = `test-${randomUUID()}`;
+    const therapistId = `test-${randomUUID()}`;
+    const { token } = await createInvite(clientId, "client");
+    await acceptInvite(token, therapistId);
+    await createNote(therapistId, clientId, { kind: "private", body: "written before deletion" });
+    await shredUserKey(therapistId);
+
+    session = { user: { id: therapistId, role: "therapist" } };
+    const res = await GET(new Request("http://localhost"), ctxFor(clientId));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
   });
 
   it("returns an empty list — not 404 — for a foreign clientId with no link to this therapist", async () => {

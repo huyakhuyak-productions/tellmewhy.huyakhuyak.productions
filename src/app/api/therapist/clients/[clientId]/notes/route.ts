@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUniformNotFound } from "@/lib/errors";
 import { listNotesForTherapist } from "@/lib/therapist-notes";
 import { requireTherapist } from "../../../_lib/require-therapist";
 
@@ -16,7 +17,16 @@ export async function GET(_req: Request, ctx: Ctx): Promise<Response> {
 
   // MODULE SEMANTICS: same as clients/[clientId]/conversations — a foreign
   // clientId with no link at all to this therapist just finds no linkIds to
-  // query notes under, so this returns [] with a 200, never a 404.
-  const notes = await listNotesForTherapist(authResult.therapistId, params.data.clientId);
-  return Response.json(notes);
+  // query notes under, so this returns [] with a 200, never a 404. The one
+  // non-[] outcome is the mid-race stale session: listNotesForTherapist unwraps
+  // the THERAPIST's OWN DEK, so a desk-holder whose own key was tombstoned
+  // between requireTherapist's session read and that unwrap gets the uniform
+  // 404, never a 500.
+  try {
+    const notes = await listNotesForTherapist(authResult.therapistId, params.data.clientId);
+    return Response.json(notes);
+  } catch (error) {
+    if (isUniformNotFound(error)) return Response.json({ error: "Not found" }, { status: 404 });
+    throw error;
+  }
 }
