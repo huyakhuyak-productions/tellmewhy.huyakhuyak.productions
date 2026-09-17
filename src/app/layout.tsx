@@ -76,7 +76,6 @@ export default function RootLayout({
             {/* Plain inline script (not next/script): it must execute during
                 HTML parse, guaranteed before the tracker loads, so the
                 before-send scrubber exists for the very first pageview. */}
-            {/* eslint-disable-next-line react/no-danger -- own compile-time constant, no data flows in */}
             <script dangerouslySetInnerHTML={{ __html: UMAMI_BEFORE_SEND_SNIPPET }} />
             <Script
               src={umami.src}
