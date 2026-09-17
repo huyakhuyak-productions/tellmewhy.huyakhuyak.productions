@@ -10,12 +10,14 @@ import { errorCause, isUniformNotFound, NotFoundError } from "@/lib/errors";
 import { resolveActivePath } from "@/lib/message-tree";
 import { assessRisk, type RiskLevel } from "@/lib/ai/crisis";
 import { getChatModel, getClassifierModel, getTitleModel } from "@/lib/ai/models";
+import { alertOwnerIfOutOfCredits, isOutOfCredits, providerFailureCause } from "@/lib/ai/provider-failure";
 import { buildHomeworkSection, buildSystemPrompt, buildTitlePrompt } from "@/lib/ai/system-prompt";
 import { listExercisesForClient } from "@/lib/exercises";
 import { buildMoodContextLine, listMoodCheckins } from "@/lib/mood";
 import chatRateLimiter from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
 import { normalizeForPrompt } from "@/lib/text";
+import { SERVICE_ISSUE_CODE } from "@/lib/service-issue-copy";
 import { getGrantStateForClient } from "@/lib/sharing";
 import { getActiveAiInstruction } from "@/lib/therapist-notes";
 import { getActiveLinkForClient } from "@/lib/therapist-links";
@@ -278,6 +280,16 @@ async function handlePost(req: Request): Promise<Response> {
       // Stop/tab-close abort the model call itself; the streamed prefix is
       // what gets persisted below — an honest partial, never a fake whole.
       abortSignal: req.signal,
+      // MUST be explicit: the SDK's default is `console.error(error)` on the
+      // raw object, and a provider APICallError carries `requestBodyValues` —
+      // the whole decrypted transcript — as an enumerable own property. One
+      // string, ids plus cause only, like every other AI call site. A credit
+      // refusal (402) also wakes the owner; the person sees a calm notice
+      // (see the UI-stream onError below) that promises exactly that.
+      onError: ({ error }) => {
+        console.error(`Chat stream failed for conversation ${conversationId} (${providerFailureCause(error)})`);
+        alertOwnerIfOutOfCredits(error);
+      },
     });
 
     // Keep the model stream flowing even when the client stops reading the
@@ -287,6 +299,12 @@ async function handlePost(req: Request): Promise<Response> {
 
     return result.toUIMessageStreamResponse({
       headers: { "x-risk-level": riskLevel },
+      // What the client learns about a failed stream. Only a credit refusal
+      // gets a code of its own (the composer maps it to "something's wrong on
+      // our end, the owner has been told" and drops the pointless Try again);
+      // everything else keeps the SDK's masked text so no provider detail —
+      // and no hint that a model sits behind the companion — leaves the server.
+      onError: (error) => (isOutOfCredits(error) ? SERVICE_ISSUE_CODE : "An error occurred."),
       // Persistence lives HERE (not streamText's own onFinish) because this
       // callback is abort-aware: on a stop it still fires, with the partial
       // responseMessage accumulated so far and isAborted set.
@@ -374,7 +392,8 @@ async function handlePost(req: Request): Promise<Response> {
             // requestBodyValues embeds the title prompt — message plaintext),
             // so a provider 4xx/5xx would dump client content into server
             // logs. Ids plus error name/message only.
-            console.error(`Failed to auto-title conversation ${conversationId} (${errorCause(error)})`);
+            console.error(`Failed to auto-title conversation ${conversationId} (${providerFailureCause(error)})`);
+            alertOwnerIfOutOfCredits(error);
           }
         }
       },

@@ -7,9 +7,14 @@ import {
   MOCK_FINISH_REASON,
   MOCK_USAGE,
   MockLanguageModelV3,
+  outOfCreditsModel,
   payloadCarryingFailureModel,
   simulateReadableStream,
+  streamErrorPayloadModel,
 } from "@/test/ai-fixtures";
+import { alertOwnerIfOutOfCredits } from "@/lib/ai/provider-failure";
+import { mockEmailOutbox } from "@/lib/email";
+import { SERVICE_ISSUE_CODE } from "@/lib/service-issue-copy";
 import { TITLE_MAX_OUTPUT_TOKENS } from "@/lib/title";
 import { createConversation, isTitleCustomized, listConversations, loadMessages, loadMessageTree, renameConversation, saveMessage } from "@/lib/conversations";
 import { getKeyProvider } from "@/lib/crypto/key-provider";
@@ -48,6 +53,9 @@ vi.mock("@/lib/therapist-notes", { spy: true });
 // Spied so the model instance each POST creates (and its recorded
 // doStreamCalls) is inspectable via getChatModel's own mock.results.
 vi.mock("@/lib/ai/models", { spy: true });
+// Spied (real implementation runs) so the credit-outage tests can assert the
+// owner alert was reached from every failure path without faking it.
+vi.mock("@/lib/ai/provider-failure", { spy: true });
 
 import { POST } from "./route";
 
@@ -1395,6 +1403,99 @@ describe("POST /api/chat", () => {
       expect(promptJson).toContain("edited second");
       expect(promptJson).toContain("and a follow-up");
       expect(promptJson).not.toContain("SUPERSEDED_BRANCH");
+    });
+  });
+
+  describe("when the owner's OpenRouter balance is out", () => {
+    const sentinel = "SENTINEL_PROMPT_PLAINTEXT";
+
+    function loggedLines(spy: { mock: { calls: unknown[][] } }) {
+      return spy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
+    }
+
+    it("streams the service-issue code — never the provider's words — and tells the owner, not the log", async () => {
+      const { id } = await createConversation(userId, "Credits out");
+      vi.mocked(getChatModel).mockReturnValueOnce(outOfCreditsModel(sentinel));
+      vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      // The client gets a code it maps to calm copy; nothing about credits,
+      // OpenRouter, or the prompt leaves the server.
+      expect(body).toContain(`"errorText":"${SERVICE_ISSUE_CODE}"`);
+      expect(body).not.toMatch(/credit|openrouter/i);
+      expect(body).not.toContain(sentinel);
+
+      // The stream failure is logged as ONE string naming the outage — never
+      // the raw APICallError (its requestBodyValues is the decrypted prompt).
+      expect(errorSpy).toHaveBeenCalled();
+      for (const call of errorSpy.mock.calls) expect(call).toHaveLength(1);
+      expect(loggedLines(errorSpy)).toContain(`Chat stream failed for conversation ${id} (OpenRouter: out of credits)`);
+      expect(loggedLines(errorSpy)).not.toContain(sentinel);
+
+      expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
+
+      // No reply ever streamed, so nothing dishonest is persisted.
+      const msgs = await loadMessages(id, userId);
+      expect(msgs.map((m) => m.sender)).toEqual(["client"]);
+    });
+
+    it("recognises the HTTP-200 error-payload shape the same way", async () => {
+      const { id } = await createConversation(userId, "Credits out, quietly");
+      vi.mocked(getChatModel).mockReturnValueOnce(
+        streamErrorPayloadModel({ code: 402, message: "Insufficient credits", type: null, param: null }),
+      );
+      vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      const body = await res.text();
+      expect(body).toContain(`"errorText":"${SERVICE_ISSUE_CODE}"`);
+      expect(body).not.toMatch(/credit/i);
+      expect(loggedLines(errorSpy)).toContain(`Chat stream failed for conversation ${id} (OpenRouter: out of credits)`);
+      expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the SDK's masked text for any other stream failure, still logging plaintext-free", async () => {
+      const { id } = await createConversation(userId, "Provider hiccup");
+      vi.mocked(getChatModel).mockReturnValueOnce(payloadCarryingFailureModel(sentinel, "Bad Gateway"));
+      vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+      mockEmailOutbox.length = 0;
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      const body = await res.text();
+      expect(body).toContain('"errorText":"An error occurred."');
+      expect(body).not.toContain("Bad Gateway");
+      expect(body).not.toContain(sentinel);
+
+      // The leak this closes: with no onError, the SDK dumps the raw error.
+      expect(errorSpy).toHaveBeenCalled();
+      for (const call of errorSpy.mock.calls) expect(call).toHaveLength(1);
+      expect(loggedLines(errorSpy)).toContain("Bad Gateway");
+      expect(loggedLines(errorSpy)).not.toContain(sentinel);
+
+      // Every failure is offered to the alerter; only a 402 makes it act.
+      expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
+      expect(mockEmailOutbox).toHaveLength(0);
+    });
+
+    it("tells the owner when the balance runs out between the reply and its auto-title", async () => {
+      const { id } = await createConversation(userId, "Untitled");
+      vi.mocked(getTitleModel).mockReturnValueOnce(outOfCreditsModel(sentinel));
+      vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await POST(chatRequest({ conversationId: id, text: "I feel stuck" }));
+      await res.text(); // drain so onFinish (and the failing title call) runs
+
+      await vi.waitFor(() => {
+        expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
+      });
+      expect(loggedLines(errorSpy)).toContain("Failed to auto-title");
+      expect(loggedLines(errorSpy)).not.toContain(sentinel);
     });
   });
 
