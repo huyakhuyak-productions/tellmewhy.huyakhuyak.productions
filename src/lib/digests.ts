@@ -15,6 +15,7 @@ import { db } from "@/db";
 import { conversations, digests, messages } from "@/db/schema";
 import { resolveActivePath } from "./message-tree";
 import { getDigestModel } from "./ai/models";
+import { alertOwnerIfOutOfCredits, providerFailureCause } from "./ai/provider-failure";
 import { buildDigestPrompt } from "./ai/system-prompt";
 import { decryptText, encryptText } from "./crypto/envelope";
 import { getOrCreateUserDek } from "./crypto/user-keys";
@@ -180,7 +181,8 @@ export async function getOrRefreshDigest(
     // NoObjectGeneratedError's text embeds the raw generated digest), so a
     // routine provider 4xx/5xx would dump client plaintext into server logs.
     // Ids plus error name/message only.
-    console.error(`Digest generation failed for conversation ${conversationId} (${errorCause(error)})`);
+    console.error(`Digest generation failed for conversation ${conversationId} (${providerFailureCause(error)})`);
+    alertOwnerIfOutOfCredits(error);
     if (existing && priorBody) {
       // Same guard on the stale fallback: the prior body may anchor a since-
       // deleted message, which must not reach the therapist.

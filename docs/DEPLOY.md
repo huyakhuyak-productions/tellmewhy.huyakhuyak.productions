@@ -34,7 +34,8 @@ dokku config:set tellmewhy \
   BETTER_AUTH_URL="https://tellmewhy.huyakhuyak.productions" \
   OPENROUTER_API_KEY="<your OpenRouter key>" \
   RESEND_API_KEY="<your Resend API key>" \
-  EMAIL_FROM="tellmewhy <no-reply@tellmewhy.huyakhuyak.productions>"
+  EMAIL_FROM="tellmewhy <no-reply@tellmewhy.huyakhuyak.productions>" \
+  OWNER_EMAIL="<where outage alerts should reach you>"
 
 # The key was generated inline and exists ONLY in Dokku's config store so far.
 # Print it and copy it into your password manager NOW — if this server dies,
@@ -62,6 +63,16 @@ throws instead of falling back (`src/lib/email.ts`), so a forgot-password
 request errors server-side and no reset mail is sent — set the key before
 anyone needs a reset. (In dev/test, with no key, it logs the email to the
 console instead of sending.)
+
+`OWNER_EMAIL` is where the app emails YOU when OpenRouter starts refusing
+requests for lack of credit (HTTP 402). Every reply fails while the balance is
+zero; people see a calm "something's not right on our end — the owner has been
+told" notice with their words kept in the composer, and that sentence is only
+true if this is set. One alert per six hours, not one per failed message (the
+throttle lives in process memory, so a restart may send one more). Goes out
+through the same Resend setup as password reset, so it needs `RESEND_API_KEY`
+and `EMAIL_FROM` too. Unset, the server logs a loud line on each outage window
+and nobody is emailed.
 
 Optional analytics (self-hosted, cookieless Umami — disclosed in the privacy
 copy): set both or neither; with either missing the app renders no analytics

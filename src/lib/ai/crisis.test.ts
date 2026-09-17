@@ -1,15 +1,21 @@
 import { inspect } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 import { assessRisk, RISK_MAX_OUTPUT_TOKENS, screenText } from "./crisis";
+import { alertOwnerIfOutOfCredits } from "./provider-failure";
 import {
   MOCK_FINISH_REASON,
   MOCK_USAGE,
   MockLanguageModelV3,
   mockClassifier,
+  outOfCreditsModel,
   payloadCarryingFailureModel,
   throwingModel,
   truncatedObjectModel,
 } from "@/test/ai-fixtures";
+
+// Spied (real implementation runs) so the credit-outage test can assert the
+// owner alert is reached from the classifier's silent fallback too.
+vi.mock("./provider-failure", { spy: true });
 
 describe("screenText", () => {
   it.each([
@@ -77,6 +83,23 @@ describe("assessRisk", () => {
         .join("\n");
       expect(logged).toContain("Failed to classify risk");
       expect(logged).not.toContain(sentinel);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("still lands on the regex floor when credits are out — and tells the owner, plaintext-free", async () => {
+    const sentinel = "SENTINEL_PLAINTEXT";
+    vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await assessRisk("rough week", outOfCreditsModel(sentinel))).toBe("none");
+      const logged = errorSpy.mock.calls
+        .map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" "))
+        .join("\n");
+      expect(logged).toContain("out of credits");
+      expect(logged).not.toContain(sentinel);
+      expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
     } finally {
       errorSpy.mockRestore();
     }

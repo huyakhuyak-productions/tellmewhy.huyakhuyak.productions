@@ -18,6 +18,8 @@ account-management phase shipped — self-serve deletion + email password reset)
   - [ ] Set `RESEND_API_KEY` + a Resend-verified `EMAIL_FROM` (SPF/DKIM) so
         password reset can send — production refuses to send without them.
         Deletion is self-serve now, so there's no by-request queue to staff.
+  - [ ] Set `OWNER_EMAIL` so an OpenRouter credit outage (402) emails you —
+        the in-app notice promises "the owner has been told".
 
 ## Bar 2 — v1 is honestly complete
 

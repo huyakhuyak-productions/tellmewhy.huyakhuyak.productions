@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import { APICallError, simulateReadableStream, type LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
 
@@ -74,15 +74,61 @@ export function throwingModel(message = "provider down"): LanguageModel {
 // decrypted prompt. `sentinel` stands in for that client plaintext, so the
 // leak-prevention tests can assert it never reaches a log.
 export function payloadCarryingFailureModel(sentinel: string, message = "Bad Request"): LanguageModel {
+  const fail = () => {
+    const error = new Error(message);
+    Object.assign(error, {
+      requestBodyValues: { prompt: sentinel },
+      text: sentinel,
+      responseBody: sentinel,
+    });
+    throw error;
+  };
+  return new MockLanguageModelV3({ doGenerate: async () => fail(), doStream: async () => fail() });
+}
+
+// OpenRouter refusing the request for lack of credit — the HTTP 402 shape:
+// a real APICallError with `statusCode: 402`, whose `requestBodyValues` is the
+// decrypted prompt (`sentinel` stands in for it). Both call paths refuse, so
+// the same model serves streamText (chat) and generateText (title, extract).
+export function outOfCreditsModel(sentinel: string): LanguageModel {
+  const refuse = () => {
+    throw new APICallError({
+      message: "[openrouter] Insufficient credits. Add more using https://openrouter.ai/settings/credits",
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      requestBodyValues: { messages: [{ role: "user", content: sentinel }] },
+      statusCode: 402,
+      responseBody: '{"error":{"code":402,"message":"Insufficient credits"}}',
+      data: { error: { code: 402, message: "Insufficient credits" } },
+    });
+  };
+  return new MockLanguageModelV3({ doGenerate: async () => refuse(), doStream: async () => refuse() });
+}
+
+// A NON-streaming call whose HTTP-200 body is an error payload: the provider
+// rethrows it as an APICallError with `statusCode: 200` and the flat payload
+// on `data` (no `error` nesting, unlike the 402 path above).
+export function outOfCreditsInBodyModel(sentinel: string): LanguageModel {
   return new MockLanguageModelV3({
     doGenerate: async () => {
-      const error = new Error(message);
-      Object.assign(error, {
-        requestBodyValues: { prompt: sentinel },
-        text: sentinel,
-        responseBody: sentinel,
+      throw new APICallError({
+        message: "Insufficient credits",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        requestBodyValues: { messages: [{ role: "user", content: sentinel }] },
+        statusCode: 200,
+        data: { code: 402, message: "Insufficient credits", type: null, param: null },
       });
-      throw error;
     },
+  });
+}
+
+// The OTHER refusal shape: HTTP 200 whose SSE body is an error payload. The
+// provider enqueues the parsed payload as a bare stream error part — a plain
+// object, not an Error, with no statusCode — so the stream "succeeds" and then
+// immediately errors.
+export function streamErrorPayloadModel(error: unknown): LanguageModel {
+  return new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({ chunks: [{ type: "error", error }] }),
+    }),
   });
 }

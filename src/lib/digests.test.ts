@@ -9,6 +9,7 @@ import {
   MOCK_USAGE,
   MockLanguageModelV3,
   mockObjectModel,
+  outOfCreditsModel,
   payloadCarryingFailureModel,
   throwingModel,
   truncatedObjectModel,
@@ -20,6 +21,7 @@ import { NotFoundError } from "./errors";
 import { grantConversation, revokeGrant } from "./sharing";
 import { acceptInvite, createInvite } from "./therapist-links";
 import { getDigestModel } from "./ai/models";
+import { alertOwnerIfOutOfCredits } from "./ai/provider-failure";
 import { getOrRefreshDigest, type DigestBody } from "./digests";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
@@ -27,6 +29,9 @@ import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 // default; individual tests override a single call to inject a hallucinating
 // or failing model, or read the prompt the model actually received.
 vi.mock("./ai/models", { spy: true });
+// Spied (real implementation runs) so the credit-outage test can assert the
+// owner alert is reached from the digest's silent stale/null fallback too.
+vi.mock("./ai/provider-failure", { spy: true });
 
 // Fixed digest body serialized as the model's single text part (see
 // mockObjectModel), for the anchor-filtering and CAS tests below.
@@ -285,6 +290,22 @@ describe("digests — get-or-refresh behind the gate", () => {
       const result = await getOrRefreshDigest(therapistId, convId);
       expect(result).toBeNull();
       expect(await db.select().from(digests).where(eq(digests.conversationId, convId))).toHaveLength(0);
+    });
+
+    it("still falls back quietly when credits are out — and tells the owner, plaintext-free", async () => {
+      const convId = await grantedConversation("Credits out");
+      const sentinel = "SENTINEL_TRANSCRIPT_PLAINTEXT";
+      await saveMessage({ conversationId: convId, userId: clientId, sender: "client", text: sentinel });
+      vi.mocked(getDigestModel).mockReturnValueOnce(outOfCreditsModel(sentinel));
+      vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const result = await getOrRefreshDigest(therapistId, convId);
+      expect(result).toBeNull();
+      const logged = errorSpy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
+      expect(logged).toContain("out of credits");
+      expect(logged).not.toContain(sentinel);
+      expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
     });
 
     it("treats a truncated (non-stop) generation as a failure — no partial digest, no row", async () => {

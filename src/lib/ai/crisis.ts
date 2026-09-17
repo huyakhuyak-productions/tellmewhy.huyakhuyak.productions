@@ -1,6 +1,6 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
-import { errorCause } from "@/lib/errors";
+import { alertOwnerIfOutOfCredits, providerFailureCause } from "./provider-failure";
 
 export type RiskLevel = "none" | "elevated" | "crisis";
 
@@ -74,7 +74,8 @@ export async function assessRisk(text: string, model: LanguageModel): Promise<Ri
     // the token cap above. Log it (never the raw error object: AI SDK errors
     // carry the request body — the classified message itself — as enumerable
     // own properties) so a dead safety layer is visible instead of invisible.
-    console.error(`Failed to classify risk (${errorCause(error)})`);
+    console.error(`Failed to classify risk (${providerFailureCause(error)})`);
+    alertOwnerIfOutOfCredits(error);
     return floor;
   }
 }
