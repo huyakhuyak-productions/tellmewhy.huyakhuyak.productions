@@ -468,6 +468,93 @@ test("stopping mid-stream keeps the honest partial reply and its actions", async
   await expect(page.getByText("STREAMTAIL")).toHaveCount(0);
 });
 
+test("scrolling up mid-stream releases the follow, and Jump to latest brings it back", async ({
+  page,
+}) => {
+  // A short viewport so the exchange below overflows the message column by a
+  // clear margin — the follow only lets go past a 48px "still reading" band.
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await signUp(page);
+
+  await page.getByLabel("Start a conversation").fill("Something to think through together");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // A long message of the reader's own gives the column real height to scroll
+  // back through; MOCK_SLOW streams the reply word-by-word (see models.ts).
+  const longThought = `MOCK_SLOW ${"I keep circling the same worry and want to read my own words back while you answer. ".repeat(12)}`;
+  await page.getByPlaceholder("What's on your mind?").fill(longThought);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText(/Slowly/)).toBeVisible();
+
+  // Preconditions, so a lost race reads as itself rather than as a missing
+  // pill: the column really overflows, and the reply is still in flight.
+  const scroller = page.getByTestId("chat-scroller");
+  expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(page.getByRole("button", { name: "Stop generating" })).toBeVisible();
+
+  // Mid-stream, the reader scrolls to the top of the column…
+  await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+  // …and the words that keep arriving must NOT drag them back down.
+  await expect(page.getByText(/one word at a time/)).toBeVisible();
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
+  const jump = page.getByRole("button", { name: "Jump to latest" });
+  await expect(jump).toBeVisible();
+
+  // The pill takes them back to the newest words and steps aside; from then on
+  // the column follows the rest of the reply down to its tail.
+  await jump.click();
+  await expect(jump).toBeHidden();
+  await expect(page.getByText("STREAMTAIL")).toBeVisible();
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThanOrEqual(1);
+});
+
+test("Jump to latest stays out of the way while the support card is up", async ({ page }) => {
+  // The pill and the crisis card dock in the same spot above the composer;
+  // support must never be half-covered, so the pill waits until the card is
+  // dismissed. MOCK_CRISIS trips the classifier (the card shows as soon as the
+  // response starts) while MOCK_SLOW keeps the reply streaming underneath.
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await signUp(page);
+
+  await page.getByLabel("Start a conversation").fill("Something to think through together");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/chat\/.+/);
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  const longThought = `MOCK_SLOW MOCK_CRISIS ${"I keep circling the same worry and want to read my own words back while you answer. ".repeat(12)}`;
+  await page.getByPlaceholder("What's on your mind?").fill(longThought);
+  await page.getByRole("button", { name: "Send" }).click();
+  const card = page.getByRole("alertdialog", { name: /support resources/i });
+  await expect(card).toBeVisible();
+  await expect(page.getByText(/Slowly/)).toBeVisible();
+
+  const scroller = page.getByTestId("chat-scroller");
+  expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(page.getByRole("button", { name: "Stop generating" })).toBeVisible();
+  await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+  await expect(page.getByText(/one word at a time/)).toBeVisible();
+
+  // Released with words landing below — the pill's own condition is met — yet
+  // it stays hidden for as long as the card is up.
+  const jump = page.getByRole("button", { name: "Jump to latest" });
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(card).toBeVisible();
+  await expect(jump).toBeHidden();
+
+  // Dismissing the card hands the spot back to the pill.
+  await page.getByRole("button", { name: "I'm safe right now" }).click();
+  await expect(card).toBeHidden();
+  await expect(jump).toBeVisible();
+});
+
 test("hiding a conversation moves it to the rail's Hidden drawer, then restores it", async ({
   page,
 }) => {

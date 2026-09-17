@@ -247,3 +247,44 @@ test("rename a conversation from the home card menu", async ({ page }) => {
     page.locator(`a[href="${conversationHref}"]`).getByText("Named from my phone"),
   ).toBeVisible();
 });
+
+test("on a phone, scrolling up mid-reply holds the column and Jump to latest returns", async ({
+  page,
+}) => {
+  await signUp(page);
+
+  await startFromHero(page, "Something to think through together");
+  await expect(page).toHaveURL(CONVERSATION_URL);
+  await expect(
+    page.locator('[data-streamdown="strong"]', { hasText: "mock reply" }),
+  ).toBeVisible();
+
+  // A long message of the reader's own gives the column real height to read
+  // back through; MOCK_SLOW streams the reply word-by-word (see models.ts).
+  const longThought = `MOCK_SLOW ${"I keep circling the same worry and want to read my own words back while you answer. ".repeat(10)}`;
+  await page.getByPlaceholder("What's on your mind?").fill(longThought);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText(/Slowly/)).toBeVisible();
+
+  // Preconditions, so a lost race reads as itself rather than as a missing
+  // pill: the column really overflows, and the reply is still in flight.
+  const scroller = page.getByTestId("chat-scroller");
+  expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(page.getByRole("button", { name: "Stop generating" })).toBeVisible();
+
+  // The message column is the scroller on phones too — not the page — so the
+  // header and composer stay put while the reader scrolls back up mid-stream.
+  await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+  await expect(page.getByText(/one word at a time/)).toBeVisible();
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
+  expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0)).toBe(0);
+  const jump = page.getByRole("button", { name: "Jump to latest" });
+  await expect(jump).toBeVisible();
+
+  await jump.click();
+  await expect(jump).toBeHidden();
+  await expect(page.getByText("STREAMTAIL")).toBeVisible();
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThanOrEqual(1);
+});

@@ -10,6 +10,8 @@ import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { buildChatRequestBody } from "@/lib/chat-request";
 import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
 import { useTitleWatcher } from "./use-title-watcher";
+import { useStickToBottom } from "./use-stick-to-bottom";
+import { JumpToLatest } from "./jump-to-latest";
 import { useSendRecovery, type SendFailure } from "./use-send-recovery";
 import { MessageBubble } from "./message-bubble";
 import { MessageEdit } from "./message-edit";
@@ -265,11 +267,11 @@ export function ChatScreen({
   }
 
   const [draft, setDraft] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
-  const isFirstRender = useRef(true);
   const sentDraft = useRef(false);
 
   // Keep the transport's parent lookup fresh (see metaByIdRef above). Its own
@@ -447,18 +449,20 @@ export function ChatScreen({
     refresh: router.refresh,
   });
 
-  // Keep the newest message in view as the conversation grows.
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: isFirstRender.current ? "auto" : "smooth",
-      block: "end",
-    });
-    isFirstRender.current = false;
-  }, [messages, status]);
+  // Follow the newest words only while the reader is at the bottom. Scrolling
+  // up mid-reply lets go, so they can read back while the answer keeps
+  // streaming underneath; the pill (or their own send) brings them back.
+  const { showJump, jumpToLatest, pin } = useStickToBottom({
+    containerRef: scrollerRef,
+    contentRef: messagesRef,
+    busy: isBusy,
+  });
 
   function submit() {
     if (!draft.trim() || isBusy) return;
     setSendFailure(null);
+    // Their own words always land in view, wherever they had scrolled to.
+    pin();
     // Reuse the failed attempt's key on an untouched retry (server dedupe onto
     // the one persisted row); any edit or fresh send mints a new key. The
     // unedited-vs-edited decision lives in one pure, unit-tested place, and it
@@ -512,12 +516,19 @@ export function ChatScreen({
         className="hidden lg:flex"
       />
 
-      {/* Center: the reading-optimized column. On mobile it is the whole screen
-          (the old single-column layout); on lg it fills the middle grid track
-          and anchors the docked support card. */}
+      {/* Center: the reading-optimized column. On mobile it is the whole screen;
+          on lg it fills the middle grid track and anchors the docked support
+          card. A fixed viewport height at every width (not min-height) is what
+          makes the message area below the one that scrolls — the page itself
+          never does — so the follow/release logic has a single scroller and the
+          header and composer hold still while the reader scrolls back. The
+          trade-offs on phones: the browser chrome never collapses on scroll
+          (an app-like column, a little less reading height), and a focused
+          composer relies on the visual viewport panning to it under the
+          keyboard, since the viewport meta sets no interactive-widget. */}
       <div
         ref={columnRef}
-        className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col lg:mx-0 lg:h-dvh lg:min-h-0 lg:max-w-none"
+        className="relative mx-auto flex h-dvh w-full max-w-md flex-col lg:mx-0 lg:max-w-none"
       >
         <header className="cp-hairline sticky top-0 z-10 flex items-center gap-1 border-b bg-background/80 px-3 py-2.5 backdrop-blur-md lg:px-10 lg:py-4">
           <div className="mx-auto flex w-full max-w-[760px] items-center gap-1">
@@ -578,8 +589,15 @@ export function ChatScreen({
             spans in message actions) anchored — and clipped — inside this
             scroller; anchored to the column they escape its clip and stretch
             the whole document. */}
-        <div className="relative flex flex-1 flex-col overflow-y-auto px-4 py-5 lg:px-10 lg:py-8">
-          <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-3 lg:gap-[22px]">
+        <div
+          ref={scrollerRef}
+          data-testid="chat-scroller"
+          className="relative flex flex-1 flex-col overflow-y-auto overscroll-y-contain px-4 py-5 lg:px-10 lg:py-8"
+        >
+          <div
+            ref={messagesRef}
+            className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-3 lg:gap-[22px]"
+          >
             {messages.map((m) => {
               const meta = metaById.get(m.id);
               // useChat only knows user/assistant; the server-loaded meta is the
@@ -743,9 +761,21 @@ export function ChatScreen({
                 <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60 [animation-delay:400ms]" />
               </div>
             )}
-            <div ref={bottomRef} className="h-px shrink-0" />
           </div>
         </div>
+
+        {/* Hidden while the crisis card is up: the card docks in the same spot
+            above the composer, and support must never be half-covered. */}
+        <JumpToLatest
+          visible={showJump && !crisis}
+          onJump={(viaKeyboard) => {
+            jumpToLatest();
+            // The pill hides on use; a keyboard reader's focus moves on to the
+            // composer rather than falling to the body (a tap never steals
+            // focus, so the phone keyboard stays down).
+            if (viaKeyboard) textareaRef.current?.focus({ preventScroll: true });
+          }}
+        />
 
         {crisis && <CrisisBanner onDismiss={() => setCrisis(false)} />}
 
