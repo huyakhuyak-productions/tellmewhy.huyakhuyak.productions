@@ -4,7 +4,8 @@
 // so the same line can be offered later in the conversation.
 import "../../test/component-setup";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { SERVICE_ISSUE_TRY_LATER } from "@/lib/service-issue-copy";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -61,5 +62,32 @@ describe("ThoughtRecordAffordance walk-through latch", () => {
     );
     fireEvent.click(btn);
     expect(onSeed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ThoughtRecordAffordance extraction failures", () => {
+  function stubExtract(status: number) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "x" }), { status })),
+    );
+  }
+
+  it("maps a 503 (our outage) to the service-issue notice, not the try-talking-more one", async () => {
+    stubExtract(503);
+    render(<ThoughtRecordAffordance conversationId="c1" canExtract draftEmpty onSeed={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Save what we worked out/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toBe(SERVICE_ISSUE_TRY_LATER);
+    });
+  });
+
+  it("keeps the gentle 'talk it through' note for a 502 (nothing to extract yet)", async () => {
+    stubExtract(502);
+    render(<ThoughtRecordAffordance conversationId="c1" canExtract draftEmpty onSeed={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Save what we worked out/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/talk it through a little more/);
+    });
   });
 });

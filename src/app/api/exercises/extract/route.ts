@@ -3,8 +3,10 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { loadMessages } from "@/lib/conversations";
-import { errorCause, isUniformNotFound } from "@/lib/errors";
+import { isUniformNotFound } from "@/lib/errors";
 import { getExtractorModel } from "@/lib/ai/models";
+import { alertOwnerIfOutOfCredits, isOutOfCredits, providerFailureCause } from "@/lib/ai/provider-failure";
+import { SERVICE_ISSUE } from "@/lib/service-issue-copy";
 import { thoughtRecordSchema } from "@/lib/exercises";
 import chatRateLimiter from "@/lib/rate-limit";
 import { withRequestScope } from "@/lib/request-scope";
@@ -76,7 +78,12 @@ async function handlePost(req: Request): Promise<Response> {
       // the whole prompt — the decrypted transcript; NoObjectGeneratedError's
       // text embeds the raw generation), so a provider 4xx/5xx would dump client
       // plaintext into server logs. Ids plus error name/message only.
-      console.error(`Thought-record extraction failed for conversation ${conversationId} (${errorCause(error)})`);
+      console.error(`Thought-record extraction failed for conversation ${conversationId} (${providerFailureCause(error)})`);
+      alertOwnerIfOutOfCredits(error);
+      // A credit refusal is OUR outage, not "nothing to extract yet": say so
+      // (calmly, naming no machinery) with a distinct status the affordance
+      // maps to the service-issue notice instead of the try-talking-more one.
+      if (isOutOfCredits(error)) return Response.json({ error: SERVICE_ISSUE }, { status: 503 });
       return Response.json({ error: "Could not extract an entry" }, { status: 502 });
     }
   } catch (error) {

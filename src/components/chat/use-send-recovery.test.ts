@@ -7,6 +7,7 @@ import "../../test/component-setup";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { UIMessage } from "ai";
+import { SERVICE_ISSUE_CODE } from "@/lib/service-issue-copy";
 import { useSendRecovery } from "./use-send-recovery";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,7 +57,7 @@ describe("useSendRecovery — failure handler wiring", () => {
     sessionStorage.setItem(deps.draftKey, "hero hand-off");
 
     renderHook(() => useSendRecovery(deps));
-    act(() => deps.failureHandlerRef.current());
+    act(() => deps.failureHandlerRef.current(new Error("An error occurred.")));
 
     // The failed words merge into whatever the composer already held.
     const updater = (deps.setDraft as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -78,14 +79,25 @@ describe("useSendRecovery — failure handler wiring", () => {
   it("surfaces the rate-limit notice when the last response was a 429", () => {
     const deps = makeDeps({ rateLimited: { current: true } });
     renderHook(() => useSendRecovery(deps));
-    act(() => deps.failureHandlerRef.current());
+    act(() => deps.failureHandlerRef.current(new Error("An error occurred.")));
     expect(deps.setSendFailure).toHaveBeenCalledWith({ kind: "rate-limit" });
+  });
+
+  it("surfaces the service-issue notice when the stream carried its code — words still recovered", () => {
+    const deps = makeDeps();
+    renderHook(() => useSendRecovery(deps));
+    act(() => deps.failureHandlerRef.current(new Error(SERVICE_ISSUE_CODE)));
+    expect(deps.setSendFailure).toHaveBeenCalledWith({ kind: "service-issue" });
+    // Recovery is identical: the failed words come back to the composer.
+    const updater = (deps.setDraft as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(updater("")).toBe("lost words");
+    expect(deps.setMessages).toHaveBeenCalledWith([thread[0], thread[1]]);
   });
 
   it("does not stash a key when no client-text attempt was in flight", () => {
     const deps = makeDeps({ clientMessageIdRef: { current: null } });
     renderHook(() => useSendRecovery(deps));
-    act(() => deps.failureHandlerRef.current());
+    act(() => deps.failureHandlerRef.current(new Error("An error occurred.")));
     // Words still recovered, but nothing to key an idempotent retry on.
     expect(deps.setDraft).toHaveBeenCalled();
     expect(deps.failedSendRef.current).toBeNull();
@@ -94,7 +106,7 @@ describe("useSendRecovery — failure handler wiring", () => {
   it("only surfaces a notice (no recovery) when there is nothing to harvest", () => {
     const deps = makeDeps({ messages: [assistant("just a reply", "a1")] });
     renderHook(() => useSendRecovery(deps));
-    act(() => deps.failureHandlerRef.current());
+    act(() => deps.failureHandlerRef.current(new Error("An error occurred.")));
     expect(deps.setMessages).not.toHaveBeenCalled();
     expect(deps.setDraft).not.toHaveBeenCalled();
     expect(deps.failedSendRef.current).toBeNull();

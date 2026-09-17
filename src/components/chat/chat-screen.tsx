@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { partsToText } from "@/lib/send-recovery";
+import { SERVICE_ISSUE_WORDS_SAFE_BELOW } from "@/lib/service-issue-copy";
 import { GENTLE_PACE } from "@/lib/pacing-copy";
 import { buildChatRequestBody } from "@/lib/chat-request";
 import { isAtRest, shouldAdoptServerMessages } from "@/lib/adopt-server-messages";
@@ -144,7 +145,7 @@ export function ChatScreen({
   // the freshest thread/setters, so each render re-syncs it through this ref
   // (same pattern as conversationsRef below; refs must not be written during
   // render, so the sync lives in its own effect).
-  const failureHandlerRef = useRef<() => void>(() => {});
+  const failureHandlerRef = useRef<(error: Error) => void>(() => {});
   // The transport is created once by useChat (held in a ref, recreated only on
   // an id change), so its closure would freeze the first render's `metaById`
   // and go stale after every `router.refresh()` — an edit of a message that
@@ -215,7 +216,7 @@ export function ChatScreen({
       },
     }),
     messages: seedFromInitialMessages(initialMessages),
-    onError: () => failureHandlerRef.current(),
+    onError: (error) => failureHandlerRef.current(error),
     onFinish: ({ isError, isAbort }) => {
       // Clear the stashed hero draft only on a confirmed clean finish. This
       // is the earliest signal that can no longer be followed by a failure of
@@ -792,7 +793,9 @@ export function ChatScreen({
               <p className="flex-1 py-1 font-serif text-[0.9rem] italic leading-relaxed text-muted-foreground">
                 {sendFailure.kind === "rate-limit"
                   ? "Take a breath — a moment before the next message."
-                  : "That didn't send. Your words are safe below — try again."}
+                  : sendFailure.kind === "service-issue"
+                    ? SERVICE_ISSUE_WORDS_SAFE_BELOW
+                    : "That didn't send. Your words are safe below — try again."}
               </p>
               {sendFailure.kind === "generic" && (
                 <button

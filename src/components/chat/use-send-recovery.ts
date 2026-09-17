@@ -3,11 +3,18 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { UIMessage } from "ai";
 import { harvestFailedSend, mergeRestoredDraft, resendMessageId } from "@/lib/send-recovery";
+import { SERVICE_ISSUE_CODE } from "@/lib/service-issue-copy";
 
 // A failed send, kept as an object (not a plain string) so every failure gets
 // a fresh identity — consecutive identical failures must still re-run the
 // restore/focus effect in the host.
-export type SendFailure = { kind: "rate-limit" | "generic" };
+//
+//   rate-limit    — the 429; a breath and try again.
+//   service-issue — the stream carried SERVICE_ISSUE_CODE: an outage on our
+//                   side (the owner's model balance is out) that no retry can
+//                   fix, so the notice offers no Try again.
+//   generic       — anything else; the words are back below, try again.
+export type SendFailure = { kind: "rate-limit" | "service-issue" | "generic" };
 
 // The last failed send's idempotency key + the exact words it carried.
 export type FailedSend = { id: string; text: string };
@@ -43,7 +50,7 @@ export function useSendRecovery<M extends UIMessage>({
   /** Owned by the host (cleared in onFinish); this hook stashes into it. */
   failedSendRef: MutableRefObject<FailedSend | null>;
   /** Owned by the host (captured by useChat's onError); this hook fills it. */
-  failureHandlerRef: MutableRefObject<() => void>;
+  failureHandlerRef: MutableRefObject<(error: Error) => void>;
 }) {
   // A failed send must never cost the writer their words. When the SDK reports
   // an error, move the failed message (and any partial reply the dying stream
@@ -55,8 +62,13 @@ export function useSendRecovery<M extends UIMessage>({
   //
   // Synced every render (no deps) so the handler always closes over the freshest
   // `messages` — useChat's onError only ever invokes `failureHandlerRef.current`.
+  //
+  // `error.message` is whatever the server's UI-stream onError returned — a
+  // masked constant for most failures, SERVICE_ISSUE_CODE for an outage on our
+  // side. (An HTTP-level failure like the 429 never streams; its message is the
+  // raw body, which is why the 429 is read off the status in the host's fetch.)
   useEffect(() => {
-    failureHandlerRef.current = () => {
+    failureHandlerRef.current = (error: Error) => {
       const failure = harvestFailedSend(messages);
       if (failure) {
         // Remember the key this attempt POSTed with, paired to its words, so an
@@ -72,7 +84,13 @@ export function useSendRecovery<M extends UIMessage>({
         // any) is recovered and must not auto-resend on a later remount.
         sessionStorage.removeItem(draftKey);
       }
-      setSendFailure({ kind: rateLimited.current ? "rate-limit" : "generic" });
+      setSendFailure({
+        kind: rateLimited.current
+          ? "rate-limit"
+          : error.message === SERVICE_ISSUE_CODE
+            ? "service-issue"
+            : "generic",
+      });
     };
   });
 

@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { inspect } from "node:util";
-import { payloadCarryingFailureModel, truncatedObjectModel } from "@/test/ai-fixtures";
+import {
+  outOfCreditsInBodyModel,
+  outOfCreditsModel,
+  payloadCarryingFailureModel,
+  truncatedObjectModel,
+} from "@/test/ai-fixtures";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { exerciseEntries } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { createConversation, saveMessage } from "@/lib/conversations";
 import { getExtractorModel } from "@/lib/ai/models";
+import { alertOwnerIfOutOfCredits } from "@/lib/ai/provider-failure";
+import { SERVICE_ISSUE } from "@/lib/service-issue-copy";
 import chatRateLimiter from "@/lib/rate-limit";
 import { cleanupSeededUsers, seedUser } from "@/test/seed-user";
 
@@ -19,6 +26,9 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // Spied so a single failure test can swap the extractor model for a throwing
 // one without disturbing the AI_MOCK default the happy-path tests rely on.
 vi.mock("@/lib/ai/models", { spy: true });
+// Spied (real implementation runs) so the credit-outage test can assert the
+// owner alert is reached from this route's failure path too.
+vi.mock("@/lib/ai/provider-failure", { spy: true });
 
 import { POST } from "./route";
 
@@ -111,6 +121,44 @@ describe("POST /api/exercises/extract", () => {
 
     const logged = errorSpy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
     expect(logged).not.toContain(sentinel);
+  });
+
+  it("answers 503 with the service-issue notice — never the provider's words — when credits are out, and tells the owner", async () => {
+    const clientId = await seedUser();
+    mockSession(clientId);
+    const { id } = await createConversation(clientId, "Credits out");
+    const sentinel = "SENTINEL_TRANSCRIPT_PLAINTEXT";
+    await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: sentinel });
+    vi.mocked(getExtractorModel).mockReturnValueOnce(outOfCreditsModel(sentinel));
+    vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(extractRequest({ conversationId: id }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: SERVICE_ISSUE });
+
+    const logged = errorSpy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
+    expect(logged).toContain(`Thought-record extraction failed for conversation ${id} (OpenRouter: out of credits)`);
+    expect(logged).not.toContain(sentinel);
+    expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a status-200 error body carrying code 402 as the same outage (503, owner told)", async () => {
+    const clientId = await seedUser();
+    mockSession(clientId);
+    const { id } = await createConversation(clientId, "Credits out, in the body");
+    const sentinel = "SENTINEL_TRANSCRIPT_PLAINTEXT";
+    await saveMessage({ conversationId: id, userId: clientId, sender: "client", text: sentinel });
+    vi.mocked(getExtractorModel).mockReturnValueOnce(outOfCreditsInBodyModel(sentinel));
+    vi.mocked(alertOwnerIfOutOfCredits).mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(extractRequest({ conversationId: id }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: SERVICE_ISSUE });
+    const logged = errorSpy.mock.calls.map((args) => args.map((a) => inspect(a, { depth: 20 })).join(" ")).join("\n");
+    expect(logged).not.toContain(sentinel);
+    expect(alertOwnerIfOutOfCredits).toHaveBeenCalledTimes(1);
   });
 
   it("returns 502 when the model's completion is truncated (non-stop finish)", async () => {

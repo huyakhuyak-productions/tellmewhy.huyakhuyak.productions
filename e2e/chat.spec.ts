@@ -100,6 +100,26 @@ test("a failed send keeps the words safe in the composer and can be retried", as
   await expect(notice).toContainText("Take a breath");
   await expect(composer).toHaveValue("The lamp is still on");
 
+  // An outage on our side reaches the client as a streamed error part carrying
+  // the service-issue code — SERVICE_ISSUE_CODE in src/lib/service-issue-copy.ts,
+  // spelled out here because e2e has no path alias (the HTTP status is already
+  // 200 by then): the notice
+  // says so calmly — naming no machinery — offers no Try again (it can't help),
+  // and the words come back.
+  await page.unroute("**/api/chat");
+  await page.route("**/api/chat", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream", "x-vercel-ai-ui-message-stream": "v1" },
+      body: 'data: {"type":"start"}\n\ndata: {"type":"error","errorText":"service-issue"}\n\ndata: [DONE]\n\n',
+    }),
+  );
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(notice).toContainText("on our end");
+  await expect(notice).not.toContainText(/credit|AI|model/);
+  await expect(notice.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await expect(composer).toHaveValue("The lamp is still on");
+
   // A generic failure offers the retry affordance — words still safe below.
   await page.unroute("**/api/chat");
   await page.route("**/api/chat", (route) => route.fulfill({ status: 500, body: "" }));

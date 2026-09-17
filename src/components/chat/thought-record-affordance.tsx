@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SERVICE_ISSUE_TRY_LATER } from "@/lib/service-issue-copy";
 import { serializeDraft, THOUGHT_RECORD_DRAFT_KEY } from "@/lib/thought-record-draft";
 
 // The fixed line the "walk through" affordance drops into the composer. The
@@ -72,11 +73,14 @@ export function ThoughtRecordAffordance({
       });
       if (!res.ok) {
         // 502 = the extractor couldn't shape a record from this chat yet; say so
-        // gently rather than blaming the person. Anything else is a generic hiccup.
+        // gently rather than blaming the person. 503 = an outage on our side
+        // (nothing they can talk through). Anything else is a generic hiccup.
         setError(
           res.status === 502
             ? "Nothing to pull out just yet — talk it through a little more, then try again."
-            : "Couldn't do that just now — try again.",
+            : res.status === 503
+              ? SERVICE_ISSUE_TRY_LATER
+              : "Couldn't do that just now — try again.",
         );
         return;
       }
