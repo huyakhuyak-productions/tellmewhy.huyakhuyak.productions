@@ -265,8 +265,10 @@
     home card's hover-lift (hover:-translate-y-px) read as motion; Tailwind v4
     emits them as the standalone `scale` / `translate` properties on :hover /
     :active, so neutralize exactly those states. Color, opacity, and shadow
-    transitions stay — they don't imply movement, and this scope never touches
-    the crisis card's static -translate-x-1/2 centering.
+    transitions stay — they don't imply movement. Because :hover also matches
+    every ancestor of the hovered element, nothing may rely on a static
+    `translate` for layout (e.g. -translate-x-1/2 centering); the crisis card
+    and the jump-to-latest pill center with inset-x-0 + mx-auto instead.
   */
   *:hover,
   *:active {

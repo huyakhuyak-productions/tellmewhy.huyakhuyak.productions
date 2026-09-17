@@ -19,4 +19,15 @@ describe("CrisisBanner composer-height glide", () => {
     // ...and the entrance animation is untouched.
     expect(card.className).toContain("animate-crisis-rise");
   });
+
+  it("centers on desktop without a translate, so the reduced-motion hover rule cannot shift it", () => {
+    // globals.css neutralises `translate` on every hovered/pressed element under
+    // prefers-reduced-motion, and :hover matches the card whenever the pointer
+    // is over any of its buttons. A -translate-x-1/2 centering would then jump.
+    render(<CrisisBanner onDismiss={vi.fn()} />);
+    const card = screen.getByRole("alertdialog");
+    expect(card.className).not.toMatch(/translate-x-1\/2/);
+    expect(card.className).toMatch(/\blg:inset-x-0\b/);
+    expect(card.className).toMatch(/\bmx-auto\b/);
+  });
 });
