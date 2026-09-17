@@ -818,6 +818,10 @@ export function ChatScreen({
           <div className="mx-auto flex w-full max-w-[760px] items-end gap-2">
             <textarea
               ref={textareaRef}
+              // The placeholder is the visual prompt, but it disappears the
+              // moment the person types — this is the name assistive tech
+              // keeps announcing for the field.
+              aria-label="Your message"
               className="max-h-35 min-h-11 flex-1 resize-none rounded-2xl border bg-card px-4 py-2.5 text-[0.975rem] leading-relaxed shadow-sm outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground/70 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
               placeholder="What's on your mind?"
               value={draft}

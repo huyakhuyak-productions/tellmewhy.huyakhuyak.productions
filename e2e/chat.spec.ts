@@ -82,7 +82,9 @@ test("a failed send keeps the words safe in the composer and can be retried", as
   await expect(page).toHaveURL(CONVERSATION_URL);
   await expect(page.getByText("mock reply")).toBeVisible();
 
-  const composer = page.getByPlaceholder("What's on your mind?");
+  // By accessible name, not placeholder: the placeholder vanishes as soon as
+  // the person types, so the name is what assistive tech actually announces.
+  const composer = page.getByRole("textbox", { name: "Your message" });
   // Scoped to the form: Next's route announcer is also role="alert".
   const notice = page.locator("form [role='alert']");
 
